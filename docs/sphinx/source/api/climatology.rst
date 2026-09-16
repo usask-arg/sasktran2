@@ -10,7 +10,7 @@ CAIRT Extended Reference Scenarios
 ---------------------------------
 
 Versioned latitude-band, seasonal, and local-time reference atmospheres.
-See the :ref:`ERS example <_example_ers>` for usage and data limitations.
+See the :ref:`ERS example <_example_ers>` for profile comparisons and atmosphere setup.
 
 .. autosummary::
     :toctree: generated/

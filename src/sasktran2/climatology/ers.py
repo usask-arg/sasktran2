@@ -7,8 +7,8 @@ multiannual reference scenarios, not atmospheres for an arbitrary calendar year.
 
 Selection is exact: latitude centers are -80, -45, 0, 45, 80 degrees; months
 are 1, 4, 7, 10; local times are 9.5 and 21.5 hours. Raw and selected profiles
-preserve source values, including known suspect data. The constituent helpers
-validate gas VMRs before use. See the ERS guide for scientific limitations.
+preserve source values, including known suspect data. Selected profiles warn
+about suspect fields, and the constituent helpers validate gas VMRs before use.
 """
 
 from __future__ import annotations
@@ -196,7 +196,61 @@ def profile(
         mol/mol units. Each variable's ``quality_flags`` attribute describes
         detected issues; values are not repaired. Standard deviations represent
         climatological spread, not uncertainty in the mean or covariance.
+
+    Warns
+    -----
+    UserWarning
+        If a returned field has suspect values. The warning names the affected
+        fields; selecting specific species avoids warnings about unused gases
+        and air molar mass.
     """
+    result = _select_profile(
+        month=month,
+        latitude_degrees=latitude_degrees,
+        local_time_hours=local_time_hours,
+        solar_activity=solar_activity,
+        volcanic_activity=volcanic_activity,
+        species=species,
+        version=version,
+        path=path,
+        db_root=db_root,
+    )
+    descriptions = {
+        "nonfinite_values": "contains nonfinite values",
+        "negative_values": "contains negative values",
+        "all_zero_profile": "is entirely zero and requires verification before use",
+        "source_molar_mass_requires_verification": "has suspect altitude dependence in ERS v7; verify before using it to calculate density",
+    }
+    issues = [
+        f"{name} {descriptions[flag]}"
+        for name, variable in result.data_vars.items()
+        for flag in variable.attrs["quality_flags"].split(",")
+        if flag
+    ]
+    if issues:
+        warnings.warn(
+            "Suspect ERS profile data: "
+            + "; ".join(issues)
+            + ". Source values are unchanged; inspect these fields before use.",
+            UserWarning,
+            stacklevel=2,
+        )
+    return result
+
+
+def _select_profile(
+    *,
+    month: int,
+    latitude_degrees: float,
+    local_time_hours: float,
+    solar_activity: str = "minimum",
+    volcanic_activity: str = "background",
+    species: str | Sequence[str] | None = None,
+    version: str = "v07",
+    path: str | Path | None = None,
+    db_root: str | Path | None = None,
+) -> xr.Dataset:
+    """Select source values; callers warn or validate the fields they use."""
     requested = [species] if isinstance(species, str) else species
     stems = (
         None
@@ -347,7 +401,7 @@ def constituent(
     if out_of_bounds_mode not in ("zero", "extend"):
         msg = "out_of_bounds_mode must be 'zero' or 'extend'"
         raise ValueError(msg)
-    data = profile(
+    data = _select_profile(
         month=month,
         latitude_degrees=latitude_degrees,
         local_time_hours=local_time_hours,
@@ -416,7 +470,7 @@ def add_to_atmosphere(
     ):
         msg = "ERS gas helpers require unset or zero specific_humidity until the source wet/dry convention is verified"
         raise ValueError(msg)
-    data = profile(
+    data = _select_profile(
         month=month,
         latitude_degrees=latitude_degrees,
         local_time_hours=local_time_hours,

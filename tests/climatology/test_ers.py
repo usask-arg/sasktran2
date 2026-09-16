@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import urllib.error
+import warnings
 from unittest.mock import Mock
 
 import numpy as np
@@ -115,12 +116,13 @@ def test_local_source_preserves_raw_values_and_closes_file(local_file):
 
 
 def test_exact_profile_all_dimension_families(local_file, raw_dataset):
-    result = ers.profile(
-        **SCENARIO,
-        solar_activity="maximum",
-        volcanic_activity="enhanced",
-        path=local_file,
-    )
+    with pytest.warns(UserWarning, match="airmolmass has suspect altitude dependence"):
+        result = ers.profile(
+            **SCENARIO,
+            solar_activity="maximum",
+            volcanic_activity="enhanced",
+            path=local_file,
+        )
     expected = raw_dataset.sel(month=7, hour=9.5, lat=45, solmin_solmax=1, volcanism=1)
     for name in (
         "o3_mean",
@@ -183,7 +185,14 @@ def test_raw_quality_flags_and_explicit_clipping(raw_dataset, local_file):
     raw_dataset.h2o_mean.loc[{"lev": 20}] = -1e-8
     raw_dataset.o_mean[:] = 0
     raw_dataset.to_netcdf(local_file)
-    result = ers.profile(**SCENARIO, path=local_file)
+    with pytest.warns(UserWarning, match="Suspect ERS profile data") as caught:
+        result = ers.profile(**SCENARIO, path=local_file)
+    assert len(caught) == 1
+    message = str(caught[0].message)
+    assert "h2o_mean contains negative values" in message
+    assert "o_mean is entirely zero" in message
+    assert "airmolmass has suspect altitude dependence" in message
+    assert "Source values are unchanged" in message
     assert result.h2o_mean[-1] == -1e-8
     assert result.h2o_mean.attrs["quality_flags"] == "negative_values"
     assert result.o_mean.attrs["quality_flags"] == "all_zero_profile"
@@ -199,6 +208,39 @@ def test_raw_quality_flags_and_explicit_clipping(raw_dataset, local_file):
         ers.constituent("O", _Absorber(), **SCENARIO, path=local_file)
 
 
+def test_profile_warns_only_for_returned_fields(raw_dataset, local_file):
+    raw_dataset.h2o_mean[:] = -1e-8
+    raw_dataset.o_mean[:] = 0
+    raw_dataset.to_netcdf(local_file)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = ers.profile(**SCENARIO, species="O3", path=local_file)
+    assert not caught
+    assert "o3_mean" in result
+    assert "h2o_mean" not in result
+    with pytest.warns(UserWarning, match="h2o_mean contains negative values") as caught:
+        ers.profile(**SCENARIO, species="H2O", path=local_file)
+    assert "airmolmass" not in str(caught[0].message)
+    assert "o_mean is entirely zero" not in str(caught[0].message)
+
+
+@pytest.mark.parametrize(
+    ("variable", "value", "message"),
+    [
+        ("o3_mean", np.nan, "o3_mean contains nonfinite values"),
+        ("o3_std", -1e-8, "o3_std contains negative values"),
+        ("temperature_mean", -1, "temperature_k contains negative values"),
+    ],
+)
+def test_profile_warns_about_suspect_values(
+    raw_dataset, local_file, variable, value, message
+):
+    raw_dataset[variable][:] = value
+    raw_dataset.to_netcdf(local_file)
+    with pytest.warns(UserWarning, match=message):
+        ers.profile(**SCENARIO, species="O3", path=local_file)
+
+
 def test_add_to_atmosphere_interpolation_and_single_load(local_file, monkeypatch):
     loader = Mock(wraps=ers.load_dataset)
     monkeypatch.setattr(ers, "load_dataset", loader)
@@ -210,7 +252,7 @@ def test_add_to_atmosphere_interpolation_and_single_load(local_file, monkeypatch
     np.testing.assert_allclose(
         atmosphere.pressure_pa, 10 ** np.array([5, 4.5, 4, 3.5, 3])
     )
-    native = ers.profile(**SCENARIO, path=local_file)
+    native = ers.profile(**SCENARIO, species=["O3", "F11"], path=local_file)
     target = atmosphere.model_geometry.altitudes()
     np.testing.assert_allclose(
         atmosphere.temperature_k,
@@ -228,7 +270,12 @@ def test_only_relevant_altitudes_are_validated(raw_dataset, local_file):
     raw_dataset.h2o_mean.loc[{"lev": 20}] = -1e-8
     raw_dataset.to_netcdf(local_file)
     atmosphere, _ = _atmosphere((0, 5000, 10000))
-    ers.add_to_atmosphere(atmosphere, {"H2O": _Absorber()}, **SCENARIO, path=local_file)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        ers.add_to_atmosphere(
+            atmosphere, {"H2O": _Absorber()}, **SCENARIO, path=local_file
+        )
+    assert not caught
     np.testing.assert_array_equal(atmosphere["H2O"].altitudes_m, [0, 10000])
     atmosphere, _ = _atmosphere((0, 5000, 11000))
     # The negative upper bracketing level is still needed at 11 km.

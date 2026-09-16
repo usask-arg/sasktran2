@@ -7,22 +7,17 @@ mystnb:
 (_example_ers)=
 # CAIRT Extended Reference Scenarios
 
-The {py:mod}`sasktran2.climatology.ers` module creates reference atmospheres from
-[CAIRT ERS v7](https://doi.org/10.5281/zenodo.10022129), assembled by Quentin Errera
-from WACCM, BASCOE, and ACE-FTS sources. It provides 31 gas species, pressure,
-temperature, and climatological standard deviations on an altitude grid from
-0 to 200 km at 1 km intervals.
-
-ERS uses multiannual averages. **CH4, N2O, CO2, SF6, CCl4, HCFC22, CFC11, and
-CFC12 are scaled to expected 2030 abundances.** Selecting a month does not select
-a calendar year. Source models have different altitude coverage; numerical
-values throughout 0–200 km do not establish equal scientific support for all
-species over that range.
+Use {py:mod}`sasktran2.climatology.ers` to explore seasonal gas profiles and
+initialize a radiative-transfer calculation with
+[CAIRT ERS v7](https://doi.org/10.5281/zenodo.10022129). ERS provides 31 gases,
+pressure, and temperature for a choice of latitude band, month, local time,
+solar activity, and volcanic activity. These are multiannual reference
+conditions; several long-lived gases are scaled to projected 2030 abundances.
 
 ## Select a scenario
 
-This implementation selects the supplied scenarios exactly. It does not
-interpolate between seasons, latitude bands, or local times.
+Start with July in the northern midlatitudes at 09:30 local time. Choose from
+the supplied scenarios:
 
 | Argument | Choices |
 | --- | --- |
@@ -32,10 +27,10 @@ interpolate between seasons, latitude bands, or local times.
 | `solar_activity` | `"minimum"` (default), `"maximum"` |
 | `volcanic_activity` | `"background"` (default), `"enhanced"` |
 
-Latitude coordinates represent bands: 90–70°S, 55–35°S, 20°S–20°N, 35–55°N,
-and 70–90°N. A request for 50°N raises an error; explicitly select the 45°N band
-for that reference scenario. Local times are overpass times, so they should not
-be interpreted as universal day/night categories, especially near the poles.
+The latitude values select the bands 90–70°S, 55–35°S, 20°S–20°N, 35–55°N,
+and 70–90°N, respectively. For example, use `45` for the 35–55°N band.
+Selections must match the table; there is no interpolation between scenarios.
+The data downloads automatically on first use and is cached for later calls.
 
 ```{code-cell}
 import numpy as np
@@ -51,25 +46,11 @@ scenario = {
 }
 
 profiles = sk.climatology.ers.profile(species=["O3", "NO2"], **scenario)
-profiles[["o3_mean", "o3_std", "temperature_k", "pressure_pa"]]
 ```
 
-The first call downloads only the 4.9 MB NetCDF into
-`<database_root>/climatology/ers/v07/CAIRT_ERS_v07.nc`. Later calls verify its
-checksum and use the cache. The plot archive is not downloaded, and the optional
-`zenodo-get` dependency is not needed. Transient server and connection failures
-are retried up to twice. Persistent failures propagate, and incomplete downloads
-are not retained as valid cache files.
-
-The returned xarray dataset is loaded into memory with no open file handle.
-Its altitude coordinate is `altitude_m` in metres. Gas means and standard
-deviations retain lower-case names such as `o3_mean` and `o3_std`, in mol/mol.
-Temperature is in K and pressure in Pa. The selected band bounds, source
-checksum, attribution, and scenario choices are included.
-
-Only variables with a given scenario dimension depend on that choice. For
-example, CFC11 has monthly profiles without a local-time dimension, whereas
-NO additionally depends on solar activity and SO2 depends on volcanism.
+The returned xarray dataset uses `altitude_m` in metres and gas volume mixing
+ratios (VMRs) in mol/mol. Multiply by `1e6` for parts per million (ppmv) or
+`1e9` for parts per billion (ppbv).
 
 ## Plot the selected gas profiles
 
@@ -151,9 +132,59 @@ fig.tight_layout()
 plt.show()
 ```
 
+## Compare solar and volcanic activity
+
+Solar activity is most visible in upper-atmosphere temperature. Volcanic activity
+changes the SO2 profile. Here we compare both choices for the same July
+midlatitude scenario, using an altitude range suited to each quantity.
+`species=[]` selects pressure and temperature without any gases.
+
+```{code-cell}
+fig, axes = plt.subplots(1, 2, figsize=(9, 5))
+
+for activity in ["minimum", "maximum"]:
+    solar = sk.climatology.ers.profile(
+        species=[], **{**scenario, "solar_activity": activity}
+    ).sel(altitude_m=slice(100000, 200000))
+    axes[0].plot(
+        solar.temperature_k, solar.altitude_m / 1000, label=activity.capitalize()
+    )
+
+for activity in ["background", "enhanced"]:
+    volcanic = sk.climatology.ers.profile(
+        species="SO2", **{**scenario, "volcanic_activity": activity}
+    ).sel(altitude_m=slice(10000, 40000))
+    axes[1].plot(
+        volcanic.so2_mean * 1e9,
+        volcanic.altitude_m / 1000,
+        label=activity.capitalize(),
+    )
+
+axes[0].set_title("Solar activity")
+axes[0].set_xlabel("Temperature [K]")
+axes[0].set_ylim(100, 200)
+axes[1].set_title("Volcanic activity")
+axes[1].set_xlabel("SO$_2$ VMR [ppbv]")
+axes[1].set_xlim(left=0)
+axes[1].set_ylim(10, 40)
+for ax in axes:
+    ax.set_ylabel("Altitude [km]")
+    ax.legend()
+    ax.grid(alpha=0.3)
+fig.suptitle("July, 35–55°N, 09:30 local time")
+fig.tight_layout()
+plt.show()
+```
+
 ## Create an atmosphere
 
-The same scenario can initialize an atmosphere for a spectrum calculation.
+Use `add_to_atmosphere` to set pressure, temperature, and gas abundances from
+ERS on the model's altitude grid. Supply an optical property for each gas to
+calculate absorption. Here we add O3, NO2, and Rayleigh scattering for a
+satellite view toward the ground.
+
+Set the solar and viewing angles for your calculation explicitly; ERS local
+time only selects the reference profiles.
 
 ```{code-cell}
 config = sk.Config()
@@ -172,11 +203,8 @@ atmosphere = sk.Atmosphere(
     geometry, config, wavelengths_nm=np.arange(300.0, 801.0, 5.0)
 )
 
-sk.climatology.ers.add_to_atmosphere(
-    atmosphere,
-    {"O3": sk.optical.O3DBM(), "NO2": sk.optical.NO2Vandaele()},
-    **scenario,
-)
+optical_properties = {"O3": sk.optical.O3DBM(), "NO2": sk.optical.NO2Vandaele()}
+sk.climatology.ers.add_to_atmosphere(atmosphere, optical_properties, **scenario)
 atmosphere["rayleigh"] = sk.constituent.Rayleigh()
 
 viewing = sk.ViewingGeometry()
@@ -200,100 +228,80 @@ fig.tight_layout()
 plt.show()
 ```
 
-Geometry and solar angles remain caller choices; selecting ERS local time does
-not derive those angles. Optical properties are also supplied by the caller.
-The ERS helper initializes standard {py:class}`sasktran2.constituent.VMRAltitudeAbsorber`
-objects, retaining their VMR derivatives.
+## Change a gas abundance
 
-The helper loads the source once for all requested gases and validates the
-inputs before updating the atmosphere. Temperature and VMR are interpolated
-linearly in altitude; pressure is interpolated logarithmically. It retains
-source levels that bracket the model grid. Pass `set_pressure_temperature=False`
-to preserve existing pressure and temperature, or an empty species mapping to
-set pressure and temperature only.
-
-`add_to_atmosphere` rejects model altitudes outside the source grid by default.
-Explicit `out_of_bounds_mode="extend"` holds boundary gas VMR, temperature, and
-pressure constant; it does not infer a physical extrapolation.
-
-A single gas can also be constructed on the full native ERS grid:
+ERS constituents can be adjusted like any other
+{py:class}`sasktran2.constituent.VMRAltitudeAbsorber`. Use `constituent` to create
+an individual gas, then change its `vmr` before adding it to the atmosphere.
+For example, halve the ozone abundance and compare the spectrum with the
+original calculation. Pressure, temperature, NO2, and viewing geometry stay
+fixed, so the difference shows the effect of changing ozone alone.
 
 ```{code-cell}
-ozone = sk.climatology.ers.constituent("O3", sk.optical.O3DBM(), **scenario)
+ozone = sk.climatology.ers.constituent("O3", optical_properties["O3"], **scenario)
+ozone.vmr *= 0.5
+atmosphere["O3"] = ozone
+reduced_ozone_radiance = engine.calculate_radiance(atmosphere)
+
+fig, ax = plt.subplots(figsize=(8, 4))
+for result, label in [
+    (radiance, "ERS ozone"),
+    (reduced_ozone_radiance, "50% of ERS ozone"),
+]:
+    result["radiance"].isel(los=0, stokes=0).plot(
+        ax=ax, x="wavelength", label=label
+    )
+ax.set_xlabel("Wavelength [nm]")
+ax.set_ylabel("Solar-normalized radiance [sr$^{-1}$]")
+ax.set_title("Effect of reducing ozone")
+ax.legend()
+ax.grid(alpha=0.3)
+fig.tight_layout()
+plt.show()
 ```
 
-This lower-level helper uses the standard constituent boundary policy: zero VMR
-outside the native grid by default, or `out_of_bounds_mode="extend"` to hold
-boundary VMR constant. It validates the entire native profile.
+## Keep an existing pressure and temperature profile
 
-Species names are case insensitive. Aliases include `HNO4` for `HO2NO2`,
-`F11`/`CFCl3` for `CFC11`, `F12`/`CF2Cl2` for `CFC12`, `F22`/`CHClF2` for
-`HCFC22`, and `F14` for `CF4`. HDO requires isotope-specific optical properties;
-it should not be paired with a bulk H2O absorber without accounting for isotope
-abundances and possible double counting.
-
-## Offline files and data quality
-
-Every helper accepts `path="/path/to/CAIRT_ERS_v07.nc"` to use a local source,
-or `db_root="/path/to/cache"` to override the configured download cache.
-An explicit local file bypasses the pinned checksum check and records its
-actual checksum, so subsets and modified files can be used deliberately.
-The only supported schema/version is `version="v07"`.
-
-To demonstrate local-file access, reuse the cache populated above. Selecting
-the July southern-polar scenario also exposes two known data-quality flags.
+If your atmosphere already has pressure and temperature from another source,
+pass `set_pressure_temperature=False` to add only ERS gases. For this example,
+use the US76 standard atmosphere and compare its state with ERS.
 
 ```{code-cell}
-from sasktran2.database.ers import ERSDatabase
-
-cached_path = ERSDatabase().path()
-raw = sk.climatology.ers.load_dataset(path=cached_path)
-polar_profiles = sk.climatology.ers.profile(
-    path=cached_path,
-    species=["H2O", "O"],
-    **{**scenario, "latitude_degrees": -80},
+custom_atmosphere = sk.Atmosphere(
+    geometry, config, wavelengths_nm=atmosphere.wavelengths_nm
 )
-for name in ["h2o_mean", "o_mean"]:
-    print(f"{name}: {polar_profiles[name].attrs['quality_flags']}")
+sk.climatology.us76.add_us76_standard_atmosphere(custom_atmosphere)
+sk.climatology.ers.add_to_atmosphere(
+    custom_atmosphere,
+    optical_properties,
+    set_pressure_temperature=False,
+    **scenario,
+)
+
+altitude_km = geometry.altitudes() / 1000
+fig, axes = plt.subplots(1, 2, figsize=(9, 5), sharey=True)
+for model, label in [(atmosphere, "ERS"), (custom_atmosphere, "US76")]:
+    axes[0].plot(model.temperature_k, altitude_km, label=label)
+    axes[1].semilogx(model.pressure_pa / 100, altitude_km, label=label)
+
+axes[0].set_xlabel("Temperature [K]")
+axes[0].set_ylabel("Altitude [km]")
+axes[0].set_ylim(0, 80)
+axes[1].set_xlabel("Pressure [hPa]")
+for ax in axes:
+    ax.legend()
+    ax.grid(alpha=0.3)
+fig.suptitle("Choosing pressure and temperature independently of ERS gases")
+fig.tight_layout()
+plt.show()
 ```
 
-Raw access preserves the source coordinates and values. Selected profile access
-converts altitude and names the state fields, but also preserves gas values and
-adds per-variable `quality_flags`. Neither path silently repairs data.
-
-- **Negative H2O:** v7 contains 14 negative values in polar scenarios between
-  191 and 200 km. Constituent helpers reject negative VMRs by default. Explicit
-  `negative_vmr="clip"` replaces them with zero and emits a warning. The source
-  file is unchanged. `add_to_atmosphere` checks only levels needed by its model
-  grid, including interpolation brackets.
-- **Zero atomic oxygen:** some polar O/O1D scenarios are entirely zero and their
-  physical interpretation is unresolved. Constituent helpers reject these
-  profiles. They remain accessible through `profile` for inspection.
-- **Humidity:** the source wet/dry convention is not explicit. Gas values are
-  passed through as supplied, assuming total-air mole fractions with unset/zero
-  SASKTRAN2 specific humidity. `add_to_atmosphere` rejects nonzero existing
-  humidity when adding gases. It does not derive humidity from H2O; callers using
-  `constituent` directly must preserve this assumption themselves.
-- **Pressure:** `surface_pressure_pa` is separate from `pressure_pa` at zero
-  altitude. The vertical pressure profile is used as supplied; the surface value
-  is not substituted or used to reconstruct it.
-- **Air molar mass:** this source field has a suspect altitude dependence and is
-  exposed with a quality flag, but is not used in the helpers. Number density
-  follows from supplied pressure and temperature without needing molar mass.
-
-With `species=None`, `profile` also exposes `h2so4m_c_mean`/`h2so4m_c_std` and
-`airmolmass` in their original units. Condensed sulfuric acid is in µg/m³ and
-cannot be treated as a gas VMR or extinction coefficient. An aerosol model would
-also need composition, particle size, density, and refractive index assumptions.
-
-Standard deviations describe climatological variability. No vertical or
-cross-species covariance is supplied, and the helpers do not turn the standard
-deviations into a retrieval covariance or uncertainty in the mean.
+To initialize only pressure and temperature from ERS, pass an empty gas
+mapping: `sk.climatology.ers.add_to_atmosphere(atmosphere, {}, **scenario)`.
+See the {ref}`climatology API <api_climatology>` for the full set of options.
 
 ## Attribution
 
 Errera, Quentin. *Extended reference scenarios (ERS) version 7*.
 [Zenodo, DOI: 10.5281/zenodo.10022129](https://doi.org/10.5281/zenodo.10022129).
-Distributed under CC BY 4.0. See the record's `CAIRT_ERS_v07_readme.pdf` for the
-underlying model and observational sources. Cached v7 files are pinned to
-published MD5 `71a5ed74d7056538cfd6a99d20ca3599`.
+Distributed under CC BY 4.0.
