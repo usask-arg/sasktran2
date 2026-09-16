@@ -1,10 +1,9 @@
-"""Fixed stratospheric sulfate reference scenarios derived from SAGE III-ISS.
+"""Add stratospheric sulfate aerosol using SAGE III-ISS reference scenarios.
 
-Twelve paired extinction/particle-size observations represent low, typical,
-elevated and extreme loading in three latitude bands. These are versioned
-reference cases, not a climatology for arbitrary dates. The 756 nm extinction
-is smoothed while conserving observed-core optical depth; optional modeled
-tails extend it down to the ground and above the reliable measurements.
+Use :func:`constituent` to add aerosol to an atmosphere, :func:`scenarios` to
+list the twelve available cases, and :func:`profile` to inspect or customize
+extinction and particle size. Choose low, typical, elevated or extreme loading
+for southern midlatitudes, the tropics or northern midlatitudes.
 """
 
 from __future__ import annotations
@@ -33,10 +32,9 @@ def load_dataset(
 ) -> xr.Dataset:
     """Load unsmoothed observations, formal errors, QA flags and provenance.
 
-    The small versioned catalogue is bundled with the package and copied to a
-    verified cache. ``path`` instead loads an explicit local NetCDF, bypassing
-    the pinned checksum but recording its actual SHA-256. ``path`` and
-    ``db_root`` are mutually exclusive. No source archive is needed.
+    The catalogue is included with SASKTRAN2; no source archive is needed.
+    Use ``path`` to load a custom NetCDF catalogue or ``db_root`` to choose
+    the cache directory. These two options are mutually exclusive.
 
     ``observed_valid`` marks each scenario's contiguous reliable interval on
     the shared ``altitude_m`` coordinate; padding outside it is missing data.
@@ -225,9 +223,9 @@ def profile(
         Strictly increasing finite altitudes in metres. By default, use 0-100
         km at 500 m spacing, including the ground and native observed levels.
     smoothing_fwhm_m : float
-        Gaussian FWHM in metres applied to native-grid log extinction, with
-        reflected boundaries. Rescale to preserve the native-core trapezoidal
-        optical depth. Zero disables smoothing. Radius is unchanged.
+        Smoothing width (Gaussian FWHM) in metres, default 1500 m. Smooths
+        log extinction while preserving optical depth over the observed
+        interval. Zero disables smoothing. Radius is unchanged.
     lower_extension : str
         ``"exponential_to_zero"`` (default) or ``"zero"`` outside the core.
     upper_extension : str
@@ -386,7 +384,13 @@ def constituent(
     optical_property: OpticalProperty | None = None,
     **profile_options,
 ) -> ExtinctionScatterer:
-    """Construct an extinction constituent with the paired median radius.
+    """Create a sulfate aerosol constituent to add to an atmosphere.
+
+    For example, add a typical tropical scenario on the atmosphere's grid::
+
+        atmosphere["aerosol"] = sk.climatology.stratospheric_aerosol.constituent(
+            "tropical_typical", altitudes_m=atmosphere.model_geometry.altitudes()
+        )
 
     ``profile_options`` accepts every keyword of :func:`profile`, including
     ``altitudes_m`` (pass the atmosphere grid for direct evaluation there).

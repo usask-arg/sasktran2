@@ -7,13 +7,48 @@ kernelspec:
 ---
 
 (_example_stratospheric_aerosol)=
-# Stratospheric aerosol reference scenarios
+# Add stratospheric aerosol
 
-`sk.climatology.stratospheric_aerosol` provides twelve fixed sulfate aerosol
-reference cases derived from the USask SAGE III–ISS particle-size retrieval.
-Each case keeps an observed extinction profile paired with its retrieved median
-radius. The small catalogue is bundled with SASKTRAN2; the original archive is
-not needed to select or prepare profiles.
+Use `sk.climatology.stratospheric_aerosol` to add a sulfate aerosol reference
+scenario to an existing atmosphere:
+
+```python
+import sasktran2 as sk
+
+aerosol = sk.climatology.stratospheric_aerosol
+atmosphere["stratospheric_aerosol"] = aerosol.constituent(
+    "tropical_typical",
+    altitudes_m=atmosphere.model_geometry.altitudes(),
+)
+```
+
+The helper supplies extinction, particle size, and sulfate scattering properties
+from a scenario derived from SAGE III–ISS observations. By default it smooths the
+extinction and extends the profile below and above the observations. Pass your
+atmosphere's altitude grid as shown to cover the full calculation domain.
+
+You can add this constituent alongside your chosen gases and Rayleigh scattering,
+including atmospheres using ERS gas scenarios. Add a separate aerosol constituent
+if you also want tropospheric aerosol.
+
+## Choose a scenario
+
+Combine a latitude band with a loading level, for example `nh_midlat_elevated`.
+There are twelve scenarios:
+
+| Latitude band | Name prefix | Available loading levels |
+| --- | --- | --- |
+| Southern midlatitudes, 55–35°S | `sh_midlat` | `low`, `typical`, `elevated`, `extreme` |
+| Tropics, 20°S–20°N | `tropical` | `low`, `typical`, `elevated`, `extreme` |
+| Northern midlatitudes, 35–55°N | `nh_midlat` | `low`, `typical`, `elevated`, `extreme` |
+
+Start with `typical`, then use the other levels to explore the effect of aerosol
+loading. The levels represent approximately the 10th, 50th, 90th, and 99th
+percentiles of 756 nm optical depth between 18 and 30 km within each latitude
+band. These are fixed reference cases, so they do not select conditions for a
+particular date or season.
+
+You can list the scenario names in Python:
 
 ```{code-cell}
 import numpy as np
@@ -21,44 +56,27 @@ import matplotlib.pyplot as plt
 import sasktran2 as sk
 
 aerosol = sk.climatology.stratospheric_aerosol
-aerosol.scenarios()[[
-    "event_id", "latitude_band", "loading", "loading_percentile",
-    "observed_bottom_m", "observed_top_m", "reference_upper_scale_height_m",
-]]
+aerosol.scenarios()[["latitude_band", "loading"]]
 ```
 
-The latitude bands are southern midlatitudes (55–35°S, `sh_midlat`), tropics
-(20°S–20°N, `tropical`), and northern midlatitudes (35–55°N, `nh_midlat`). Each
-has `low`, `typical`, `elevated`, and `extreme` cases, selected near the 10th,
-50th, 90th, and 99th percentiles of **756 nm optical depth over 18–30 km**.
-Percentiles use the screened June 2017–July 2026 archive within each band.
-They describe relative loading in that sample, not global severity classes.
-The two polar ERS latitude bands have insufficient SAGE sampling for this catalogue.
+## Compare the profiles
 
-Selection uses actual paired observations close to the median extinction/radius
-shape within each percentile neighbourhood. Source aerosol flags 2/3 are required
-in all four near-infrared channels, alongside positive extinction, bounded radius,
-formal relative errors below 50%, a tropopause margin, and spectral consistency.
-The actual contiguous reliable interval is retained, including valid measurements
-below 18 km or above 30 km. Internal gaps are not filled.
+Use `profile()` to inspect extinction or particle size before adding a scenario.
+The extinction is at 756 nm, in m⁻¹; altitude is in metres and median radius is in
+nanometres.
 
 ```{code-cell}
 fig, axes = plt.subplots(1, 3, figsize=(12, 5), sharey=True)
-bands = {"sh_midlat": "Southern midlatitudes", "tropical": "Tropics",
-         "nh_midlat": "Northern midlatitudes"}
+bands = {
+    "sh_midlat": "Southern midlatitudes",
+    "tropical": "Tropics",
+    "nh_midlat": "Northern midlatitudes",
+}
 for ax, (band, title) in zip(axes, bands.items()):
-    for tier in ["low", "typical", "elevated", "extreme"]:
-        p = aerosol.profile(f"{band}_{tier}")
-        core = p.region == 0
-        line, = ax.semilogx(
-            p.extinction_per_m.where(core), p.altitude_m / 1000, label=tier
-        )
+    for loading in ["low", "typical", "elevated", "extreme"]:
+        profile = aerosol.profile(f"{band}_{loading}")
         ax.semilogx(
-            p.extinction_per_m.where(
-                ~core | (p.altitude_m == p.observed_bottom_m)
-                | (p.altitude_m == p.observed_top_m)
-            ), p.altitude_m / 1000,
-            "--", color=line.get_color(), alpha=0.65,
+            profile.extinction_per_m, profile.altitude_m / 1000, label=loading
         )
     ax.set(title=title, xlabel="Extinction at 756 nm [m$^{-1}$]",
            xlim=(1e-11, 1e-4), ylim=(0, 55))
@@ -68,126 +86,79 @@ axes[-1].legend()
 fig.tight_layout()
 ```
 
-Solid curves show the observed interval after smoothing. Dashed curves show
-modelled extensions. The defaults are:
+The curves include the smooth extensions outside the measured altitude range.
 
-- Gaussian smoothing of **log extinction**, with 1.5 km full width at half maximum,
-  followed by rescaling to conserve optical depth over the observed interval.
-  Radius is already regularized in the source retrieval and is left unchanged.
-- A downward exponential taper with scale height 2 km, modified to reach exactly
-  zero at the ground. This represents the lower tail of this stratospheric
-  constituent; add a separate constituent if tropospheric aerosol is needed.
-- An upper exponential continuation with a fixed regular-condition extinction
-  scale height for each latitude band. All four tiers share that rate; their
-  extinction at the joining altitude remains their own. A different smoothing
-  width or loading tier does not refit the upper scale height.
-- Constant endpoint median radius in each extension, with lognormal width 1.6.
+## Adjust smoothing and altitude extensions
 
-The upper reference is calibrated from the 10th–60th loading percentiles,
-requiring background flag 2 throughout 26–30 km. Robust raw log-extinction slopes
-over 27–30 km are aggregated by month and then across months, with at least five
-profiles per contributing month. The scale heights are rounded to 100 m; the
-bundled build report records alternative fit intervals and smoothing sensitivity.
-Raw fitting avoids a reflected smoothing boundary altering the calibration.
+The defaults work without any additional arguments:
 
-| Latitude band | Default upper scale height | Raw-fit sensitivity across the three tested intervals |
-| --- | ---: | ---: |
-| Southern midlatitudes | 2.8 km | 2.83–3.00 km |
-| Tropics | 3.6 km | 3.55–4.42 km |
-| Northern midlatitudes | 2.8 km | 2.76–3.47 km |
+| Option | Default | Effect |
+| --- | --- | --- |
+| `smoothing_fwhm_m` | `1500.` | Smooths extinction over a 1.5 km width while preserving optical depth over the observed interval. Set to `0.` to disable smoothing. |
+| `lower_scale_height_m` | `2000.` | Controls the downward exponential taper, which reaches zero at the ground. A larger value gives a broader lower tail. |
+| `ground_altitude_m` | `0.` | Sets the altitude at and below which this aerosol is zero. |
+| `upper_scale_height_m` | `"reference"` | Uses 2.8 km for either midlatitude band and 3.6 km for the tropics. A larger value gives a more slowly decreasing upper tail. |
 
-The sensitivity ranges describe method dependence, not confidence intervals.
+All four loading levels in a latitude band share the same default upper scale
+height, based on regular aerosol conditions. Choosing `extreme` increases loading
+without introducing a different upper decay rate. Particle size is held constant
+outside the observed interval.
 
-Published comparisons include a mean 3.2 km extinction scale height in background
-SAGE profiles ([Brogniez and Lenoble, 1987](https://doi.org/10.1029/JD092iD03p03051)),
-3.75 km above 26 km during volcanic aerosol abatement
-([Elterman et al., 1969](https://doi.org/10.1364/AO.8.000893)), and a 4 km
-continuation above 30 km in a SCIAMACHY retrieval discussion paper
-([Ernst et al., 2012, §3.4](https://amt.copernicus.org/preprints/5/5993/2012/amtd-5-5993-2012-print.pdf)).
-These are comparisons, not universal bounds or an uncertainty interval. Neither
-these references nor our fitted rates validate constant sulfate size and scale
-height all the way to 100 km; the highest levels are a numerical continuation.
+Pass overrides when adding the aerosol:
 
-## Inspect and customize a profile
-
-```{code-cell}
-p = aerosol.profile("tropical_extreme")
-p[["core_aod", "lower_extension_aod", "upper_extension_aod_to_infinity"]]
-```
-
-Those three optical depths separate the observed-core contribution from the two
-modelled additions. They describe the continuous prepared profile independently
-of the output grid. The upper integral extends to infinity; the default grid ends
-at 100 km. Resampling to a coarse grid can change the numerical integral on that
-grid. Loading labels are fixed before adding extensions.
-
-```{code-cell}
-custom = aerosol.profile(
+```python
+atmosphere["stratospheric_aerosol"] = aerosol.constituent(
     "tropical_extreme",
-    altitudes_m=np.arange(0., 65001., 250.),
-    smoothing_fwhm_m=1000.,
+    altitudes_m=atmosphere.model_geometry.altitudes(),
+    smoothing_fwhm_m=2000.,
     lower_scale_height_m=1500.,
-    upper_scale_height_m=3200.,  # 4000 is another literature comparison
+    upper_scale_height_m=3200.,
 )
-
-unprocessed = aerosol.profile(
-    "tropical_extreme",
-    smoothing_fwhm_m=0.,
-    lower_extension="zero",
-    upper_extension="zero",
-)
-
-raw = aerosol.load_dataset()
 ```
 
-`load_dataset()` retains all nine measured extinction channels and their formal
-errors, median radius and its formal error, source flags, actual wavelengths,
-event identity and source-file checksums. `observed_valid` identifies the usable
-interval of each case on the shared native altitude coordinate. Padding outside
-that interval is missing data. Prepared profiles retain raw variables on
-`observed_altitude_m`; model outputs use `altitude_m` and a `region` flag (-1
-lower extension, 0 observed core, 1 upper extension). The original formal errors
-are not propagated through smoothing and are not uncertainties of the tails.
+The same options work with `profile()` so you can plot a customised profile first.
+To remove either extension, set `lower_extension="zero"` or
+`upper_extension="zero"`. Extinction is then zero outside that end of the observed
+interval, with an abrupt cutoff.
 
-For an offline or modified catalogue, all helpers accept `path="catalogue.nc"`.
-This bypasses the pinned checksum and records the actual file checksum. Its schema,
-units and selected profile are still validated. Alternatively use `db_root` to
-choose where the bundled catalogue is cached. The two options are mutually exclusive.
+## Calculate radiance with aerosol
 
-## Add to an atmosphere
+This complete example creates an atmosphere, adds a typical tropical aerosol
+scenario, and calculates a limb radiance at three wavelengths:
 
-The aerosol helper is independent of ERS gas, temperature and pressure selection:
-
-```python
+```{code-cell}
+config = sk.Config()
+model_geometry = sk.Geometry1D(
+    cos_sza=0.6,
+    solar_azimuth=0.,
+    earth_radius_m=6372000.,
+    altitude_grid_m=np.arange(0., 65001., 1000.),
+    interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+    geometry_type=sk.GeometryType.Spherical,
+)
+atmosphere = sk.Atmosphere(
+    model_geometry, config, wavelengths_nm=np.array([525., 756., 1021.])
+)
+sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+atmosphere["rayleigh"] = sk.constituent.Rayleigh()
 atmosphere["stratospheric_aerosol"] = aerosol.constituent(
-    "tropical_typical",
-    altitudes_m=atmosphere.model_geometry.altitudes(),
+    "tropical_typical", altitudes_m=model_geometry.altitudes()
 )
+
+viewing_geometry = sk.ViewingGeometry()
+viewing_geometry.add_ray(sk.TangentAltitudeSolar(
+    tangent_altitude_m=20000.,
+    relative_azimuth=0.,
+    observer_altitude_m=200000.,
+    cos_sza=0.6,
+))
+engine = sk.Engine(config, model_geometry, viewing_geometry)
+result = engine.calculate_radiance(atmosphere)
+result.radiance
 ```
 
-This returns the existing `ExtinctionScatterer`, normalized at 756 nm, with sulfate
-Mie scattering, the paired median radius, and fixed width 1.6. Passing the model
-altitudes evaluates the extensions directly on that grid. Otherwise the default
-prepared grid is used; the constituent is zero outside its grid. The default Mie
-property calculates optics on demand and may download the standard OSIRIS H2SO4
-refractive-index file on first use.
-
-For repeated or large spectral calculations, supply a compatible cached table:
-
-```python
-optics = sk.database.MieDatabase(
-    sk.mie.LogNormalDistribution().freeze(mode_width=1.6),
-    sk.mie.refractive.H2SO4(),
-    np.unique(np.r_[atmosphere.wavelengths_nm, 756.]),
-    median_radius=np.arange(10., 600., 10.),
-)
-atmosphere["stratospheric_aerosol"] = aerosol.constituent(
-    "tropical_typical", optics,
-    altitudes_m=atmosphere.model_geometry.altitudes(),
-)
-```
-
-The caller is responsible for the composition, fixed width, wavelength and radius
-coverage of custom optics. The fixed-width sulfate retrieval does not establish
-smoke absorption. These profiles also do not imply a season or local time matching
-an independently chosen gas scenario.
+The first use may download the sulfate refractive-index data. Scattering is
+calculated as needed; for repeated calculations across many wavelengths, you can
+pass a compatible {py:class}`~sasktran2.database.MieDatabase` as the
+`optical_property` argument to `constituent()`. Use sulfate with lognormal width
+1.6, and include 756 nm as well as your calculation wavelengths in the table.

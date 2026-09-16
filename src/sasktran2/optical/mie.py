@@ -128,9 +128,9 @@ class Mie(OpticalProperty):
                 )
 
                 quants.extinction[i, :] = ds["xs_total"].to_numpy()
-                quants.ssa[i, :] = (
-                    ds["xs_scattering"].to_numpy() / quants.extinction[i, :]
-                )
+                # Atmosphere assembly expects scattering cross sections here;
+                # normalization to single-scattering albedo happens later.
+                quants.ssa[i, :] = ds["xs_scattering"].to_numpy()
 
                 leg_coeff.a1[:, i, :] = ds["lm_a1"].to_numpy().T
                 if atmo.nstokes == 3:
@@ -142,9 +142,7 @@ class Mie(OpticalProperty):
 
             # Convert nm^2 to m^2
             quants.extinction[:] = ds["xs_total"].to_numpy()[np.newaxis, :]
-            quants.ssa[:] = (
-                ds["xs_scattering"].to_numpy()[np.newaxis, :] / quants.extinction
-            )
+            quants.ssa[:] = ds["xs_scattering"].to_numpy()[np.newaxis, :]
 
             leg_coeff.a1[:] = ds["lm_a1"].to_numpy().T[:, np.newaxis, :]
             if atmo.nstokes == 3:

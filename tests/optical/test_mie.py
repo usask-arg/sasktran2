@@ -8,7 +8,7 @@ from numpy.testing import assert_allclose
 
 @pytest.mark.parametrize("num_stokes", [1, 3])
 def test_variable_radius_mie_matches_fixed_radius(num_stokes):
-    """Varying sizes must retain spectral axes and dimensionless albedo."""
+    """Varying sizes must retain spectral axes and scattering cross sections."""
     z = np.array([0.0, 10000.0, 20000.0])
     radii = np.array([80.0, 150.0, 110.0])
     config = sk.Config()
@@ -35,7 +35,10 @@ def test_variable_radius_mie_matches_fixed_radius(num_stokes):
     variable = optical.atmosphere_quantities(atmo, median_radius=radii)
     assert variable.leg_coeff.shape == atmo.storage.leg_coeff.shape
     assert (variable.ssa > 0).all()
-    assert (variable.ssa < 1).all()
+    assert (variable.ssa < variable.extinction).all()
+    xs = optical.cross_sections(atmo.wavelengths_nm, z, median_radius=radii)
+    assert_allclose(variable.extinction, xs.extinction, rtol=1e-9)
+    assert_allclose(variable.ssa / variable.extinction, xs.ssa, rtol=1e-9)
     for i, radius in enumerate(radii):
         fixed = sk.optical.Mie(
             sk.mie.LogNormalDistribution().freeze(median_radius=radius, mode_width=1.6),

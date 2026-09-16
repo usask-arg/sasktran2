@@ -50,6 +50,21 @@ bias in noisy data. The aggregate must decrease and have at least 24 contributin
 months. Convert rate to scale height and round to 100 m. The report also records
 raw fits over 26–29 and 26–30 km and the former 1.5 km-smoothed 27–30 km fit.
 
+The resulting defaults are 2.8 km in each midlatitude band and 3.6 km in the
+tropics. Across the three raw fit intervals, scale heights range from
+2.83–3.00 km (south), 3.55–4.42 km (tropics), and 2.76–3.47 km (north).
+These ranges describe method dependence, not confidence intervals.
+
+Published comparisons include a mean 3.2 km extinction scale height in background
+SAGE profiles ([Brogniez and Lenoble, 1987](https://doi.org/10.1029/JD092iD03p03051)),
+3.75 km above 26 km during volcanic aerosol abatement
+([Elterman et al., 1969](https://doi.org/10.1364/AO.8.000893)), and a 4 km
+continuation above 30 km in a SCIAMACHY retrieval discussion paper
+([Ernst et al., 2012, §3.4](https://amt.copernicus.org/preprints/5/5993/2012/amtd-5-5993-2012-print.pdf)).
+These are comparisons, not universal bounds or an uncertainty interval. Neither
+these references nor the fitted rates validate constant sulfate size and scale
+height all the way to 100 km; the highest levels are a numerical continuation.
+
 Radius units are verified from the USask retrieval implementation because the
 PSD files omit them. Extinction is converted from km^-1 to m^-1; altitude from
 km to m; radius remains in nm. Do not use the copied source descriptions to infer
@@ -59,5 +74,4 @@ on a 0.5 km grid, and formal uncertainties omit model/systematic uncertainty.
 After a reviewed rebuild, update the pinned digest in
 `src/sasktran2/database/stratospheric_aerosol.py`, run the climatology and
 scatterer tests, execute the documentation example, and check representative
-spectra/radiances including the 3.2 km and 4 km upper-tail overrides. The example
-documents literature comparisons and the limitations of modeled extensions.
+spectra/radiances including the 3.2 km and 4 km upper-tail overrides.

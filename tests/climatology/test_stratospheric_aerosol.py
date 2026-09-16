@@ -288,6 +288,7 @@ class _RadiusDependentOptics(OpticalProperty):
         q = self.cross_sections(
             atmo.wavelengths_nm, atmo.model_geometry.altitudes(), **kwargs
         )
+        q.ssa *= q.extinction
         q.leg_coeff = np.zeros_like(atmo.storage.leg_coeff)
         q.leg_coeff[0] = 1
         return q
@@ -317,6 +318,7 @@ def test_constituent_normalization_in_atmosphere(source):
         rtol=1e-12,
         atol=1e-25,
     )
+    assert_allclose(atmosphere.storage.ssa[:, 0], p.extinction_per_m)
 
 
 def test_default_mie_constituent(source, monkeypatch):
@@ -339,6 +341,25 @@ def test_default_mie_constituent(source, monkeypatch):
     assert_allclose(
         c.number_density * xs.extinction[:, 1], c.extinction_per_m, rtol=1e-9
     )
+    config = sk.Config()
+    geometry = sk.Geometry1D(
+        0.6,
+        0.0,
+        6372000.0,
+        z,
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.Spherical,
+    )
+    atmosphere = sk.Atmosphere(
+        geometry, config, wavelengths_nm=np.array([525.0, 756.0, 1021.0])
+    )
+    atmosphere["aerosol"] = c
+    atmosphere.internal_object()
+    assert_allclose(
+        atmosphere.storage.total_extinction[:, 1], c.extinction_per_m, rtol=1e-9
+    )
+    # Nonabsorbing sulfate must retain unit albedo after atmosphere assembly.
+    assert_allclose(atmosphere.storage.ssa[c.extinction_per_m > 0], 1.0, atol=1e-12)
 
 
 def test_packaged_catalogue_and_cache(tmp_path):
