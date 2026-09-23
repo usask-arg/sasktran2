@@ -156,6 +156,27 @@ impl PyLineAbsorber {
         Ok(result)
     }
 
+    #[pyo3(signature = (atmo, **kwargs))]
+    fn atmosphere_quantities_and_derivatives<'py>(
+        &self,
+        atmo: Bound<'py, PyAny>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<(PyOpticalQuantities, Bound<'py, PyDict>)> {
+        let rust_atmo = AtmosphereStorage::new(&atmo)?;
+        let (quantities, derivatives) = self
+            .line_absorber
+            .optical_quantities_and_derivatives(&rust_atmo.inputs, &PyDictWrapper(kwargs))
+            .into_pyresult()?;
+        let result = PyDict::new(atmo.py());
+        for (key, quantity) in derivatives {
+            result.set_item(
+                key,
+                PyOpticalQuantities::new(quantity).into_bound_py_any(atmo.py())?,
+            )?;
+        }
+        Ok((PyOpticalQuantities::new(quantities), result))
+    }
+
     fn cross_section<'py>(
         &self,
         wavenumber_cminv: PyReadonlyArray1<'py, f64>,

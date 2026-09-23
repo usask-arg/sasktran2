@@ -643,6 +643,22 @@ impl OpticalProperty for LineAbsorber {
         if !inputs.calculate_temperature_derivative() {
             return Ok(());
         }
+        let (_, derivatives) = self.optical_quantities_and_derivatives(inputs, aux_inputs)?;
+        d_optical_quantities.extend(derivatives);
+        Ok(())
+    }
+
+    fn optical_quantities_and_derivatives(
+        &self,
+        inputs: &dyn crate::atmosphere::StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
+    ) -> Result<(
+        crate::optical::storage::OpticalQuantities,
+        HashMap<String, crate::optical::storage::OpticalQuantities>,
+    )> {
+        if !inputs.calculate_temperature_derivative() {
+            return Ok((self.optical_quantities(inputs, aux_inputs)?, HashMap::new()));
+        }
 
         let integrated = inputs.spectral_integration_mode()
             == crate::bindings::config::SpectralGridMode::AtmosphereIntegratedLineShape;
@@ -663,7 +679,7 @@ impl OpticalProperty for LineAbsorber {
         } else {
             Array1::zeros(temperature.len())
         };
-        let cross_section = self.cross_section_temperature_derivative(
+        let (cross_section, d_cross_section) = self.cross_section_with_temperature_derivative(
             grid.central_wavenumber_cminv(),
             temperature,
             pressure,
@@ -674,16 +690,22 @@ impl OpticalProperty for LineAbsorber {
             cross_section,
             ..Default::default()
         };
+        let mut derivative = crate::optical::storage::OpticalQuantities {
+            ssa: Array2::zeros(d_cross_section.raw_dim()),
+            cross_section: d_cross_section,
+            ..Default::default()
+        };
         if integrated {
-            quantities = crate::optical::reduction::reduce_optical(
-                &quantities,
-                &inputs
-                    .spectral_mapping_matrix()
-                    .ok_or_else(|| anyhow!("Spectral mapping not found in inputs"))?,
-            );
+            let mapping = inputs
+                .spectral_mapping_matrix()
+                .ok_or_else(|| anyhow!("Spectral mapping not found in inputs"))?;
+            quantities = crate::optical::reduction::reduce_optical(&quantities, &mapping);
+            derivative = crate::optical::reduction::reduce_optical(&derivative, &mapping);
         }
-        d_optical_quantities.insert("temperature_k".to_string(), quantities);
-        Ok(())
+        Ok((
+            quantities,
+            HashMap::from([("temperature_k".to_string(), derivative)]),
+        ))
     }
 
     fn is_scatterer(&self) -> bool {

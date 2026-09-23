@@ -44,6 +44,20 @@ pub trait OpticalProperty {
         d_optical_quantities: &mut HashMap<String, OpticalQuantities>,
     ) -> Result<()>;
 
+    /// Evaluate values and derivatives on the output spectral grid. Properties
+    /// can override this to share expensive intermediates in a single pass.
+    /// The default preserves the separate evaluation and reduction behavior.
+    fn optical_quantities_and_derivatives(
+        &self,
+        inputs: &dyn StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
+    ) -> Result<(OpticalQuantities, HashMap<String, OpticalQuantities>)> {
+        Ok((
+            self.optical_quantities(inputs, aux_inputs)?,
+            self.optical_derivatives(inputs, aux_inputs)?,
+        ))
+    }
+
     fn is_scatterer(&self) -> bool;
 }
 

@@ -57,8 +57,7 @@ fn split_with_derivative(
 }
 
 impl LineAbsorber {
-    /// Cross-section derivative at fixed total and self pressure. This separate
-    /// evaluation path leaves the value-only batch and SIMD kernels untouched.
+    /// Cross-section derivative at fixed total and self pressure.
     pub fn cross_section_temperature_derivative(
         &self,
         wavenumbers: ArrayView1<'_, f64>,
@@ -66,6 +65,20 @@ impl LineAbsorber {
         pressure: ArrayView1<'_, f64>,
         pself: ArrayView1<'_, f64>,
     ) -> Result<Array2<f64>> {
+        Ok(self
+            .cross_section_with_temperature_derivative(wavenumbers, temperature, pressure, pself)?
+            .1)
+    }
+
+    /// Cross sections and their temperature derivatives in one line-list pass.
+    /// The value-only batch and SIMD kernels remain independent.
+    pub fn cross_section_with_temperature_derivative(
+        &self,
+        wavenumbers: ArrayView1<'_, f64>,
+        temperature: ArrayView1<'_, f64>,
+        pressure: ArrayView1<'_, f64>,
+        pself: ArrayView1<'_, f64>,
+    ) -> Result<(Array2<f64>, Array2<f64>)> {
         anyhow::ensure!(
             pressure.len() == temperature.len() && pself.len() == temperature.len(),
             "Temperature, pressure, and self pressure must have the same length"
@@ -75,13 +88,24 @@ impl LineAbsorber {
             "Temperature must be positive and finite"
         );
         let mut derivatives = Array2::zeros((temperature.len(), wavenumbers.len()));
+        let mut values = Array2::zeros(derivatives.raw_dim());
         if wavenumbers.is_empty() || temperature.is_empty() {
-            return Ok(derivatives);
+            return Ok((values, derivatives));
         }
 
-        let permutation = argsort_f64(wavenumbers.as_slice().unwrap());
-        let sorted: Vec<_> = permutation.iter().map(|&i| wavenumbers[i]).collect();
-        let grid = Grid1DView::new(&sorted);
+        let wavenumbers = wavenumbers.as_slice().unwrap();
+        let permutation = (!wavenumbers.is_sorted()).then(|| argsort_f64(wavenumbers));
+        let sorted_storage;
+        let sorted = if let Some(permutation) = &permutation {
+            sorted_storage = permutation
+                .iter()
+                .map(|&i| wavenumbers[i])
+                .collect::<Vec<_>>();
+            sorted_storage.as_slice()
+        } else {
+            wavenumbers
+        };
+        let grid = Grid1DView::new(sorted);
         let lines = self.db.between_slice(
             sorted[0] - self.line_contribution_width,
             sorted[sorted.len() - 1] + self.line_contribution_width,
@@ -136,7 +160,6 @@ impl LineAbsorber {
                 Some((line, start, end, coupling))
             })
             .collect();
-        let mut values = Array2::zeros(derivatives.raw_dim());
         crate::threading::thread_pool()?.install(|| {
             Zip::indexed(values.rows_mut())
                 .and(derivatives.rows_mut())
@@ -198,19 +221,28 @@ impl LineAbsorber {
         });
         // The forward calculation clips negative cross sections after summing lines.
         Zip::from(&mut derivatives)
-            .and(&values)
-            .for_each(|derivative, &value| {
-                if value <= 0.0 {
+            .and(&mut values)
+            .for_each(|derivative, value| {
+                if *value <= 0.0 {
                     *derivative = 0.0;
+                    *value = 0.0;
                 }
             });
-        let mut output = Array2::zeros(derivatives.raw_dim());
-        for (sorted_idx, &original_idx) in permutation.iter().enumerate() {
-            output
-                .column_mut(original_idx)
-                .assign(&derivatives.column(sorted_idx));
+        if let Some(permutation) = permutation {
+            let mut output = Array2::zeros(values.raw_dim());
+            let mut d_output = Array2::zeros(derivatives.raw_dim());
+            for (sorted_idx, &original_idx) in permutation.iter().enumerate() {
+                output
+                    .column_mut(original_idx)
+                    .assign(&values.column(sorted_idx));
+                d_output
+                    .column_mut(original_idx)
+                    .assign(&derivatives.column(sorted_idx));
+            }
+            Ok((output, d_output))
+        } else {
+            Ok((values, derivatives))
         }
-        Ok(output)
     }
 }
 
@@ -264,18 +296,19 @@ mod tests {
         .iter()
         .map(|x| 7.0 + 0.2 * x)
         .collect();
-        for shape in [LineShape::Gaussian, LineShape::Lorentzian, LineShape::Voigt] {
+        for (shape, imaginary_amplitude) in [
+            (LineShape::Gaussian, 0.0),
+            (LineShape::Lorentzian, 0.0),
+            (LineShape::Voigt, 0.0),
+            (LineShape::Voigt, 0.03),
+        ] {
             for y in [0.0001, 0.3, 100.0] {
                 let base = AdjustedLineParameters {
                     line_center: 7.0,
                     doppler_width: 0.2,
                     y,
                     line_intensity_re: 2.0,
-                    line_intensity_im: if matches!(shape, LineShape::Voigt) {
-                        0.03
-                    } else {
-                        0.0
-                    },
+                    line_intensity_im: imaginary_amplitude,
                 };
                 for parameter in 0..5 {
                     let mut direction = LineShapeDirection::default();
@@ -447,8 +480,8 @@ mod tests {
                 0,
                 "forward-only spectra must not evaluate partition derivatives"
             );
-            let derivative = absorber
-                .cross_section_temperature_derivative(
+            let (combined_xs, derivative) = absorber
+                .cross_section_with_temperature_derivative(
                     wv.view(),
                     temp.view(),
                     pressure.view(),
@@ -470,11 +503,14 @@ mod tests {
             let xs = absorber
                 .cross_section(wv.view(), temp.view(), pressure.view(), pself.view())
                 .unwrap();
+            for (actual, expected) in combined_xs.iter().zip(xs.iter()) {
+                assert!((actual - expected).abs() < expected.abs() * 1e-10 + 1e-35);
+            }
             let unsorted_xs = absorber
                 .cross_section(unsorted.view(), temp.view(), pressure.view(), pself.view())
                 .unwrap();
-            let unsorted_d = absorber
-                .cross_section_temperature_derivative(
+            let (unsorted_combined_xs, unsorted_d) = absorber
+                .cross_section_with_temperature_derivative(
                     unsorted.view(),
                     temp.view(),
                     pressure.view(),
@@ -485,6 +521,10 @@ mod tests {
                 for i in 0..temp.len() {
                     assert!(
                         (unsorted_xs[[i, j]] - xs[[i, idx]]).abs()
+                            < xs[[i, idx]].abs() * 1e-10 + 1e-35
+                    );
+                    assert!(
+                        (unsorted_combined_xs[[i, j]] - xs[[i, idx]]).abs()
                             < xs[[i, idx]].abs() * 1e-10 + 1e-35
                     );
                     assert!(
@@ -566,10 +606,11 @@ mod tests {
         let xs = absorber
             .cross_section(wv.view(), t.view(), p.view(), pself.view())
             .unwrap();
-        let derivative = absorber
-            .cross_section_temperature_derivative(wv.view(), t.view(), p.view(), pself.view())
+        let (combined_xs, derivative) = absorber
+            .cross_section_with_temperature_derivative(wv.view(), t.view(), p.view(), pself.view())
             .unwrap();
         assert!(xs.iter().all(|&v| v == 0.0));
+        assert!(combined_xs.iter().all(|&v| v == 0.0));
         assert!(derivative.iter().all(|&v| v == 0.0));
     }
 }

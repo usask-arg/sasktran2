@@ -103,6 +103,42 @@ def test_cross_section_temperature_derivative(tmp_path, spectral_mode):
 
 
 @pytest.mark.parametrize(
+    "spectral_mode",
+    [
+        sk.SpectralGridMode.Monochromatic,
+        sk.SpectralGridMode.AtmosphereIntegratedLineShape,
+    ],
+)
+@pytest.mark.parametrize("temperature_derivative", [False, True])
+def test_combined_optical_evaluation(tmp_path, spectral_mode, temperature_derivative):
+    absorber, sampled = _absorber(tmp_path)
+    atmo, _ = _scenario(
+        spectral_mode=spectral_mode, temperature_derivative=temperature_derivative
+    )
+    vmr = np.full_like(atmo.temperature_k, 0.21)
+    quantities, derivatives = absorber.atmosphere_quantities_and_derivatives(
+        atmo, vmr=vmr
+    )
+    # One reference Q plus one Q(T) per level, and two extra partition samples
+    # per level only when derivatives are enabled. No repeated spectrum pass.
+    assert len(sampled) == 1 + len(vmr) * (3 if temperature_derivative else 1)
+    expected = absorber.atmosphere_quantities(atmo, vmr=vmr)
+    np.testing.assert_allclose(
+        quantities.cross_section, expected.cross_section, rtol=1e-10, atol=1e-35
+    )
+    np.testing.assert_array_equal(quantities.ssa, expected.ssa)
+    if temperature_derivative:
+        separate = absorber.optical_derivatives(atmo, vmr=vmr)
+        np.testing.assert_array_equal(
+            derivatives["temperature_k"].cross_section,
+            separate["temperature_k"].cross_section,
+        )
+    else:
+        assert derivatives == {}
+        np.testing.assert_array_equal(quantities.cross_section, expected.cross_section)
+
+
+@pytest.mark.parametrize(
     ("calculate_derivatives", "temperature_derivative"), [(False, True), (True, False)]
 )
 def test_disabled_temperature_derivatives_do_not_sample_partition_derivatives(
@@ -128,7 +164,7 @@ def test_disabled_temperature_derivatives_do_not_sample_partition_derivatives(
 
 
 def test_temperature_jacobian_includes_self_absorption_by_default(tmp_path):
-    absorber, _ = _absorber(tmp_path)
+    absorber, sampled = _absorber(tmp_path)
     atmo, engine = _scenario()
     atmo["o2"] = sk.constituent.VMRAltitudeAbsorber(
         absorber,
@@ -137,6 +173,9 @@ def test_temperature_jacobian_includes_self_absorption_by_default(tmp_path):
     )
     atmo["emission"] = _FixedEmission()
     result = engine.calculate_radiance(atmo)
+    # One forward evaluation to assemble extinction, then one combined
+    # evaluation for all derivative mappings, without a third line-list pass.
+    assert len(sampled) == 2 + 4 * len(atmo.temperature_k)
     assert "wf_o2_temperature_k_xs" in atmo.storage.derivative_mapping_names()
     analytic = result.wf_temperature_k
     step = 0.001

@@ -151,7 +151,17 @@ where
         .ok_or_else(|| anyhow!("Number density for N not found in air_numberdensity_dict"))?;
     let mut aux_inputs: HashMap<String, Array1<f64>> = HashMap::new();
     aux_inputs.insert("vmr".to_string(), vmr.clone());
-    let optical_quants = optical_property.optical_quantities(inputs, &aux_inputs)?;
+    let (optical_quants, optical_derivatives) = if inputs.calculate_temperature_derivative()
+        || inputs.calculate_pressure_derivative()
+        || inputs.calculate_specific_humidity_derivative()
+    {
+        optical_property.optical_quantities_and_derivatives(inputs, &aux_inputs)?
+    } else {
+        (
+            optical_property.optical_quantities(inputs, &aux_inputs)?,
+            HashMap::new(),
+        )
+    };
     let cross_section = &optical_quants.cross_section;
 
     let wf_name = format!("wf_{constituent_name}_vmr");
@@ -236,10 +246,7 @@ where
     }
 
     if !state_derivatives.is_empty() {
-        for (key, val) in optical_property
-            .optical_derivatives(inputs, &aux_inputs)?
-            .iter()
-        {
+        for (key, val) in &optical_derivatives {
             let mapping_name = format!("wf_{constituent_name}_{key}_xs");
             let mut mapping = deriv_generator.get_derivative_mapping(&mapping_name);
             {

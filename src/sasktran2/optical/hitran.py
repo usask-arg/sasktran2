@@ -49,6 +49,16 @@ class LineAbsorber(OpticalProperty):
         """
         return self._internal.optical_derivatives(atmo, **kwargs)
 
+    def atmosphere_quantities_and_derivatives(self, atmo, **kwargs):
+        """Return optical quantities and enabled derivatives in one line-list pass.
+
+        The result is a ``(quantities, derivatives)`` tuple, with derivatives
+        keyed by ``"temperature_k"``. If temperature derivatives are disabled,
+        this uses the value-only kernels and returns an empty derivative dict.
+        Absorber constituents use this combined evaluation automatically.
+        """
+        return self._internal.atmosphere_quantities_and_derivatives(atmo, **kwargs)
+
     def _into_rust_object(self):
         return self._internal
 

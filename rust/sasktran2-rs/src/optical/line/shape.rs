@@ -25,73 +25,185 @@ pub enum LineShape {
     Voigt,
 }
 
+#[derive(Clone, Copy, Default)]
+struct PolePair {
+    numerator: [f64; 4],
+    d_numerator: [f64; 4],
+    denominator: [f64; 2],
+    d_denominator: [f64; 4],
+}
+
+/// Coefficients that are constant across a line's spectral points. Projecting
+/// the complex amplitude onto each pole first avoids forming four separate
+/// complex value/derivative sums in the hot loop, including for line mixing.
+struct PreparedShape {
+    center: f64,
+    inverse_width: f64,
+    dx_offset: f64,
+    dx_slope: f64,
+    scale: f64,
+    d_scale: f64,
+    gamma_squared: f64,
+    d_gamma_squared: f64,
+    d_center: f64,
+    poles: [PolePair; 4],
+}
+
+const GAUSSIAN: u8 = 0;
+const LORENTZIAN: u8 = 1;
+const VOIGT: u8 = 2;
+const VOIGT_ASYMMETRIC: u8 = 3;
+
+impl PreparedShape {
+    fn new<const SHAPE: u8>(line: &AdjustedLineParameters, direction: &LineShapeDirection) -> Self {
+        let mut shape = Self {
+            center: line.line_center,
+            inverse_width: 1.0 / line.doppler_width,
+            dx_offset: -direction.line_center / line.doppler_width,
+            dx_slope: -direction.doppler_width / line.doppler_width,
+            scale: line.line_intensity_re,
+            d_scale: direction.line_intensity_re,
+            gamma_squared: 0.0,
+            d_gamma_squared: 0.0,
+            d_center: direction.line_center,
+            poles: [PolePair::default(); 4],
+        };
+        if SHAPE == LORENTZIAN {
+            let width = line.doppler_width;
+            let gamma = line.y * width;
+            shape.gamma_squared = gamma * gamma;
+            shape.d_gamma_squared =
+                2.0 * gamma * (direction.y * width + line.y * direction.doppler_width);
+            shape.scale = line.line_intensity_re * line.y / SQRT_PI * width * width;
+            shape.d_scale = ((direction.line_intensity_re * line.y
+                + line.line_intensity_re * direction.y)
+                * width
+                * width
+                + 2.0 * line.line_intensity_re * line.y * width * direction.doppler_width)
+                / SQRT_PI;
+        } else if SHAPE >= VOIGT {
+            let width = line.doppler_width;
+            let a = line.line_intensity_re * width / SQRT_PI;
+            let b = line.line_intensity_im * width / SQRT_PI;
+            let da = (direction.line_intensity_re * width
+                + line.line_intensity_re * direction.doppler_width)
+                / SQRT_PI;
+            let db = (direction.line_intensity_im * width
+                + line.line_intensity_im * direction.doppler_width)
+                / SQRT_PI;
+            for (j, pole) in shape.poles.iter_mut().enumerate() {
+                // Work in wavenumber units so changing the Doppler width moves
+                // a pole, rather than rescaling every spectral coordinate.
+                let c = width * CJ[j].re;
+                let dc = direction.doppler_width * CJ[j].re;
+                let y = width * (line.y - CJ[j].im);
+                let dy = direction.doppler_width * (line.y - CJ[j].im) + width * direction.y;
+                let sum = c * c + y * y;
+                let difference = y * y - c * c;
+                let d_sum = 2.0 * (c * dc + y * dy);
+                let d_difference = 2.0 * (y * dy - c * dc);
+                let r = BJ[j].re;
+                let m = BJ[j].im;
+                let even = m * c - r * y;
+                let offset = m * c + r * y;
+                let odd = r * difference + 2.0 * m * y * c;
+                let numerator = [
+                    -2.0 * a * offset * sum,
+                    2.0 * b * odd,
+                    2.0 * a * even,
+                    2.0 * b * r,
+                ];
+                let d_numerator = [
+                    -2.0 * ((da * offset + a * (m * dc + r * dy)) * sum + a * offset * d_sum)
+                        - direction.line_center * numerator[1],
+                    2.0 * (db * odd + b * (r * d_difference + 2.0 * m * (dy * c + y * dc)))
+                        - 2.0 * direction.line_center * numerator[2],
+                    2.0 * (da * even + a * (m * dc - r * dy))
+                        - 3.0 * direction.line_center * numerator[3],
+                    2.0 * db * r,
+                ];
+                // Poles j and j+4 have opposite real parts and equal imaginary
+                // parts. Their sum is P3(x) / (x^4 + q2*x^2 + q0), halving
+                // divisions without changing the rational approximation.
+                *pole = PolePair {
+                    numerator,
+                    d_numerator,
+                    denominator: [sum * sum, 2.0 * difference],
+                    d_denominator: [
+                        2.0 * sum * d_sum,
+                        -4.0 * difference * direction.line_center,
+                        2.0 * d_difference,
+                        -4.0 * direction.line_center,
+                    ],
+                };
+            }
+        }
+        shape
+    }
+}
+
 #[inline(always)]
-fn evaluate<F>(
+fn evaluate<const SHAPE: u8, F>(
     wavenumber: F,
-    line: &AdjustedLineParameters,
-    direction: &LineShapeDirection,
-    shape: LineShape,
+    shape: &PreparedShape,
     scalar: impl Fn(f64) -> F,
     exp: impl Fn(F) -> F,
 ) -> (F, F)
 where
     F: Copy + Add<Output = F> + Sub<Output = F> + Mul<Output = F> + Div<Output = F>,
 {
-    let x = (wavenumber - scalar(line.line_center)) * scalar(1.0 / line.doppler_width);
-    let dx = scalar(-direction.line_center / line.doppler_width)
-        - x * scalar(direction.doppler_width / line.doppler_width);
-    let (real, imag, d_real, d_imag) = match shape {
-        LineShape::Gaussian => {
+    let delta = wavenumber - scalar(shape.center);
+    if SHAPE == LORENTZIAN {
+        let inverse = scalar(1.0) / (delta * delta + scalar(shape.gamma_squared));
+        let value = scalar(shape.scale) * inverse;
+        let derivative = (scalar(shape.d_scale)
+            - value * (scalar(shape.d_gamma_squared) - scalar(2.0 * shape.d_center) * delta))
+            * inverse;
+        (value, derivative)
+    } else {
+        let x = delta * scalar(shape.inverse_width);
+        if SHAPE == GAUSSIAN {
+            let dx = scalar(shape.dx_offset) + x * scalar(shape.dx_slope);
             let value = exp(scalar(0.0) - x * x);
             (
-                value,
-                scalar(0.0),
-                scalar(-2.0) * x * value * dx,
-                scalar(0.0),
+                scalar(shape.scale) * value,
+                (scalar(shape.d_scale) - scalar(2.0 * shape.scale) * x * dx) * value,
             )
-        }
-        LineShape::Lorentzian => {
-            let denominator = x * x + scalar(line.y * line.y);
-            let inverse = scalar(1.0) / denominator;
-            let value = scalar(line.y / SQRT_PI) * inverse;
-            let derivative = scalar(direction.y / SQRT_PI) * inverse
-                - value * inverse * (scalar(2.0) * x * dx + scalar(2.0 * line.y * direction.y));
-            (value, scalar(0.0), derivative, scalar(0.0))
-        }
-        LineShape::Voigt => {
-            let mut real = scalar(0.0);
-            let mut imag = scalar(0.0);
-            let mut derivative_real = scalar(0.0);
-            let mut derivative_imag = scalar(0.0);
-            for j in 0..8 {
-                let delta_x = x - scalar(CJ[j].re);
-                let delta_y = line.y - CJ[j].im;
-                let inverse = scalar(1.0) / (delta_x * delta_x + scalar(delta_y * delta_y));
-                // Contribution to -i b_j / (sqrt(pi) (z - c_j)).
-                let re = (scalar(BJ[j].im) * delta_x - scalar(BJ[j].re * delta_y)) * inverse;
-                let im = (scalar(-BJ[j].re) * delta_x - scalar(BJ[j].im * delta_y)) * inverse;
-                real = real + re;
-                imag = imag + im;
-                // Differentiate the rational approximation itself, rather than
-                // applying the exact Faddeeva identity to an approximate value.
-                derivative_real = derivative_real - (re * delta_x + im * scalar(delta_y)) * inverse;
-                derivative_imag = derivative_imag - (im * delta_x - re * scalar(delta_y)) * inverse;
+        } else {
+            let mut value = scalar(0.0);
+            let mut derivative = scalar(0.0);
+            let squared = delta * delta;
+            let fourth = squared * squared;
+            for pole in &shape.poles {
+                let inverse = scalar(1.0)
+                    / (fourth
+                        + scalar(pole.denominator[1]) * squared
+                        + scalar(pole.denominator[0]));
+                let mut numerator = scalar(pole.numerator[2]) * squared + scalar(pole.numerator[0]);
+                let mut d_numerator =
+                    scalar(pole.d_numerator[2]) * squared + scalar(pole.d_numerator[0]);
+                let mut d_denominator =
+                    scalar(pole.d_denominator[2]) * squared + scalar(pole.d_denominator[0]);
+                if SHAPE == VOIGT_ASYMMETRIC {
+                    numerator = numerator
+                        + delta * (scalar(pole.numerator[3]) * squared + scalar(pole.numerator[1]));
+                    d_numerator = d_numerator
+                        + delta
+                            * (scalar(pole.d_numerator[3]) * squared + scalar(pole.d_numerator[1]));
+                    d_denominator = d_denominator
+                        + delta
+                            * (scalar(pole.d_denominator[3]) * squared
+                                + scalar(pole.d_denominator[1]));
+                }
+                let term = numerator * inverse;
+                value = value + term;
+                // Differentiate the rational approximation itself, preserving
+                // consistency with the forward kernel even in the line wings.
+                derivative = derivative + (d_numerator - term * d_denominator) * inverse;
             }
-            let norm = scalar(1.0 / SQRT_PI);
-            (
-                real * norm,
-                imag * norm,
-                (derivative_real * dx - derivative_imag * scalar(direction.y)) * norm,
-                (derivative_imag * dx + derivative_real * scalar(direction.y)) * norm,
-            )
+            (value, derivative)
         }
-    };
-    (
-        scalar(line.line_intensity_re) * real - scalar(line.line_intensity_im) * imag,
-        scalar(direction.line_intensity_re) * real - scalar(direction.line_intensity_im) * imag
-            + scalar(line.line_intensity_re) * d_real
-            - scalar(line.line_intensity_im) * d_imag,
-    )
+    }
 }
 
 /// Accumulate a line and a directional derivative, including complex amplitudes
@@ -106,6 +218,38 @@ pub fn assign_with_derivative(
 ) {
     assert_eq!(wavenumbers.len(), values.len());
     assert_eq!(wavenumbers.len(), derivatives.len());
+    // Select the kernel once per region, outside both scalar and SIMD loops.
+    match shape {
+        LineShape::Gaussian => {
+            assign::<GAUSSIAN>(wavenumbers, line, direction, values, derivatives)
+        }
+        LineShape::Lorentzian => {
+            assign::<LORENTZIAN>(wavenumbers, line, direction, values, derivatives)
+        }
+        LineShape::Voigt => {
+            if line.line_intensity_im != 0.0
+                || direction.line_intensity_im != 0.0
+                || direction.line_center != 0.0
+            {
+                assign::<VOIGT_ASYMMETRIC>(wavenumbers, line, direction, values, derivatives);
+            } else {
+                assign::<VOIGT>(wavenumbers, line, direction, values, derivatives);
+            }
+        }
+    }
+}
+
+fn assign<const SHAPE: u8>(
+    wavenumbers: &[f64],
+    line: &AdjustedLineParameters,
+    direction: &LineShapeDirection,
+    values: &mut [f64],
+    derivatives: &mut [f64],
+) {
+    if wavenumbers.is_empty() {
+        return;
+    }
+    let shape = PreparedShape::new::<SHAPE>(line, direction);
     #[cfg(not(feature = "simd"))]
     let start = 0;
     #[cfg(feature = "simd")]
@@ -118,14 +262,8 @@ pub fn assign_with_derivative(
             .zip(values.chunks_exact_mut(lanes))
             .zip(derivatives.chunks_exact_mut(lanes))
         {
-            let (v, d) = evaluate(
-                f64s::from_slice(wv),
-                line,
-                direction,
-                shape,
-                f64s::splat,
-                |x| x.exp(),
-            );
+            let (v, d) =
+                evaluate::<SHAPE, _>(f64s::from_slice(wv), &shape, f64s::splat, |x| x.exp());
             (f64s::from_slice(value) + v).copy_to_slice(value);
             (f64s::from_slice(derivative) + d).copy_to_slice(derivative);
         }
@@ -136,7 +274,7 @@ pub fn assign_with_derivative(
         .zip(&mut values[start..])
         .zip(&mut derivatives[start..])
     {
-        let (v, d) = evaluate(wv, line, direction, shape, |x| x, f64::exp);
+        let (v, d) = evaluate::<SHAPE, _>(wv, &shape, |x| x, f64::exp);
         *value += v;
         *derivative += d;
     }
