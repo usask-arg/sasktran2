@@ -9,6 +9,7 @@
 
 aerosol/basic
 aerosol/cloud
+aerosol/stratospheric
 ers
 ```
 

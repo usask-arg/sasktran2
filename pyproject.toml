@@ -97,6 +97,8 @@ python-source = "src"
 python-packages = ["sasktran2"]
 module-name = "sasktran2._core_rust"
 include = [
+    { path = "src/sasktran2/_data/stratospheric_aerosol/*", format = ["sdist", "wheel"] },
+    { path = "tools/databases/stratospheric_aerosol/*", format = "sdist" },
     { path = "rust-toolchain.toml", format = "sdist" },
     { path = "Cargo.lock", format = "sdist" },
 ]

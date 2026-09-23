@@ -18,6 +18,18 @@ See the :ref:`ERS example <_example_ers>` for profile comparisons and atmosphere
     sasktran2.climatology.ers
 
 
+Stratospheric Aerosol Reference Scenarios
+----------------------------------------
+
+Paired extinction and particle-size reference cases derived from SAGE III-ISS.
+See the :ref:`stratospheric aerosol example <_example_stratospheric_aerosol>`.
+
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.climatology.stratospheric_aerosol
+
+
 MIPAS Reference Atmospheres
 ---------------------------
 .. autosummary::
