@@ -7,8 +7,9 @@ use std::str::FromStr;
 
 use sasktran2_rs::constituent::traits::Constituent;
 use sasktran2_rs::constituent::types::band_volume_emission_rate::{
-    BandVolumeEmissionRate, oxygen_emission_band, validate_photon_ver,
+    BandVolumeEmissionRate, validate_photon_ver,
 };
+use sasktran2_rs::emission::o2::{O2BandEmissionModel, oxygen_emission_band};
 use sasktran2_rs::optical::line::hitran_loader::{hitran_molecule_file, read_hitran_line_file};
 use sasktran2_rs::photchem::emission::AEmissionLineWeightModel;
 
@@ -16,7 +17,7 @@ use crate::constituent::atmo_storage::AtmosphereStorage;
 
 #[pyclass]
 pub struct PyO2BandEmissionRate {
-    pub inner: BandVolumeEmissionRate,
+    pub inner: BandVolumeEmissionRate<O2BandEmissionModel>,
 }
 
 #[pymethods]
@@ -40,11 +41,12 @@ impl PyO2BandEmissionRate {
         let db = read_hitran_line_file(path).map_err(|e| PyValueError::new_err(e.to_string()))?;
         let band =
             oxygen_emission_band(&db, band).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let model = O2BandEmissionModel::new(band, line_weight_model)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let mut inner = BandVolumeEmissionRate::new(
             altitudes_m.as_array().to_owned(),
             photon_ver.as_array().to_owned(),
-            band,
-            line_weight_model,
+            model,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
@@ -93,12 +95,12 @@ impl PyO2BandEmissionRate {
 
     #[getter]
     fn get_wavelengths_nm<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
-        self.inner.band.wavelengths_nm().into_pyarray(py)
+        self.inner.wavelengths_nm().to_owned().into_pyarray(py)
     }
 
     #[getter]
     fn get_band(&self) -> &str {
-        &self.inner.band.name
+        self.inner.band_name()
     }
 
     fn line_weights<'py>(
@@ -107,7 +109,8 @@ impl PyO2BandEmissionRate {
         temperature_k: PyReadonlyArray1<f64>,
     ) -> PyResult<Bound<'py, PyArray2<f64>>> {
         self.inner
-            .line_weights(temperature_k.as_array())
+            .model
+            .line_weights_at_temperature(temperature_k.as_array())
             .map(|weights| weights.into_pyarray(py))
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }

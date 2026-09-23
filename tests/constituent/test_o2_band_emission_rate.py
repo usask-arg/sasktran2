@@ -43,11 +43,16 @@ def scenario(
     calculate_derivatives=True,
     coordinate="wavenumber",
     spectral_mode=sk.SpectralGridMode.Monochromatic,
+    single_scatter=False,
     grid=None,
 ):
     config = sk.Config()
     config.emission_source = sk.EmissionSource.VolumeEmissionRate
-    config.single_scatter_source = sk.SingleScatterSource.NoSource
+    config.single_scatter_source = (
+        sk.SingleScatterSource.Exact
+        if single_scatter
+        else sk.SingleScatterSource.NoSource
+    )
     config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
     config.spectral_grid_mode = spectral_mode
     altitudes = np.array([0.0, 20_000.0, 40_000.0, 60_000.0])
@@ -92,6 +97,20 @@ def constituent(db, band="0-0", model="einstein_a_branching", **kwargs):
         db=db,
         line_weight_model=model,
         **kwargs,
+    )
+
+
+def add_self_absorption(atmo, db):
+    absorber = LineAbsorber.__new__(LineAbsorber)
+    absorber._internal = PyLineAbsorber(
+        LineDatabaseType.HITRAN,
+        "O2",
+        db.path("O2").as_posix(),
+        py_tips=lambda _m, _i, t: t**1.5,
+        py_molmass=lambda _m, _i: 31.9988,
+    )
+    atmo["o2"] = sk.constituent.VMRAltitudeAbsorber(
+        absorber, atmo.model_geometry.altitudes(), np.full(4, 0.21)
     )
 
 
@@ -158,17 +177,7 @@ def test_radiance_ver_and_temperature_jacobians(line_db, coordinate, self_absorp
     for name, emission in bands.items():
         atmo[name] = emission
     if self_absorption:
-        absorber = LineAbsorber.__new__(LineAbsorber)
-        absorber._internal = PyLineAbsorber(
-            LineDatabaseType.HITRAN,
-            "O2",
-            line_db.path("O2").as_posix(),
-            py_tips=lambda _m, _i, t: t**1.5,
-            py_molmass=lambda _m, _i: 31.9988,
-        )
-        atmo["o2"] = sk.constituent.VMRAltitudeAbsorber(
-            absorber, atmo.model_geometry.altitudes(), np.full(4, 0.21)
-        )
+        add_self_absorption(atmo, line_db)
     result = engine.calculate_radiance(atmo)
     assert np.max(result.radiance.to_numpy()) > 0.0
     for name, emission in bands.items():
@@ -200,6 +209,65 @@ def test_radiance_ver_and_temperature_jacobians(line_db, coordinate, self_absorp
         )
 
 
+@pytest.mark.parametrize("model", ["einstein_a_branching", "hitran_line_strength"])
+def test_joint_ver_temperature_linearization_products(line_db, model):
+    atmo, engine = scenario(single_scatter=True)
+    bands = {
+        "b00": constituent(line_db, model=model),
+        "b11": sk.constituent.O2BandEmissionRate(
+            [0.0, 60_000.0],
+            [0.5, 1.5],
+            band="1-1",
+            line_weight_model=model,
+            db=line_db,
+        ),
+    }
+    for name, emission in bands.items():
+        atmo[name] = emission
+    add_self_absorption(atmo, line_db)
+    atmo["rayleigh"] = sk.constituent.Rayleigh()
+
+    # Exercise independent VER grids and the shared atmospheric T parameter,
+    # including absorption and solar scattering in the same linearization.
+    directions = {
+        "b00_photon_ver": [0.0, 0.3, -0.1],
+        "b11_photon_ver": [0.2, -0.3],
+        "temperature_k": [-0.8, 0.4, 0.3, -0.5],
+    }
+    linearization = engine.linearize(atmo)
+    tangent = linearization.tangent_template[list(directions)]
+    for name, values in directions.items():
+        tangent[name].data[:] = values
+    analytic = linearization.jvp(tangent)
+    cotangent = xr.DataArray(
+        np.linspace(-0.7, 1.0, analytic.size).reshape(analytic.shape),
+        dims=analytic.dims,
+        coords=analytic.coords,
+    )
+    gradient = linearization.vjp(cotangent, parameters=tuple(directions))
+    np.testing.assert_allclose(
+        float((analytic * cotangent).sum()),
+        sum(float((gradient[name] * tangent[name]).sum()) for name in directions),
+        rtol=1e-11,
+    )
+
+    temperature = atmo.temperature_k.copy()
+    profiles = {name: emission.photon_ver.copy() for name, emission in bands.items()}
+    step = 0.001
+    values = []
+    for sign in [1, -1]:
+        atmo.temperature_k = (
+            temperature + sign * step * tangent.temperature_k.to_numpy()
+        )
+        for name, emission in bands.items():
+            emission.photon_ver = (
+                profiles[name] + sign * step * tangent[f"{name}_photon_ver"].to_numpy()
+            )
+        values.append(engine.calculate_radiance(atmo).radiance)
+    numeric = (values[0] - values[1]) / (2 * step)
+    np.testing.assert_allclose(analytic, numeric, rtol=2e-5, atol=1e-5)
+
+
 def population(db):
     # This temperature intentionally differs from atmospheric T.
     state = xr.Dataset(
@@ -211,6 +279,40 @@ def population(db):
         coords={"altitude": [0.0, 30_000.0, 60_000.0]},
     )
     return sk.constituent.PopulationEmissionRate(state, db=db)
+
+
+@pytest.mark.parametrize(
+    ("name", "index"),
+    [
+        ("photon_ver", None),
+        ("altitudes_m", None),
+        ("wavelengths_nm", None),
+        ("weights", None),
+        ("line_list_photon_ver", 0),
+        ("line_list_photon_ver", 1),
+        ("line_list_wavelengths_nm", 0),
+        ("line_list_wavelengths_nm", 1),
+        ("line_list_weights", 0),
+        ("line_list_weights", 1),
+    ],
+)
+def test_population_inspection_arrays_reject_mutation(line_db, name, index):
+    pop = population(line_db)
+    inspection = getattr(pop, name)
+    if index is not None:
+        inspection = inspection(index)
+    expected = inspection.copy()
+
+    # These construction-time arrays no longer control the emitted source.
+    # Legacy retrieval updates must fail instead of silently editing a snapshot.
+    with pytest.raises(ValueError, match="read-only"):
+        inspection[...] = 0.0
+    with pytest.raises(ValueError, match="WRITEABLE"):
+        inspection.setflags(write=True)
+
+    # A retained inspection view must keep its native owner alive.
+    del pop
+    np.testing.assert_array_equal(inspection, expected)
 
 
 def test_population_conversion_uses_same_band_path(line_db):
@@ -230,9 +332,17 @@ def test_population_conversion_uses_same_band_path(line_db):
     np.testing.assert_allclose(
         combined.wf_temperature_k, direct.wf_temperature_k, rtol=1e-12, atol=1e-12
     )
+    original_ver = bands["0-0"].photon_ver.copy()
     bands["0-0"].photon_ver = [0, 0, 0]
     np.testing.assert_array_equal(
         engine.calculate_radiance(atmo).radiance, combined.radiance
+    )
+    assert not np.allclose(
+        direct_engine.calculate_radiance(direct_atmo).radiance, direct.radiance
+    )
+    bands["0-0"].photon_ver[:] = original_ver
+    np.testing.assert_array_equal(
+        direct_engine.calculate_radiance(direct_atmo).radiance, direct.radiance
     )
 
 

@@ -20,6 +20,9 @@ class O2BandEmissionRate(Constituent):
     When temperature derivatives are enabled, rotational redistribution and
     Doppler broadening contribute to ``wf_temperature_k`` at fixed band VER.
     Add an O2 absorber separately to include self-absorption and its derivatives.
+    Resolve the lines on the model spectral grid before convolving radiance and
+    derivatives to instrument resolution. When combining emission with scattered
+    sunlight, use ``SolarIrradiance(photon_units=True)`` for consistent units.
 
     Parameters
     ----------

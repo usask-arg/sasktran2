@@ -38,10 +38,12 @@ class PopulationEmissionRate(Constituent):
         current atmospheric temperature. Temperature derivatives hold the
         supplied populations and band Einstein-A coefficients fixed.
 
-        ``photon_ver``, ``weights``, and the ``line_list_*`` inspection methods
-        describe the construction-time A/B-band spectra using the dataset's
-        temperature. Use :meth:`to_band_emissions` to obtain independent,
-        mutable band VER constituents for retrievals.
+        The inspection arrays (``photon_ver``, ``altitudes_m``,
+        ``wavelengths_nm``, ``weights``, and the ``line_list_*`` methods) are
+        read-only views of the construction-time A/B-band spectra using the
+        dataset's temperature. Attempts to modify them raise ``ValueError``.
+        Use :meth:`to_band_emissions` to obtain independent, mutable band VER
+        constituents for retrievals.
 
         Parameters
         ----------
@@ -87,18 +89,22 @@ class PopulationEmissionRate(Constituent):
 
     @property
     def photon_ver(self):
+        """Read-only combined A-band photon VER at construction time."""
         return self._emission.photon_ver
 
     @property
     def altitudes_m(self):
+        """Read-only altitude grid in meters."""
         return self._emission.altitudes_m
 
     @property
     def wavelengths_nm(self):
+        """Read-only A-band line wavelengths in nanometers."""
         return self._emission.wavelengths_nm
 
     @property
     def weights(self):
+        """Read-only A-band line weights at the input dataset's temperature."""
         return self._emission.weights
 
     @property
@@ -106,10 +112,13 @@ class PopulationEmissionRate(Constituent):
         return self._emission.num_line_list_emissions
 
     def line_list_photon_ver(self, index=0):
+        """Read-only photon VER of a construction-time line-list component."""
         return self._emission.line_list_photon_ver(index)
 
     def line_list_wavelengths_nm(self, index=0):
+        """Read-only wavelengths of a construction-time line-list component."""
         return self._emission.line_list_wavelengths_nm(index)
 
     def line_list_weights(self, index=0):
+        """Read-only weights of a construction-time line-list component."""
         return self._emission.line_list_weights(index)

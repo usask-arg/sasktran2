@@ -141,5 +141,6 @@ extending/constituent.md
 
 developer/compiling.md
 developer/contributing.md
+developer/band_emission.md
 developer/codespaces.md
 ```

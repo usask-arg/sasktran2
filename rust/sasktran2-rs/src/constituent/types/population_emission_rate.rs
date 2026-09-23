@@ -1,10 +1,9 @@
 use crate::atmosphere::*;
 use crate::constituent::traits::*;
-use crate::constituent::types::band_volume_emission_rate::{
-    BandVolumeEmissionRate, oxygen_emission_band,
-};
+use crate::constituent::types::band_volume_emission_rate::BandVolumeEmissionRate;
 use crate::constituent::types::line_list_volume_emission_rate::LineListVolumeEmissionRate;
 use crate::constituent::types::volume_emission_rate::MonochromaticVolumeEmissionRate;
+use crate::emission::o2::{O2BandEmissionModel, oxygen_emission_band};
 use crate::optical::line::OpticalLineDB;
 use crate::photchem::emission::{
     AEmissionLineWeightModel, EmissionBand, oxygen_a_band_line_list_weights_from_populations,
@@ -90,7 +89,7 @@ impl PopulationEmissionProfiles {
 pub struct PopulationEmissionRate {
     /// Construction-time spectra retained for the existing inspection API.
     pub line_list_emissions: Vec<LineListVolumeEmissionRate>,
-    pub band_emissions: Vec<BandVolumeEmissionRate>,
+    pub band_emissions: Vec<BandVolumeEmissionRate<O2BandEmissionModel>>,
     pub monochromatic_emissions: Vec<MonochromaticVolumeEmissionRate>,
 }
 
@@ -149,8 +148,7 @@ impl PopulationEmissionRate {
                         band_emissions.push(BandVolumeEmissionRate::new(
                             profiles.altitudes_m.clone(),
                             photon_ver,
-                            band,
-                            line_weight_model,
+                            O2BandEmissionModel::new(band, line_weight_model)?,
                         )?);
                     }
                 }
@@ -210,7 +208,7 @@ impl Constituent for PopulationEmissionRate {
             let name = format!(
                 "{}_{}",
                 constituent_name,
-                emission.band.name.replace('-', "_")
+                emission.band_name().replace('-', "_")
             );
             emission.register_emission_derivatives(storage, &name, false)?;
         }

@@ -105,7 +105,9 @@ impl PyPopulationEmissionRate {
         ensure_has_primary_line_list(&this)?;
         let array = &this.borrow().inner.line_list_emissions[0].photon_ver;
 
-        Ok(unsafe { PyArray1::borrow_from_array(array, this.into_any()) })
+        Ok(readonly_inspection_array(unsafe {
+            PyArray1::borrow_from_array(array, this.into_any())
+        }))
     }
 
     #[getter]
@@ -113,7 +115,9 @@ impl PyPopulationEmissionRate {
         ensure_has_primary_line_list(&this)?;
         let array = &this.borrow().inner.line_list_emissions[0].altitudes;
 
-        Ok(unsafe { PyArray1::borrow_from_array(array, this.into_any()) })
+        Ok(readonly_inspection_array(unsafe {
+            PyArray1::borrow_from_array(array, this.into_any())
+        }))
     }
 
     #[getter]
@@ -121,7 +125,9 @@ impl PyPopulationEmissionRate {
         ensure_has_primary_line_list(&this)?;
         let array = &this.borrow().inner.line_list_emissions[0].wavelengths_nm;
 
-        Ok(unsafe { PyArray1::borrow_from_array(array, this.into_any()) })
+        Ok(readonly_inspection_array(unsafe {
+            PyArray1::borrow_from_array(array, this.into_any())
+        }))
     }
 
     #[getter]
@@ -129,7 +135,9 @@ impl PyPopulationEmissionRate {
         ensure_has_primary_line_list(&this)?;
         let array = &this.borrow().inner.line_list_emissions[0].weights;
 
-        Ok(unsafe { PyArray2::borrow_from_array(array, this.into_any()) })
+        Ok(readonly_inspection_array(unsafe {
+            PyArray2::borrow_from_array(array, this.into_any())
+        }))
     }
 
     #[getter]
@@ -145,7 +153,9 @@ impl PyPopulationEmissionRate {
         ensure_line_list_index(&this, index)?;
         let array = &this.borrow().inner.line_list_emissions[index].photon_ver;
 
-        Ok(unsafe { PyArray1::borrow_from_array(array, this.into_any()) })
+        Ok(readonly_inspection_array(unsafe {
+            PyArray1::borrow_from_array(array, this.into_any())
+        }))
     }
 
     #[pyo3(signature = (index = 0))]
@@ -156,7 +166,9 @@ impl PyPopulationEmissionRate {
         ensure_line_list_index(&this, index)?;
         let array = &this.borrow().inner.line_list_emissions[index].wavelengths_nm;
 
-        Ok(unsafe { PyArray1::borrow_from_array(array, this.into_any()) })
+        Ok(readonly_inspection_array(unsafe {
+            PyArray1::borrow_from_array(array, this.into_any())
+        }))
     }
 
     #[pyo3(signature = (index = 0))]
@@ -167,7 +179,9 @@ impl PyPopulationEmissionRate {
         ensure_line_list_index(&this, index)?;
         let array = &this.borrow().inner.line_list_emissions[index].weights;
 
-        Ok(unsafe { PyArray2::borrow_from_array(array, this.into_any()) })
+        Ok(readonly_inspection_array(unsafe {
+            PyArray2::borrow_from_array(array, this.into_any())
+        }))
     }
 
     pub fn add_to_atmosphere<'py>(&mut self, atmo: Bound<'py, PyAny>) -> PyResult<()> {
@@ -189,6 +203,16 @@ impl PyPopulationEmissionRate {
 
         Ok(())
     }
+}
+
+fn readonly_inspection_array<'py, D: ndarray::Dimension>(
+    array: Bound<'py, PyArray<f64, D>>,
+) -> Bound<'py, PyArray<f64, D>> {
+    // These borrowed construction-time spectra are separate from the live band
+    // emissions. Reject writes, including attempts to reset the WRITEABLE flag,
+    // rather than accepting updates that cannot affect the emitted source.
+    array.readwrite().make_nonwriteable();
+    array
 }
 
 fn required_dataset_array1(dataset: &Bound<'_, PyAny>, name: &str) -> PyResult<Array1<f64>> {

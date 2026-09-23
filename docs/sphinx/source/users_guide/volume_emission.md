@@ -57,6 +57,12 @@ independent of temperature. The weighting functions use the VER input grid
 grid (`altitude`). Both `einstein_a_branching` (default) and
 `hitran_line_strength` line-weight models support these derivatives.
 
+The shared atmospheric temperature derivative holds pressure and gas VMRs fixed
+as well as band VER. It includes the resulting gas-density change through the
+ideal gas law. A retrieval that updates pressure with temperature must also
+apply the chain rule using `wf_pressure_pa`. No photochemical population
+derivative is implied by an independent VER parameter.
+
 Add an O2 absorption constituent separately to model self-absorption. With
 temperature derivatives enabled, its absorption contribution and the emission
 contributions are summed into the same `wf_temperature_k`. Pressure broadening
@@ -64,6 +70,33 @@ is included in that absorption calculation; emitted lines currently use
 Doppler profiles. Setting `temperature_derivative=False` on the atmosphere
 retains VER derivatives and skips emission temperature-derivative evaluation.
 Setting `calculate_derivatives=False` skips all derivative registration.
+
+### Spectral sampling and radiance units
+
+Resolve the emission and absorption lines on the model wavelength grid before
+convolving the calculated radiance and both Jacobians with an instrument's
+spectral response. A 1 nm instrument resolution does not permit a 1 nm model
+grid: self-absorption acts on the narrow lines before the instrument averages
+them. Validate the grid over the full temperature range allowed by the
+retrieval. `AtmosphereIntegratedLineShape` averages atmospheric properties;
+it does not replace convolution of the radiance when self-absorption is present.
+
+With `wavelengths_nm`, these sources produce photon radiance in photons
+m^-2 s^-1 sr^-1 nm^-1. For a calculation that also includes scattered sunlight,
+use `SolarIrradiance(photon_units=True)` so the two contributions have the same
+units. Apply any conversion to energy radiance or solar normalization
+consistently to the modeled radiance, Jacobians, and observations.
+
+The derivative dimensions describe the input grid but do not automatically
+carry its physical altitude coordinates. Assign them before selecting by height:
+
+```python
+result = result.assign_coords(
+    altitude=atmosphere.model_geometry.altitudes(),
+    o2_00_altitude=atmosphere["o2_00"].altitudes_m,
+    o2_11_altitude=atmosphere["o2_11"].altitudes_m,
+)
+```
 
 ### Initializing from populations
 
@@ -84,11 +117,14 @@ population dataset. The population constituent itself also contributes a
 temperature derivative, at fixed supplied populations and fixed band Einstein-A
 coefficients; it does not differentiate a photochemical model.
 
-The population interface's existing `photon_ver`, `weights`, and `line_list_*`
-inspection properties retain the combined A/B-band spectra calculated from the
-input dataset's temperature. Actual source calculations now use the current
-atmospheric temperature. Use a band's `line_weights(temperature_k)` method to
-inspect its normalized line weights at another temperature.
+The population interface's inspection arrays (`photon_ver`, `altitudes_m`,
+`wavelengths_nm`, `weights`, and the `line_list_*` methods) are read-only views
+of the combined A/B-band spectra calculated from the input dataset's temperature.
+Attempts to modify them raise `ValueError`; for retrieval updates, modify the
+`photon_ver` of a band returned by `to_band_emissions()` instead. Actual source
+calculations use the current atmospheric temperature. Use a band's
+`line_weights(temperature_k)` method to inspect its normalized line weights at
+another temperature.
 
 ## Monochromatic Sources
 Many photochemical sources in the atmosphere are essentially monochromatic, and can be included by using the
