@@ -38,7 +38,40 @@ class LineAbsorber(OpticalProperty):
         )
 
     def atmosphere_quantities(self, atmo, **kwargs):
-        return self._internal.atmosphere_quantities(atmo)
+        return self._internal.atmosphere_quantities(atmo, **kwargs)
+
+    def optical_derivatives(self, atmo, **kwargs):
+        """Temperature and pressure cross-section derivatives.
+
+        Temperature derivatives hold total and self pressure fixed. Pressure
+        derivatives are per Pa at fixed temperature and VMR, including the
+        self-pressure response ``p_self = vmr * pressure_pa``. Without a supplied
+        VMR, self pressure and its pressure derivative are zero.
+
+        Included automatically when the corresponding atmospheric derivatives
+        are enabled. Broadening, line shifts, and line mixing are included.
+        Line shapes and strengths are differentiated analytically; the partition
+        function temperature derivative uses a local difference of the supplied
+        HAPI function, using a one-sided difference at table boundaries, and is
+        skipped for pressure-only requests. Returned derivatives support both
+        ``cross_section`` and the Python optical-property name ``d_extinction``.
+
+        These are local derivatives of the current line-shape approximation.
+        Line selection and approximation-region switches are held fixed;
+        clipped non-positive cross sections have zero derivatives.
+        """
+        return self._internal.optical_derivatives(atmo, **kwargs)
+
+    def atmosphere_quantities_and_derivatives(self, atmo, **kwargs):
+        """Return optical quantities and enabled derivatives in one line-list pass.
+
+        The result is a ``(quantities, derivatives)`` tuple, with derivatives
+        keyed by ``"temperature_k"`` and/or ``"pressure_pa"``. Requesting both
+        shares profile evaluations. If both are disabled, this uses the
+        value-only kernels and returns an empty derivative dict.
+        Absorber constituents use this combined evaluation automatically.
+        """
+        return self._internal.atmosphere_quantities_and_derivatives(atmo, **kwargs)
 
     def _into_rust_object(self):
         return self._internal

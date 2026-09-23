@@ -215,6 +215,30 @@ impl OpticalProperty for PyOpticalProperty {
         })
     }
 
+    fn optical_quantities_and_derivatives(
+        &self,
+        inputs: &dyn StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
+    ) -> Result<(OpticalQuantities, HashMap<String, OpticalQuantities>)> {
+        Python::attach(|py| {
+            let mut result = None;
+            // Resolve the native property once and propagate calculation errors;
+            // Python-only optical properties retain the separate API fallback.
+            if with_optical_downcast(self.py_optical_property.bind(py), |db| {
+                result = Some(db.optical_quantities_and_derivatives(inputs, aux_inputs));
+                Ok(())
+            })
+            .is_ok()
+            {
+                return result.unwrap();
+            }
+            Ok((
+                self.optical_quantities(inputs, aux_inputs)?,
+                self.optical_derivatives(inputs, aux_inputs)?,
+            ))
+        })
+    }
+
     fn is_scatterer(&self) -> bool {
         // TODO: grab from python?
         false

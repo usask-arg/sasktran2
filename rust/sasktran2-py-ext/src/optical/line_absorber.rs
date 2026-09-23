@@ -43,6 +43,41 @@ impl PartitionFactor for PyPartitionFactor {
         });
         result
     }
+
+    fn log_temperature_derivative(
+        &self,
+        mol_id: i32,
+        iso_id: i32,
+        temperature: f64,
+    ) -> anyhow::Result<f64> {
+        Python::attach(|py| {
+            let tips = self.py_tips.bind(py);
+            let log_partition = |t| -> anyhow::Result<f64> {
+                let q: f64 = tips.call1((mol_id, iso_id, t))?.extract()?;
+                anyhow::ensure!(
+                    q.is_finite() && q > 0.0,
+                    "Partition factor must be positive and finite"
+                );
+                Ok(q.ln())
+            };
+            let step = temperature * f64::EPSILON.cbrt();
+            match (
+                log_partition(temperature + step),
+                log_partition(temperature - step),
+            ) {
+                (Ok(above), Ok(below)) => Ok((above - below) / (2.0 * step)),
+                // Tables such as HAPI include their endpoints but reject samples
+                // beyond them. Use a second-order one-sided stencil there.
+                (Ok(above), Err(_)) => Ok((-3.0 * log_partition(temperature)? + 4.0 * above
+                    - log_partition(temperature + 2.0 * step)?)
+                    / (2.0 * step)),
+                (Err(_), Ok(below)) => Ok((3.0 * log_partition(temperature)? - 4.0 * below
+                    + log_partition(temperature - 2.0 * step)?)
+                    / (2.0 * step)),
+                (Err(error), Err(_)) => Err(error),
+            }
+        })
+    }
 }
 
 impl MolecularMass for PyMolecularMass {
@@ -133,6 +168,48 @@ impl PyLineAbsorber {
             .map_err(|e| PyValueError::new_err(format!("Failed to get optical quantities: {e}")))?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())
+    }
+
+    #[pyo3(signature = (atmo, **kwargs))]
+    fn optical_derivatives<'py>(
+        &self,
+        atmo: Bound<'py, PyAny>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let rust_atmo = AtmosphereStorage::new(&atmo)?;
+        let quantities = self
+            .line_absorber
+            .optical_derivatives(&rust_atmo.inputs, &PyDictWrapper(kwargs))
+            .into_pyresult()?;
+        let result = PyDict::new(atmo.py());
+        for (key, quantity) in quantities {
+            result.set_item(
+                key,
+                PyOpticalQuantities::new(quantity).into_bound_py_any(atmo.py())?,
+            )?;
+        }
+        Ok(result)
+    }
+
+    #[pyo3(signature = (atmo, **kwargs))]
+    fn atmosphere_quantities_and_derivatives<'py>(
+        &self,
+        atmo: Bound<'py, PyAny>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<(PyOpticalQuantities, Bound<'py, PyDict>)> {
+        let rust_atmo = AtmosphereStorage::new(&atmo)?;
+        let (quantities, derivatives) = self
+            .line_absorber
+            .optical_quantities_and_derivatives(&rust_atmo.inputs, &PyDictWrapper(kwargs))
+            .into_pyresult()?;
+        let result = PyDict::new(atmo.py());
+        for (key, quantity) in derivatives {
+            result.set_item(
+                key,
+                PyOpticalQuantities::new(quantity).into_bound_py_any(atmo.py())?,
+            )?;
+        }
+        Ok((PyOpticalQuantities::new(quantities), result))
     }
 
     fn cross_section<'py>(

@@ -8,6 +8,8 @@ use crate::optical::line::{AdjustedLineParameters, OpticalLine, OpticalLineDB};
 use crate::optical::traits::*;
 use crate::util::argsort_f64;
 
+mod derivatives;
+
 #[cfg(feature = "simd")]
 use crate::math::simd::*;
 
@@ -224,6 +226,25 @@ fn split_and_assign(
 
 pub trait PartitionFactor {
     fn partition_factor(&self, mol_id: i32, iso_id: i32, temperature: f64) -> f64;
+
+    /// d ln(Q) / dT. Providers may override this with an analytic/table derivative.
+    /// The fallback only samples the inexpensive partition function, once per
+    /// isotopologue and temperature, and is never called by value-only spectra.
+    fn log_temperature_derivative(
+        &self,
+        mol_id: i32,
+        iso_id: i32,
+        temperature: f64,
+    ) -> Result<f64> {
+        let step = temperature * f64::EPSILON.cbrt();
+        Ok((self
+            .partition_factor(mol_id, iso_id, temperature + step)
+            .ln()
+            - self
+                .partition_factor(mol_id, iso_id, temperature - step)
+                .ln())
+            / (2.0 * step))
+    }
 }
 
 pub trait MolecularMass {
@@ -566,7 +587,7 @@ impl LineAbsorber {
             let mut xs_sorted = Array2::zeros((temperature.len(), n_wavenumber));
             for i in 0..temperature.len() {
                 for j in 0..n_wavenumber {
-                    xs_sorted[[i, j]] = xs[[i, sort_idx[j]]];
+                    xs_sorted[[i, sort_idx[j]]] = xs[[i, j]];
                 }
             }
             Ok(xs_sorted)
@@ -620,11 +641,116 @@ impl OpticalProperty for LineAbsorber {
 
     fn optical_derivatives_emplace(
         &self,
-        _inputs: &dyn crate::atmosphere::StorageInputs,
-        _aux_inputs: &dyn AuxOpticalInputs,
-        _d_optical_quantities: &mut HashMap<String, crate::optical::storage::OpticalQuantities>,
+        inputs: &dyn crate::atmosphere::StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
+        d_optical_quantities: &mut HashMap<String, crate::optical::storage::OpticalQuantities>,
     ) -> Result<()> {
+        if !inputs.calculate_temperature_derivative() && !inputs.calculate_pressure_derivative() {
+            return Ok(());
+        }
+        let (_, derivatives) = self.optical_quantities_and_derivatives(inputs, aux_inputs)?;
+        d_optical_quantities.extend(derivatives);
         Ok(())
+    }
+
+    fn optical_quantities_and_derivatives(
+        &self,
+        inputs: &dyn crate::atmosphere::StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
+    ) -> Result<(
+        crate::optical::storage::OpticalQuantities,
+        HashMap<String, crate::optical::storage::OpticalQuantities>,
+    )> {
+        use derivatives::LineDerivative;
+
+        let temperature_derivative = inputs.calculate_temperature_derivative();
+        let pressure_derivative = inputs.calculate_pressure_derivative();
+        if !temperature_derivative && !pressure_derivative {
+            return Ok((self.optical_quantities(inputs, aux_inputs)?, HashMap::new()));
+        }
+
+        let integrated = inputs.spectral_integration_mode()
+            == crate::bindings::config::SpectralGridMode::AtmosphereIntegratedLineShape;
+        let grid = if integrated {
+            inputs.fine_spectral_grid()
+        } else {
+            inputs.spectral_grid()
+        }
+        .ok_or_else(|| anyhow!("Spectral grid not found in inputs"))?;
+        let temperature = inputs
+            .temperature_k()
+            .ok_or_else(|| anyhow!("Temperature not found in inputs"))?;
+        let pressure = inputs
+            .pressure_pa()
+            .ok_or_else(|| anyhow!("Pressure not found in inputs"))?;
+        let vmr = aux_inputs
+            .get_parameter("vmr")
+            .map(|vmr| vmr.to_owned())
+            .unwrap_or_else(|| Array1::zeros(temperature.len()));
+        let pself = &vmr * &pressure;
+        let wavenumbers = grid.central_wavenumber_cminv();
+        let (cross_section, derivatives) = match (temperature_derivative, pressure_derivative) {
+            (true, true) => {
+                let (xs, [dt, dp]) = self.cross_section_with_derivatives(
+                    wavenumbers,
+                    temperature,
+                    pressure,
+                    pself.view(),
+                    [
+                        LineDerivative::Temperature,
+                        LineDerivative::Pressure(vmr.view()),
+                    ],
+                )?;
+                (xs, vec![("temperature_k", dt), ("pressure_pa", dp)])
+            }
+            (true, false) => {
+                let (xs, dt) = self.cross_section_with_temperature_derivative(
+                    wavenumbers,
+                    temperature,
+                    pressure,
+                    pself.view(),
+                )?;
+                (xs, vec![("temperature_k", dt)])
+            }
+            (false, true) => {
+                let (xs, [dp]) = self.cross_section_with_derivatives(
+                    wavenumbers,
+                    temperature,
+                    pressure,
+                    pself.view(),
+                    [LineDerivative::Pressure(vmr.view())],
+                )?;
+                (xs, vec![("pressure_pa", dp)])
+            }
+            (false, false) => unreachable!("value-only evaluation returned above"),
+        };
+        let mapping = if integrated {
+            Some(
+                inputs
+                    .spectral_mapping_matrix()
+                    .ok_or_else(|| anyhow!("Spectral mapping not found in inputs"))?,
+            )
+        } else {
+            None
+        };
+        let quantities = |cross_section: Array2<f64>| {
+            let quantities = crate::optical::storage::OpticalQuantities {
+                ssa: Array2::zeros(cross_section.raw_dim()),
+                cross_section,
+                ..Default::default()
+            };
+            match &mapping {
+                Some(mapping) => crate::optical::reduction::reduce_optical(&quantities, mapping),
+                None => quantities,
+            }
+        };
+        Ok((
+            quantities(cross_section),
+            derivatives
+                .into_iter()
+                .map(|(key, derivative)| (key.to_string(), quantities(derivative)))
+                .collect(),
+        ))
     }
 
     fn is_scatterer(&self) -> bool {
