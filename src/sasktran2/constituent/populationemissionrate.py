@@ -5,6 +5,7 @@ from sasktran2._core_rust import PyPopulationEmissionRate
 from sasktran2.database.hitran_line import HITRANLineDatabase
 
 from .base import Constituent
+from .o2bandemissionrate import O2BandEmissionRate
 
 
 class PopulationEmissionRate(Constituent):
@@ -31,6 +32,16 @@ class PopulationEmissionRate(Constituent):
         obtain photon volume emission rates in photons m^-3 s^-1. The emitted
         source is assumed isotropic; the constituent applies the 1 / 4pi factor
         when adding the spectral source to the atmosphere.
+
+        Each band's VER is interpolated onto the atmospheric grid, then its
+        rotational line weights and Doppler widths are evaluated using the
+        current atmospheric temperature. Temperature derivatives hold the
+        supplied populations and band Einstein-A coefficients fixed.
+
+        ``photon_ver``, ``weights``, and the ``line_list_*`` inspection methods
+        describe the construction-time A/B-band spectra using the dataset's
+        temperature. Use :meth:`to_band_emissions` to obtain independent,
+        mutable band VER constituents for retrievals.
 
         Parameters
         ----------
@@ -60,6 +71,19 @@ class PopulationEmissionRate(Constituent):
 
     def register_derivative(self, atmo: sk.Atmosphere, name: str):
         self._emission.register_derivative(atmo, name)
+
+    def to_band_emissions(self) -> dict[str, O2BandEmissionRate]:
+        """Return independent band constituents initialized from populations.
+
+        Keys are ``"0-0"``, ``"1-1"``, and ``"1-0"`` when their lines are
+        available. Add these constituents instead of this population constituent
+        to retrieve their VER profiles independently. Mutating the returned
+        constituents does not change this object or the input population dataset.
+        """
+        return {
+            emission.band: O2BandEmissionRate._from_native(emission)
+            for emission in self._emission.to_band_emissions()
+        }
 
     @property
     def photon_ver(self):

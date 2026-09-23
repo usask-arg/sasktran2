@@ -15,6 +15,81 @@ config.emission_source = sk.EmissionSource.VolumeEmissionRate
 
 note that it is not currently possible to combine thermal emissions with other photo-chemical based emissions.
 
+## O2 band VER and temperature profiles
+
+`O2BandEmissionRate` accepts the total photon VER of an individual vibrational
+band, independently of an excited-state population model. This is useful when
+retrieving VER and temperature profiles directly:
+
+```python
+# altitude_ver_m, ver_00, and ver_11 are one-dimensional arrays.
+atmosphere["o2_00"] = sk.constituent.O2BandEmissionRate(
+    altitude_ver_m, ver_00, band="0-0"
+)
+atmosphere["o2_11"] = sk.constituent.O2BandEmissionRate(
+    altitude_ver_m, ver_11, band="1-1"
+)
+atmosphere.temperature_k = temperature_on_model_grid
+
+# Update these during the retrieval; rebuilding the constituent is unnecessary.
+atmosphere["o2_00"].photon_ver = updated_ver_00
+result = engine.calculate_radiance(atmosphere)
+
+dI_dVER00 = result["wf_o2_00_photon_ver"]
+dI_dVER11 = result["wf_o2_11_photon_ver"]
+dI_dT = result["wf_temperature_k"]
+```
+
+VER is in photons m^-3 s^-1, integrated over all directions and the selected
+band's lines. The constituent supplies the isotropic factor of `1 / (4 pi)`.
+Supported bands are A-band `0-0` and `1-1`, and B-band `1-0`. The VER altitude
+grid may differ from the atmospheric grid. VER is linearly interpolated first;
+rotational line weights and Doppler widths are then evaluated at each model
+location's current atmospheric temperature. Outside the VER grid, the default
+is zero emission; `out_of_bounds_mode="extend"` uses the nearest endpoint.
+
+Temperature changes the normalized relative line intensities and the Doppler
+widths, holding each band VER fixed. The rotational distribution follows the
+atmospheric temperature, without imposing a thermal ratio between vibrational
+bands. The photon emission integrated over a fully resolved band is therefore
+independent of temperature. The weighting functions use the VER input grid
+(`o2_00_altitude` and `o2_11_altitude` above), and the atmospheric temperature
+grid (`altitude`). Both `einstein_a_branching` (default) and
+`hitran_line_strength` line-weight models support these derivatives.
+
+Add an O2 absorption constituent separately to model self-absorption. With
+temperature derivatives enabled, its absorption contribution and the emission
+contributions are summed into the same `wf_temperature_k`. Pressure broadening
+is included in that absorption calculation; emitted lines currently use
+Doppler profiles. Setting `temperature_derivative=False` on the atmosphere
+retains VER derivatives and skips emission temperature-derivative evaluation.
+Setting `calculate_derivatives=False` skips all derivative registration.
+
+### Initializing from populations
+
+The population interface converts each upper-state population to band VER using
+the corresponding band Einstein-A coefficient, then uses the same band emission
+calculation. To initialize an independent VER retrieval from those populations:
+
+```python
+population_emission = sk.constituent.PopulationEmissionRate(population_dataset)
+bands = population_emission.to_band_emissions()
+atmosphere["o2_00"] = bands["0-0"]
+atmosphere["o2_11"] = bands["1-1"]
+```
+
+These are independent copies; add them instead of the population constituent to
+avoid counting emission twice. They can be updated without changing the input
+population dataset. The population constituent itself also contributes a
+temperature derivative, at fixed supplied populations and fixed band Einstein-A
+coefficients; it does not differentiate a photochemical model.
+
+The population interface's existing `photon_ver`, `weights`, and `line_list_*`
+inspection properties retain the combined A/B-band spectra calculated from the
+input dataset's temperature. Actual source calculations now use the current
+atmospheric temperature. Use a band's `line_weights(temperature_k)` method to
+inspect its normalized line weights at another temperature.
+
 ## Monochromatic Sources
 Many photochemical sources in the atmosphere are essentially monochromatic, and can be included by using the
 {py:class}`sasktran2.constituent.MonochromaticVolumeEmissionRate` constituent.

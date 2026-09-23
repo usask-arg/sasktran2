@@ -42,6 +42,9 @@ Emissions
 .. autosummary::
     :toctree: generated/
 
+    sasktran2.constituent.O2BandEmissionRate
+    sasktran2.constituent.PopulationEmissionRate
+    sasktran2.constituent.LineListVolumeEmissionRate
     sasktran2.constituent.ThermalEmission
     sasktran2.constituent.SurfaceThermalEmission
 

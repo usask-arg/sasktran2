@@ -16,6 +16,7 @@ use sasktran2_rs::optical::line::hitran_loader::{hitran_molecule_file, read_hitr
 use sasktran2_rs::photchem::emission::AEmissionLineWeightModel;
 
 use crate::constituent::atmo_storage::AtmosphereStorage;
+use crate::constituent::o2_band_emission_rate::PyO2BandEmissionRate;
 
 #[pyclass]
 pub struct PyPopulationEmissionRate {
@@ -24,6 +25,16 @@ pub struct PyPopulationEmissionRate {
 
 #[pymethods]
 impl PyPopulationEmissionRate {
+    /// Independent copies suitable for retrieving each band's VER directly.
+    fn to_band_emissions(&self) -> Vec<PyO2BandEmissionRate> {
+        self.inner
+            .band_emissions
+            .iter()
+            .map(|band| PyO2BandEmissionRate {
+                inner: band.clone(),
+            })
+            .collect()
+    }
     #[new]
     #[pyo3(
         signature = (populations, hitran_directory, species = None, line_weight_model = "einstein_a_branching", out_of_bounds_mode = "zero"),
