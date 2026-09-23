@@ -59,7 +59,12 @@ impl PyOpticalQuantities {
 
     #[getter]
     fn get_d_leg_coeff<'py>(this: Bound<'py, Self>) -> Option<Bound<'py, PyArray3<f64>>> {
-        Self::get_leg_coeff(this)
+        let binding = this.borrow();
+        let array = binding.oq.legendre.as_ref()?;
+        // NativeGridDerivative uses (coefficient, location, wavelength), while
+        // the native optical storage keeps the coefficient dimension last.
+        let view = array.view().permuted_axes([2, 0, 1]);
+        unsafe { Some(PyArray3::borrow_from_array(&view, this.into_any())) }
     }
 
     #[getter]
