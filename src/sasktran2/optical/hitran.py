@@ -38,7 +38,16 @@ class LineAbsorber(OpticalProperty):
         )
 
     def atmosphere_quantities(self, atmo, **kwargs):
-        return self._internal.atmosphere_quantities(atmo)
+        return self._internal.atmosphere_quantities(atmo, **kwargs)
+
+    def optical_derivatives(self, atmo, **kwargs):
+        """Temperature cross-section derivatives at fixed total and self pressure.
+
+        Included automatically when atmospheric temperature derivatives are enabled.
+        Line shapes and strengths are differentiated analytically; the partition
+        function derivative uses a local difference of the supplied HAPI function.
+        """
+        return self._internal.optical_derivatives(atmo, **kwargs)
 
     def _into_rust_object(self):
         return self._internal

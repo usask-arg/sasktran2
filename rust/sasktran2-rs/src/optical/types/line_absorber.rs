@@ -8,6 +8,8 @@ use crate::optical::line::{AdjustedLineParameters, OpticalLine, OpticalLineDB};
 use crate::optical::traits::*;
 use crate::util::argsort_f64;
 
+mod derivatives;
+
 #[cfg(feature = "simd")]
 use crate::math::simd::*;
 
@@ -224,6 +226,20 @@ fn split_and_assign(
 
 pub trait PartitionFactor {
     fn partition_factor(&self, mol_id: i32, iso_id: i32, temperature: f64) -> f64;
+
+    /// d ln(Q) / dT. Providers may override this with an analytic/table derivative.
+    /// The fallback only samples the inexpensive partition function, once per
+    /// isotopologue and temperature, and is never called by value-only spectra.
+    fn log_temperature_derivative(&self, mol_id: i32, iso_id: i32, temperature: f64) -> f64 {
+        let step = temperature * f64::EPSILON.cbrt();
+        (self
+            .partition_factor(mol_id, iso_id, temperature + step)
+            .ln()
+            - self
+                .partition_factor(mol_id, iso_id, temperature - step)
+                .ln())
+            / (2.0 * step)
+    }
 }
 
 pub trait MolecularMass {
@@ -566,7 +582,7 @@ impl LineAbsorber {
             let mut xs_sorted = Array2::zeros((temperature.len(), n_wavenumber));
             for i in 0..temperature.len() {
                 for j in 0..n_wavenumber {
-                    xs_sorted[[i, j]] = xs[[i, sort_idx[j]]];
+                    xs_sorted[[i, sort_idx[j]]] = xs[[i, j]];
                 }
             }
             Ok(xs_sorted)
@@ -620,10 +636,53 @@ impl OpticalProperty for LineAbsorber {
 
     fn optical_derivatives_emplace(
         &self,
-        _inputs: &dyn crate::atmosphere::StorageInputs,
-        _aux_inputs: &dyn AuxOpticalInputs,
-        _d_optical_quantities: &mut HashMap<String, crate::optical::storage::OpticalQuantities>,
+        inputs: &dyn crate::atmosphere::StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
+        d_optical_quantities: &mut HashMap<String, crate::optical::storage::OpticalQuantities>,
     ) -> Result<()> {
+        if !inputs.calculate_temperature_derivative() {
+            return Ok(());
+        }
+
+        let integrated = inputs.spectral_integration_mode()
+            == crate::bindings::config::SpectralGridMode::AtmosphereIntegratedLineShape;
+        let grid = if integrated {
+            inputs.fine_spectral_grid()
+        } else {
+            inputs.spectral_grid()
+        }
+        .ok_or_else(|| anyhow!("Spectral grid not found in inputs"))?;
+        let temperature = inputs
+            .temperature_k()
+            .ok_or_else(|| anyhow!("Temperature not found in inputs"))?;
+        let pressure = inputs
+            .pressure_pa()
+            .ok_or_else(|| anyhow!("Pressure not found in inputs"))?;
+        let pself = if let Some(vmr) = aux_inputs.get_parameter("vmr") {
+            &vmr * &pressure
+        } else {
+            Array1::zeros(temperature.len())
+        };
+        let cross_section = self.cross_section_temperature_derivative(
+            grid.central_wavenumber_cminv(),
+            temperature,
+            pressure,
+            pself.view(),
+        )?;
+        let mut quantities = crate::optical::storage::OpticalQuantities {
+            ssa: Array2::zeros(cross_section.raw_dim()),
+            cross_section,
+            ..Default::default()
+        };
+        if integrated {
+            quantities = crate::optical::reduction::reduce_optical(
+                &quantities,
+                &inputs
+                    .spectral_mapping_matrix()
+                    .ok_or_else(|| anyhow!("Spectral mapping not found in inputs"))?,
+            );
+        }
+        d_optical_quantities.insert("temperature_k".to_string(), quantities);
         Ok(())
     }
 

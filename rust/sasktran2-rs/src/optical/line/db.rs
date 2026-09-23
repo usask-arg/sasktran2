@@ -30,6 +30,7 @@ pub struct OpticalLine {
     pub coupling_temperature: Vec<f64>,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
 pub struct AdjustedLineParameters {
     pub line_center: f64,
     pub line_intensity_re: f64,
@@ -43,6 +44,27 @@ pub struct OpticalLineDB {
 }
 
 impl OpticalLine {
+    /// Temperature direction at fixed total and self pressure. The line intensity
+    /// already includes the inverse Doppler width normalization.
+    pub fn adjusted_temperature_derivative(
+        &self,
+        adjusted: &AdjustedLineParameters,
+        temperature: f64,
+        d_log_partition_d_temperature: f64,
+    ) -> super::shape::LineShapeDirection {
+        let x = C2 * self.line_center / temperature;
+        let stimulated = x * (-x).exp() / (-(-x).exp_m1());
+        super::shape::LineShapeDirection {
+            line_center: 0.0,
+            doppler_width: adjusted.doppler_width / (2.0 * temperature),
+            y: -(self.n_air + 0.5) * adjusted.y / temperature,
+            line_intensity_re: adjusted.line_intensity_re
+                * ((C2 * self.lower_energy / temperature - stimulated - 0.5) / temperature
+                    - d_log_partition_d_temperature),
+            line_intensity_im: 0.0,
+        }
+    }
+
     pub fn wavelength_nm(&self) -> f64 {
         1.0e7 / self.line_center
     }
