@@ -1,4 +1,4 @@
-"""Compare line absorption and emission radiance with temperature derivatives.
+"""Compare line absorption and emission radiance with state derivatives.
 
 Run with a release build on each revision:
     pixi run python tools/benchmarks/line_temperature_derivatives.py --output /tmp/lines.json
@@ -8,6 +8,7 @@ downloads or line mixing. Timings include allocations and atmospheric assembly.
 Temperature-off radiance retains VMR derivatives; all-off disables all Jacobians.
 The combined optical case falls back to separate calls on older revisions.
 Output includes timing samples and an NPZ of values/Jacobians for comparison.
+Add --pressure to measure pressure alone and temperature plus pressure together.
 """
 
 from __future__ import annotations
@@ -63,6 +64,7 @@ def main():
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--blocks", type=int, default=11)
     parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument("--pressure", action="store_true")
     args = parser.parse_args()
     if (
         min(args.lines, args.spectral_points, args.threads, args.blocks, args.repeats)
@@ -113,14 +115,14 @@ def main():
         viewing.add_ray(sk.TangentAltitudeSolar(tangent, 0, 200_000, 0.6))
     engine = sk.Engine(config, geometry, viewing)
 
-    def atmosphere(derivatives, temperature_derivative):
+    def atmosphere(derivatives, temperature_derivative, pressure_derivative=False):
         atmo = sk.Atmosphere(
             geometry,
             config,
             wavenumber_cminv=wavenumbers,
             calculate_derivatives=derivatives,
             temperature_derivative=temperature_derivative,
-            pressure_derivative=False,
+            pressure_derivative=pressure_derivative,
             specific_humidity_derivative=False,
             legendre_derivative=False,
         )
@@ -173,6 +175,41 @@ def main():
         "radiance_temperature_off": lambda: engine.calculate_radiance(temperature_off),
         "radiance_temperature_on": lambda: engine.calculate_radiance(temperature_on),
     }
+    if args.pressure:
+        pressure_on = atmosphere(True, False, True)
+        both_on = atmosphere(True, True, True)
+
+        def pressure_combined():
+            return absorber.atmosphere_quantities_and_derivatives(pressure_on, vmr=vmr)
+
+        def both_combined():
+            return absorber.atmosphere_quantities_and_derivatives(both_on, vmr=vmr)
+
+        _, pressure_derivatives = pressure_combined()
+        _, both_derivatives = both_combined()
+        assert pressure_derivatives.keys() == {"pressure_pa"}
+        assert both_derivatives.keys() == {"temperature_k", "pressure_pa"}
+        values["d_cross_section_dP"] = pressure_derivatives["pressure_pa"].cross_section
+        for key, single in [
+            ("temperature_k", values["d_cross_section_dT"]),
+            ("pressure_pa", values["d_cross_section_dP"]),
+        ]:
+            np.testing.assert_allclose(
+                both_derivatives[key].cross_section, single, rtol=1e-10, atol=1e-35
+            )
+        result = engine.calculate_radiance(both_on)
+        np.testing.assert_array_equal(reference.radiance, result.radiance)
+        values["wf_pressure_pa"] = result.wf_pressure_pa.values
+        cases.update(
+            {
+                "optical_pressure": pressure_combined,
+                "optical_temperature_pressure": both_combined,
+                "radiance_pressure_on": lambda: engine.calculate_radiance(pressure_on),
+                "radiance_temperature_pressure": lambda: engine.calculate_radiance(
+                    both_on
+                ),
+            }
+        )
     metadata = vars(args).copy()
     metadata.pop("output")
     metadata.update({"rays": 3, "partition_function": "T**1.5", "line_mixing": False})

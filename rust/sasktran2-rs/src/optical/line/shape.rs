@@ -52,7 +52,6 @@ struct PreparedShape {
 const GAUSSIAN: u8 = 0;
 const LORENTZIAN: u8 = 1;
 const VOIGT: u8 = 2;
-const VOIGT_ASYMMETRIC: u8 = 3;
 
 impl PreparedShape {
     fn new<const SHAPE: u8>(line: &AdjustedLineParameters, direction: &LineShapeDirection) -> Self {
@@ -143,65 +142,76 @@ impl PreparedShape {
 }
 
 #[inline(always)]
-fn evaluate<const SHAPE: u8, F>(
+fn evaluate<const SHAPE: u8, const N: usize, const ODD: usize, F>(
     wavenumber: F,
-    shape: &PreparedShape,
+    shapes: &[PreparedShape; N],
     scalar: impl Fn(f64) -> F,
     exp: impl Fn(F) -> F,
-) -> (F, F)
+) -> (F, [F; N])
 where
     F: Copy + Add<Output = F> + Sub<Output = F> + Mul<Output = F> + Div<Output = F>,
 {
+    let shape = &shapes[0];
     let delta = wavenumber - scalar(shape.center);
     if SHAPE == LORENTZIAN {
         let inverse = scalar(1.0) / (delta * delta + scalar(shape.gamma_squared));
         let value = scalar(shape.scale) * inverse;
-        let derivative = (scalar(shape.d_scale)
-            - value * (scalar(shape.d_gamma_squared) - scalar(2.0 * shape.d_center) * delta))
-            * inverse;
-        (value, derivative)
+        let derivatives = shapes.each_ref().map(|shape| {
+            (scalar(shape.d_scale)
+                - value * (scalar(shape.d_gamma_squared) - scalar(2.0 * shape.d_center) * delta))
+                * inverse
+        });
+        (value, derivatives)
     } else {
         let x = delta * scalar(shape.inverse_width);
         if SHAPE == GAUSSIAN {
-            let dx = scalar(shape.dx_offset) + x * scalar(shape.dx_slope);
             let value = exp(scalar(0.0) - x * x);
             (
                 scalar(shape.scale) * value,
-                (scalar(shape.d_scale) - scalar(2.0 * shape.scale) * x * dx) * value,
+                shapes.each_ref().map(|shape| {
+                    let dx = scalar(shape.dx_offset) + x * scalar(shape.dx_slope);
+                    (scalar(shape.d_scale) - scalar(2.0 * shape.scale) * x * dx) * value
+                }),
             )
         } else {
             let mut value = scalar(0.0);
-            let mut derivative = scalar(0.0);
+            let mut derivatives = [scalar(0.0); N];
             let squared = delta * delta;
             let fourth = squared * squared;
-            for pole in &shape.poles {
+            for (j, pole) in shape.poles.iter().enumerate() {
                 let inverse = scalar(1.0)
                     / (fourth
                         + scalar(pole.denominator[1]) * squared
                         + scalar(pole.denominator[0]));
                 let mut numerator = scalar(pole.numerator[2]) * squared + scalar(pole.numerator[0]);
-                let mut d_numerator =
-                    scalar(pole.d_numerator[2]) * squared + scalar(pole.d_numerator[0]);
-                let mut d_denominator =
-                    scalar(pole.d_denominator[2]) * squared + scalar(pole.d_denominator[0]);
-                if SHAPE == VOIGT_ASYMMETRIC {
+                if ODD & 1 != 0 {
                     numerator = numerator
                         + delta * (scalar(pole.numerator[3]) * squared + scalar(pole.numerator[1]));
-                    d_numerator = d_numerator
-                        + delta
-                            * (scalar(pole.d_numerator[3]) * squared + scalar(pole.d_numerator[1]));
-                    d_denominator = d_denominator
-                        + delta
-                            * (scalar(pole.d_denominator[3]) * squared
-                                + scalar(pole.d_denominator[1]));
                 }
                 let term = numerator * inverse;
                 value = value + term;
                 // Differentiate the rational approximation itself, preserving
                 // consistency with the forward kernel even in the line wings.
-                derivative = derivative + (d_numerator - term * d_denominator) * inverse;
+                for (k, (derivative, shape)) in derivatives.iter_mut().zip(shapes).enumerate() {
+                    let pole = &shape.poles[j];
+                    let mut d_numerator =
+                        scalar(pole.d_numerator[2]) * squared + scalar(pole.d_numerator[0]);
+                    let mut d_denominator =
+                        scalar(pole.d_denominator[2]) * squared + scalar(pole.d_denominator[0]);
+                    if ODD == usize::MAX || ODD & (1 << (k + 1)) != 0 {
+                        d_numerator = d_numerator
+                            + delta
+                                * (scalar(pole.d_numerator[3]) * squared
+                                    + scalar(pole.d_numerator[1]));
+                        d_denominator = d_denominator
+                            + delta
+                                * (scalar(pole.d_denominator[3]) * squared
+                                    + scalar(pole.d_denominator[1]));
+                    }
+                    *derivative = *derivative + (d_numerator - term * d_denominator) * inverse;
+                }
             }
-            (value, derivative)
+            (value, derivatives)
         }
     }
 }
@@ -216,40 +226,79 @@ pub fn assign_with_derivative(
     values: &mut [f64],
     derivatives: &mut [f64],
 ) {
+    assign_with_derivatives(
+        wavenumbers,
+        line,
+        &[*direction],
+        shape,
+        values,
+        [derivatives],
+    );
+}
+
+/// Accumulate multiple directions together, sharing profile values and the
+/// expensive exponentials/divisions. N is fixed outside the spectral loops.
+pub fn assign_with_derivatives<const N: usize>(
+    wavenumbers: &[f64],
+    line: &AdjustedLineParameters,
+    directions: &[LineShapeDirection; N],
+    shape: LineShape,
+    values: &mut [f64],
+    derivatives: [&mut [f64]; N],
+) {
+    assert!(N > 0);
     assert_eq!(wavenumbers.len(), values.len());
-    assert_eq!(wavenumbers.len(), derivatives.len());
+    assert!(derivatives.iter().all(|d| d.len() == wavenumbers.len()));
     // Select the kernel once per region, outside both scalar and SIMD loops.
     match shape {
         LineShape::Gaussian => {
-            assign::<GAUSSIAN>(wavenumbers, line, direction, values, derivatives)
+            assign::<GAUSSIAN, N, 0>(wavenumbers, line, directions, values, derivatives)
         }
         LineShape::Lorentzian => {
-            assign::<LORENTZIAN>(wavenumbers, line, direction, values, derivatives)
+            assign::<LORENTZIAN, N, 0>(wavenumbers, line, directions, values, derivatives)
         }
         LineShape::Voigt => {
-            if line.line_intensity_im != 0.0
-                || direction.line_intensity_im != 0.0
-                || direction.line_center != 0.0
-            {
-                assign::<VOIGT_ASYMMETRIC>(wavenumbers, line, direction, values, derivatives);
+            // Bit zero selects odd value terms; subsequent bits select odd
+            // terms in each direction. A pressure shift need not make the
+            // temperature derivative or the unshifted profile asymmetric.
+            // Specialize one/two directions; larger requests and complex
+            // amplitudes use the fully general kernel.
+            let odd = if N <= 2 && line.line_intensity_im == 0.0 {
+                directions.iter().enumerate().fold(0, |mask, (k, d)| {
+                    mask | (usize::from(d.line_intensity_im != 0.0 || d.line_center != 0.0)
+                        << (k + 1))
+                })
             } else {
-                assign::<VOIGT>(wavenumbers, line, direction, values, derivatives);
+                usize::MAX
+            };
+            match odd {
+                0 => assign::<VOIGT, N, 0>(wavenumbers, line, directions, values, derivatives),
+                2 => assign::<VOIGT, N, 2>(wavenumbers, line, directions, values, derivatives),
+                4 => assign::<VOIGT, N, 4>(wavenumbers, line, directions, values, derivatives),
+                6 => assign::<VOIGT, N, 6>(wavenumbers, line, directions, values, derivatives),
+                _ => assign::<VOIGT, N, { usize::MAX }>(
+                    wavenumbers,
+                    line,
+                    directions,
+                    values,
+                    derivatives,
+                ),
             }
         }
     }
 }
 
-fn assign<const SHAPE: u8>(
+fn assign<const SHAPE: u8, const N: usize, const ODD: usize>(
     wavenumbers: &[f64],
     line: &AdjustedLineParameters,
-    direction: &LineShapeDirection,
+    directions: &[LineShapeDirection; N],
     values: &mut [f64],
-    derivatives: &mut [f64],
+    mut derivatives: [&mut [f64]; N],
 ) {
     if wavenumbers.is_empty() {
         return;
     }
-    let shape = PreparedShape::new::<SHAPE>(line, direction);
+    let shapes = directions.map(|direction| PreparedShape::new::<SHAPE>(line, &direction));
     #[cfg(not(feature = "simd"))]
     let start = 0;
     #[cfg(feature = "simd")]
@@ -257,25 +306,32 @@ fn assign<const SHAPE: u8>(
         use crate::math::simd::f64s;
         use std::simd::StdFloat;
         let lanes = f64s::LEN;
-        for ((wv, value), derivative) in wavenumbers
+        let mut derivative_chunks = derivatives.each_mut().map(|d| d.chunks_exact_mut(lanes));
+        for (wv, value) in wavenumbers
             .chunks_exact(lanes)
             .zip(values.chunks_exact_mut(lanes))
-            .zip(derivatives.chunks_exact_mut(lanes))
         {
-            let (v, d) =
-                evaluate::<SHAPE, _>(f64s::from_slice(wv), &shape, f64s::splat, |x| x.exp());
+            let (v, gradients) =
+                evaluate::<SHAPE, N, ODD, _>(f64s::from_slice(wv), &shapes, f64s::splat, |x| {
+                    x.exp()
+                });
             (f64s::from_slice(value) + v).copy_to_slice(value);
-            (f64s::from_slice(derivative) + d).copy_to_slice(derivative);
+            for (chunks, gradient) in derivative_chunks.iter_mut().zip(gradients) {
+                let derivative = chunks.next().unwrap();
+                (f64s::from_slice(derivative) + gradient).copy_to_slice(derivative);
+            }
         }
         wavenumbers.len() / lanes * lanes
     };
-    for ((&wv, value), derivative) in wavenumbers[start..]
+    for (i, (&wv, value)) in wavenumbers[start..]
         .iter()
         .zip(&mut values[start..])
-        .zip(&mut derivatives[start..])
+        .enumerate()
     {
-        let (v, d) = evaluate::<SHAPE, _>(wv, &shape, |x| x, f64::exp);
+        let (v, gradients) = evaluate::<SHAPE, N, ODD, _>(wv, &shapes, |x| x, f64::exp);
         *value += v;
-        *derivative += d;
+        for (derivative, gradient) in derivatives.iter_mut().zip(gradients) {
+            derivative[start + i] += gradient;
+        }
     }
 }

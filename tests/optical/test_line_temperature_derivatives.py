@@ -110,10 +110,15 @@ def test_cross_section_temperature_derivative(tmp_path, spectral_mode):
     ],
 )
 @pytest.mark.parametrize("temperature_derivative", [False, True])
-def test_combined_optical_evaluation(tmp_path, spectral_mode, temperature_derivative):
+@pytest.mark.parametrize("pressure_derivative", [False, True])
+def test_combined_optical_evaluation(
+    tmp_path, spectral_mode, temperature_derivative, pressure_derivative
+):
     absorber, sampled = _absorber(tmp_path)
     atmo, _ = _scenario(
-        spectral_mode=spectral_mode, temperature_derivative=temperature_derivative
+        spectral_mode=spectral_mode,
+        temperature_derivative=temperature_derivative,
+        pressure_derivative=pressure_derivative,
     )
     vmr = np.full_like(atmo.temperature_k, 0.21)
     quantities, derivatives = absorber.atmosphere_quantities_and_derivatives(
@@ -127,12 +132,21 @@ def test_combined_optical_evaluation(tmp_path, spectral_mode, temperature_deriva
         quantities.cross_section, expected.cross_section, rtol=1e-10, atol=1e-35
     )
     np.testing.assert_array_equal(quantities.ssa, expected.ssa)
-    if temperature_derivative:
+    expected_keys = {
+        key
+        for key, enabled in [
+            ("temperature_k", temperature_derivative),
+            ("pressure_pa", pressure_derivative),
+        ]
+        if enabled
+    }
+    assert derivatives.keys() == expected_keys
+    if expected_keys:
         separate = absorber.optical_derivatives(atmo, vmr=vmr)
-        np.testing.assert_array_equal(
-            derivatives["temperature_k"].cross_section,
-            separate["temperature_k"].cross_section,
-        )
+        for key in expected_keys:
+            np.testing.assert_array_equal(
+                derivatives[key].cross_section, separate[key].cross_section
+            )
     else:
         assert derivatives == {}
         np.testing.assert_array_equal(quantities.cross_section, expected.cross_section)
@@ -148,6 +162,7 @@ def test_disabled_temperature_derivatives_do_not_sample_partition_derivatives(
     atmo, engine = _scenario(
         calculate_derivatives=calculate_derivatives,
         temperature_derivative=temperature_derivative,
+        pressure_derivative=False,
     )
     atmo["o2"] = sk.constituent.VMRAltitudeAbsorber(
         absorber,
@@ -193,3 +208,95 @@ def test_temperature_jacobian_includes_self_absorption_by_default(tmp_path):
             rtol=5e-5,
             atol=2e-7,
         )
+
+
+@pytest.mark.parametrize(
+    "spectral_mode",
+    [
+        sk.SpectralGridMode.Monochromatic,
+        sk.SpectralGridMode.AtmosphereIntegratedLineShape,
+    ],
+)
+@pytest.mark.parametrize("vmr_value", [None, 0.0, 0.21, 1.0])
+def test_pressure_cross_section_derivative(tmp_path, spectral_mode, vmr_value):
+    absorber, sampled = _absorber(tmp_path)
+    atmo, _ = _scenario(spectral_mode=spectral_mode, temperature_derivative=False)
+    # Keep this finite-difference stencil above the clipped low-pressure wings.
+    # Zero pressure and clipping are checked separately in the Rust kernel tests.
+    atmo.pressure_pa = np.maximum(atmo.pressure_pa, 1.0)
+    kwargs = (
+        {} if vmr_value is None else {"vmr": np.full_like(atmo.pressure_pa, vmr_value)}
+    )
+    derivatives = absorber.optical_derivatives(atmo, **kwargs)
+    assert derivatives.keys() == {"pressure_pa"}
+    assert len(sampled) == 1 + len(atmo.temperature_k)
+    analytic = derivatives["pressure_pa"].cross_section
+    original = atmo.pressure_pa.copy()
+    step = np.maximum(original * 1e-3, 100.0)
+    # A fourth-order forward difference keeps even the smallest pressure positive
+    # and resolves tiny pressure-induced shifts of the large line-center values.
+    samples = []
+    for i in range(5):
+        atmo.pressure_pa = original + i * step
+        samples.append(
+            absorber.atmosphere_quantities(atmo, **kwargs).cross_section.copy()
+        )
+    atmo.pressure_pa = original
+    numeric = sum(
+        weight * value
+        for weight, value in zip([-25, 48, -36, 16, -3], samples, strict=True)
+    ) / (12 * step[:, None])
+    scale = np.max(np.abs(numeric), axis=1, keepdims=True)
+    assert np.all(scale > 0)
+    np.testing.assert_allclose(analytic / scale, numeric / scale, rtol=2e-4, atol=2e-5)
+
+
+@pytest.mark.parametrize("temperature_derivative", [False, True])
+def test_pressure_radiance_jacobian(tmp_path, temperature_derivative):
+    absorber, sampled = _absorber(tmp_path)
+    atmo, engine = _scenario(temperature_derivative=temperature_derivative)
+    atmo["o2"] = sk.constituent.VMRAltitudeAbsorber(
+        absorber, atmo.model_geometry.altitudes(), np.full(6, 0.21)
+    )
+    atmo["emission"] = _FixedEmission()
+    result = engine.calculate_radiance(atmo)
+    assert "wf_o2_pressure_pa_xs" in atmo.storage.derivative_mapping_names()
+    assert len(sampled) == 2 + len(atmo.temperature_k) * (
+        4 if temperature_derivative else 2
+    )
+    if not temperature_derivative:
+        assert "wf_temperature_k" not in result
+    for level in range(len(atmo.pressure_pa)):
+        original = atmo.pressure_pa[level]
+        # Resolve the very small radiance change at the highest altitude while
+        # keeping the stencil on the same side of the clipped line-wing boundary.
+        step = min(original * 0.025, max(original * 1e-3, 1e-3))
+        atmo.pressure_pa[level] = original + step
+        above = engine.calculate_radiance(atmo).radiance
+        atmo.pressure_pa[level] = original - step
+        below = engine.calculate_radiance(atmo).radiance
+        atmo.pressure_pa[level] = original
+        numeric = (above - below) / (2 * step)
+        np.testing.assert_allclose(
+            result.wf_pressure_pa.isel(altitude=level), numeric, rtol=2e-4, atol=2e-6
+        )
+
+
+def test_pressure_derivative_switches(tmp_path):
+    absorber, sampled = _absorber(tmp_path)
+    for calculate_derivatives, pressure_derivative in [(False, True), (True, False)]:
+        atmo, engine = _scenario(
+            calculate_derivatives=calculate_derivatives,
+            pressure_derivative=pressure_derivative,
+            temperature_derivative=False,
+        )
+        atmo["o2"] = sk.constituent.VMRAltitudeAbsorber(
+            absorber, atmo.model_geometry.altitudes(), np.full(6, 0.21)
+        )
+        atmo["emission"] = _FixedEmission()
+        result = engine.calculate_radiance(atmo)
+        assert "wf_pressure_pa" not in result
+        assert "wf_o2_pressure_pa_xs" not in atmo.storage.derivative_mapping_names()
+        if not pressure_derivative:
+            assert absorber.optical_derivatives(atmo) == {}
+        assert all(t in [296.0, *atmo.temperature_k] for t in sampled)

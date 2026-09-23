@@ -65,6 +65,24 @@ impl OpticalLine {
         }
     }
 
+    /// Pressure direction per Pa at fixed temperature. `d_pself_dp` is the
+    /// self-pressure response to total pressure (the VMR at fixed composition).
+    /// Computing the width slope directly also handles zero pressure.
+    pub fn adjusted_pressure_derivative(
+        &self,
+        adjusted: &AdjustedLineParameters,
+        temperature: f64,
+        d_pself_dp: f64,
+    ) -> super::shape::LineShapeDirection {
+        super::shape::LineShapeDirection {
+            line_center: self.delta_air / 101325.0,
+            y: (296.0 / temperature).powf(self.n_air)
+                * (self.gamma_air * (1.0 - d_pself_dp) + self.gamma_self * d_pself_dp)
+                / (101325.0 * adjusted.doppler_width),
+            ..Default::default()
+        }
+    }
+
     pub fn wavelength_nm(&self) -> f64 {
         1.0e7 / self.line_center
     }

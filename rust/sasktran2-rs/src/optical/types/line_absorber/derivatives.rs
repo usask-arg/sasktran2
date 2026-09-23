@@ -1,14 +1,22 @@
 use super::*;
 use crate::interpolation::linear::Interp1Weights;
-use crate::optical::line::shape::{LineShape, LineShapeDirection, assign_with_derivative};
+use crate::optical::line::shape::{LineShape, LineShapeDirection, assign_with_derivatives};
+use rayon::prelude::*;
+
+#[derive(Clone, Copy)]
+pub(super) enum LineDerivative<'a> {
+    Temperature,
+    /// d(self pressure)/d(total pressure), e.g. VMR for fixed composition.
+    Pressure(ArrayView1<'a, f64>),
+}
 
 /// Follow exactly the same approximation regions as `split_and_assign`.
-fn split_with_derivative(
+fn split_with_derivatives<const N: usize>(
     line: &AdjustedLineParameters,
-    direction: &LineShapeDirection,
+    directions: &[LineShapeDirection; N],
     grid: &Grid1DView,
     values: &mut [f64],
-    derivatives: &mut [f64],
+    mut derivatives: [&mut [f64]; N],
 ) {
     const EPSILON: f64 = 1.0e-4;
     let n = grid.x.len();
@@ -16,10 +24,10 @@ fn split_with_derivative(
         return;
     }
     if 2.84 * line.y * line.y > 1.52 / EPSILON {
-        assign_with_derivative(
+        assign_with_derivatives(
             grid.x,
             line,
-            direction,
+            directions,
             LineShape::Lorentzian,
             values,
             derivatives,
@@ -27,10 +35,10 @@ fn split_with_derivative(
         return;
     }
     if grid.x[0].abs().max(grid.x[n - 1].abs()) < 2.15 - 2.53 * line.y / EPSILON {
-        assign_with_derivative(
+        assign_with_derivatives(
             grid.x,
             line,
-            direction,
+            directions,
             LineShape::Gaussian,
             values,
             derivatives,
@@ -45,13 +53,13 @@ fn split_with_derivative(
         (left..right, LineShape::Voigt),
         (right..n, LineShape::Lorentzian),
     ] {
-        assign_with_derivative(
+        assign_with_derivatives(
             &grid.x[range.clone()],
             line,
-            direction,
+            directions,
             shape,
             &mut values[range.clone()],
-            &mut derivatives[range],
+            derivatives.each_mut().map(|d| &mut d[range.clone()]),
         );
     }
 }
@@ -79,6 +87,25 @@ impl LineAbsorber {
         pressure: ArrayView1<'_, f64>,
         pself: ArrayView1<'_, f64>,
     ) -> Result<(Array2<f64>, Array2<f64>)> {
+        let (values, [derivative]) = self.cross_section_with_derivatives(
+            wavenumbers,
+            temperature,
+            pressure,
+            pself,
+            [LineDerivative::Temperature],
+        )?;
+        Ok((values, derivative))
+    }
+
+    /// Values and selected state derivatives, sharing all line-profile evaluations.
+    pub(super) fn cross_section_with_derivatives<const N: usize>(
+        &self,
+        wavenumbers: ArrayView1<'_, f64>,
+        temperature: ArrayView1<'_, f64>,
+        pressure: ArrayView1<'_, f64>,
+        pself: ArrayView1<'_, f64>,
+        requests: [LineDerivative<'_>; N],
+    ) -> Result<(Array2<f64>, [Array2<f64>; N])> {
         anyhow::ensure!(
             pressure.len() == temperature.len() && pself.len() == temperature.len(),
             "Temperature, pressure, and self pressure must have the same length"
@@ -87,8 +114,16 @@ impl LineAbsorber {
             temperature.iter().all(|t| t.is_finite() && *t > 0.0),
             "Temperature must be positive and finite"
         );
-        let mut derivatives = Array2::zeros((temperature.len(), wavenumbers.len()));
-        let mut values = Array2::zeros(derivatives.raw_dim());
+        for request in &requests {
+            if let LineDerivative::Pressure(d_pself_dp) = request {
+                anyhow::ensure!(
+                    d_pself_dp.len() == temperature.len(),
+                    "Self-pressure derivative and temperature must have the same length"
+                );
+            }
+        }
+        let mut values = Array2::zeros((temperature.len(), wavenumbers.len()));
+        let mut derivatives = std::array::from_fn(|_| Array2::zeros(values.raw_dim()));
         if wavenumbers.is_empty() || temperature.is_empty() {
             return Ok((values, derivatives));
         }
@@ -111,22 +146,29 @@ impl LineAbsorber {
             sorted[sorted.len() - 1] + self.line_contribution_width,
         );
         let params = self.gen_mol_param(lines, temperature.as_slice().unwrap())?;
-        let partition = self
-            .partition_generator
-            .as_ref()
-            .ok_or_else(|| anyhow!("Partition generator not set"))?;
-        let d_log_partition: HashMap<_, Vec<_>> = params
-            .keys()
-            .map(|&(mol, iso)| {
-                (
-                    (mol, iso),
-                    temperature
-                        .iter()
-                        .map(|&t| partition.log_temperature_derivative(mol, iso, t))
-                        .collect(),
-                )
-            })
-            .collect();
+        let temperature_derivative = requests
+            .iter()
+            .any(|r| matches!(r, LineDerivative::Temperature));
+        let d_log_partition: HashMap<_, Vec<_>> = if temperature_derivative {
+            let partition = self
+                .partition_generator
+                .as_ref()
+                .ok_or_else(|| anyhow!("Partition generator not set"))?;
+            params
+                .keys()
+                .map(|&(mol, iso)| {
+                    (
+                        (mol, iso),
+                        temperature
+                            .iter()
+                            .map(|&t| partition.log_temperature_derivative(mol, iso, t))
+                            .collect(),
+                    )
+                })
+                .collect()
+        } else {
+            HashMap::new()
+        };
         let max_pself = pself.iter().copied().fold(0.0, f64::max);
         let max_pself = if max_pself == 0.0 {
             101325.0
@@ -161,9 +203,18 @@ impl LineAbsorber {
             })
             .collect();
         crate::threading::thread_pool()?.install(|| {
-            Zip::indexed(values.rows_mut())
-                .and(derivatives.rows_mut())
-                .par_for_each(|i, mut value, mut derivative| {
+            // Group disjoint row views for Rayon without copying spectra or
+            // allocating derivative buffers inside the line loop.
+            let mut rows = derivatives.each_mut().map(|d| d.axis_iter_mut(Axis(0)));
+            let derivative_rows: Vec<_> = (0..temperature.len())
+                .map(|_| rows.each_mut().map(|rows| rows.next().unwrap()))
+                .collect();
+            values
+                .axis_iter_mut(Axis(0))
+                .into_par_iter()
+                .zip(derivative_rows.into_par_iter())
+                .enumerate()
+                .for_each(|(i, (mut value, mut derivative_rows))| {
                     for (line, start, end, coupling) in &prepared {
                         let key = (line.mol_id, line.iso_id);
                         let mol = &params[&key];
@@ -176,41 +227,70 @@ impl LineAbsorber {
                                 mol.mol_mass,
                             )
                             .unwrap();
-                        let mut direction = line.adjusted_temperature_derivative(
-                            &adjusted,
-                            temperature[i],
-                            d_log_partition[&key][i],
-                        );
+                        let mut directions = requests.map(|request| match request {
+                            LineDerivative::Temperature => line.adjusted_temperature_derivative(
+                                &adjusted,
+                                temperature[i],
+                                d_log_partition[&key][i],
+                            ),
+                            LineDerivative::Pressure(d_pself_dp) => line
+                                .adjusted_pressure_derivative(
+                                    &adjusted,
+                                    temperature[i],
+                                    d_pself_dp[i],
+                                ),
+                        });
                         let range = *start..*end;
                         let out = &mut value.as_slice_mut().unwrap()[range.clone()];
-                        let deriv = &mut derivative.as_slice_mut().unwrap()[range];
+                        let deriv = derivative_rows
+                            .each_mut()
+                            .map(|d| &mut d.as_slice_mut().unwrap()[range.clone()]);
                         if let Some((temps, ys, gs)) = coupling {
                             let y = ys.interp1(temps, temperature[i], OutOfBoundsMode::Extend);
                             let g = gs.interp1(temps, temperature[i], OutOfBoundsMode::Extend);
-                            let weights =
-                                temps.interp1_weights(temperature[i], OutOfBoundsMode::Extend);
-                            let dy: f64 = weights.iter().map(|&(j, _, dw)| ys[j] * dw).sum();
-                            let dg: f64 = weights.iter().map(|&(j, _, dw)| gs[j] * dw).sum();
+                            let (dy, dg): (f64, f64) = if temperature_derivative {
+                                let weights =
+                                    temps.interp1_weights(temperature[i], OutOfBoundsMode::Extend);
+                                (
+                                    weights.iter().map(|&(j, _, dw)| ys[j] * dw).sum(),
+                                    weights.iter().map(|&(j, _, dw)| gs[j] * dw).sum(),
+                                )
+                            } else {
+                                (0.0, 0.0)
+                            };
                             let p = pressure[i] / 101325.0;
                             let amplitude = adjusted.line_intensity_re;
-                            let d_amplitude = direction.line_intensity_re;
                             adjusted.line_intensity_re = amplitude * (1.0 + p * p * g);
                             adjusted.line_intensity_im = -amplitude * p * y;
-                            direction.line_intensity_re =
-                                d_amplitude * (1.0 + p * p * g) + amplitude * p * p * dg;
-                            direction.line_intensity_im = -p * (d_amplitude * y + amplitude * dy);
-                            assign_with_derivative(
+                            for (direction, request) in directions.iter_mut().zip(requests) {
+                                let d_amplitude = direction.line_intensity_re;
+                                match request {
+                                    LineDerivative::Temperature => {
+                                        direction.line_intensity_re = d_amplitude
+                                            * (1.0 + p * p * g)
+                                            + amplitude * p * p * dg;
+                                        direction.line_intensity_im =
+                                            -p * (d_amplitude * y + amplitude * dy);
+                                    }
+                                    LineDerivative::Pressure(_) => {
+                                        direction.line_intensity_re =
+                                            amplitude * 2.0 * p * g / 101325.0;
+                                        direction.line_intensity_im = -amplitude * y / 101325.0;
+                                    }
+                                }
+                            }
+                            assign_with_derivatives(
                                 &sorted[*start..*end],
                                 &adjusted,
-                                &direction,
+                                &directions,
                                 LineShape::Voigt,
                                 out,
                                 deriv,
                             );
                         } else {
-                            split_with_derivative(
+                            split_with_derivatives(
                                 &adjusted,
-                                &direction,
+                                &directions,
                                 &grid.slice(*start, *end),
                                 out,
                                 deriv,
@@ -220,24 +300,27 @@ impl LineAbsorber {
                 });
         });
         // The forward calculation clips negative cross sections after summing lines.
-        Zip::from(&mut derivatives)
-            .and(&mut values)
-            .for_each(|derivative, value| {
-                if *value <= 0.0 {
-                    *derivative = 0.0;
-                    *value = 0.0;
-                }
-            });
+        for derivative in &mut derivatives {
+            Zip::from(derivative)
+                .and(&values)
+                .for_each(|derivative, &value| {
+                    if value <= 0.0 {
+                        *derivative = 0.0;
+                    }
+                });
+        }
+        values.mapv_inplace(|value| value.max(0.0));
         if let Some(permutation) = permutation {
             let mut output = Array2::zeros(values.raw_dim());
-            let mut d_output = Array2::zeros(derivatives.raw_dim());
+            let mut d_output = std::array::from_fn(|_| Array2::zeros(values.raw_dim()));
             for (sorted_idx, &original_idx) in permutation.iter().enumerate() {
                 output
                     .column_mut(original_idx)
                     .assign(&values.column(sorted_idx));
-                d_output
-                    .column_mut(original_idx)
-                    .assign(&derivatives.column(sorted_idx));
+                for (out, derivative) in d_output.iter_mut().zip(&derivatives) {
+                    out.column_mut(original_idx)
+                        .assign(&derivative.column(sorted_idx));
+                }
             }
             Ok((output, d_output))
         } else {
@@ -249,6 +332,7 @@ impl LineAbsorber {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::optical::line::shape::assign_with_derivative;
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -389,7 +473,7 @@ mod tests {
             split_and_assign(&line, &grid, &mut reference);
             let mut values = vec![0.0; 127];
             let mut derivatives = vec![0.0; 127];
-            split_with_derivative(&line, &direction, &grid, &mut values, &mut derivatives);
+            split_with_derivatives(&line, &[direction], &grid, &mut values, [&mut derivatives]);
             for i in 0..127 {
                 assert!((values[i] - reference[i]).abs() < 1e-12);
                 assert!((derivatives[i] - 0.7 * reference[i]).abs() < 1e-12);
@@ -537,6 +621,144 @@ mod tests {
     }
 
     #[test]
+    fn pressure_derivative_includes_self_broadening_shifts_and_mixing() {
+        for mixing in [false, true] {
+            for vmr in [0.0, 0.21, 1.0] {
+                let calls = Arc::new(AtomicUsize::new(0));
+                let absorber = synthetic_absorber(mixing, calls.clone());
+                let wv = Array1::linspace(13097.0, 13104.0, 701);
+                let temp = array![190.0, 230.0, 280.0, 330.0];
+                let pressure = array![10.0, 1000.0, 101325.0, 1.0e8];
+                let pself = &pressure * vmr;
+                let d_pself_dp = Array1::from_elem(temp.len(), vmr);
+                let (xs, [dp]) = absorber
+                    .cross_section_with_derivatives(
+                        wv.view(),
+                        temp.view(),
+                        pressure.view(),
+                        pself.view(),
+                        [LineDerivative::Pressure(d_pself_dp.view())],
+                    )
+                    .unwrap();
+                assert_eq!(
+                    calls.load(Ordering::Relaxed),
+                    0,
+                    "pressure-only evaluation must not sample partition temperature slopes"
+                );
+                let (joint_xs, [joint_dt, joint_dp]) = absorber
+                    .cross_section_with_derivatives(
+                        wv.view(),
+                        temp.view(),
+                        pressure.view(),
+                        pself.view(),
+                        [
+                            LineDerivative::Temperature,
+                            LineDerivative::Pressure(d_pself_dp.view()),
+                        ],
+                    )
+                    .unwrap();
+                assert_eq!(calls.load(Ordering::Relaxed), temp.len());
+                let dt = absorber
+                    .cross_section_temperature_derivative(
+                        wv.view(),
+                        temp.view(),
+                        pressure.view(),
+                        pself.view(),
+                    )
+                    .unwrap();
+                for (left, right) in [(&xs, &joint_xs), (&dp, &joint_dp), (&dt, &joint_dt)] {
+                    for (&a, &b) in left.iter().zip(right) {
+                        assert!((a - b).abs() < b.abs() * 1e-11 + 1e-35);
+                    }
+                }
+                let step = pressure.mapv(|p| (p * 1e-3_f64).max(1.0));
+                let shifted = |factor: f64| {
+                    let shifted_pressure = &pressure + &step * factor;
+                    absorber
+                        .cross_section(
+                            wv.view(),
+                            temp.view(),
+                            shifted_pressure.view(),
+                            (&shifted_pressure * vmr).view(),
+                        )
+                        .unwrap()
+                };
+                let numeric = ((shifted(0.5) - shifted(-0.5)) * 4.0
+                    - (shifted(1.0) - shifted(-1.0)) / 2.0)
+                    / 3.0
+                    / step.view().insert_axis(Axis(1));
+                for (actual, expected) in dp.rows().into_iter().zip(numeric.rows()) {
+                    let peak = expected.iter().copied().map(f64::abs).fold(0.0, f64::max);
+                    assert!(peak > 0.0);
+                    for (&a, &b) in actual.iter().zip(expected) {
+                        assert!(
+                            (a - b).abs() < b.abs() * 2e-4 + peak * 2e-5 + 1e-35,
+                            "mixing {mixing}, VMR {vmr}: {a:e} vs {b:e}"
+                        );
+                    }
+                }
+                let indices = [503, 100, 230, 340, 510];
+                let unsorted = Array1::from_iter(indices.map(|i| wv[i]));
+                let (_, [unsorted_dp]) = absorber
+                    .cross_section_with_derivatives(
+                        unsorted.view(),
+                        temp.view(),
+                        pressure.view(),
+                        pself.view(),
+                        [LineDerivative::Pressure(d_pself_dp.view())],
+                    )
+                    .unwrap();
+                for (j, idx) in indices.into_iter().enumerate() {
+                    for i in 0..temp.len() {
+                        assert!(
+                            (unsorted_dp[[i, j]] - dp[[i, idx]]).abs()
+                                < dp[[i, idx]].abs() * 1e-10 + 1e-35
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pressure_derivative_is_finite_at_zero_pressure() {
+        let absorber = synthetic_absorber(true, Arc::new(AtomicUsize::new(0)));
+        let wv = Array1::linspace(13099.98, 13100.02, 35);
+        let temp = array![230.0];
+        let pressure = array![0.0];
+        let vmr = array![0.21];
+        let (_, [dp]) = absorber
+            .cross_section_with_derivatives(
+                wv.view(),
+                temp.view(),
+                pressure.view(),
+                pressure.view(),
+                [LineDerivative::Pressure(vmr.view())],
+            )
+            .unwrap();
+        let forward = |p: f64| {
+            absorber
+                .cross_section(
+                    wv.view(),
+                    temp.view(),
+                    array![p].view(),
+                    array![0.21 * p].view(),
+                )
+                .unwrap()
+        };
+        let h = 10.0;
+        let numeric = (-25.0 * forward(0.0) + 48.0 * forward(h) - 36.0 * forward(2.0 * h)
+            + 16.0 * forward(3.0 * h)
+            - 3.0 * forward(4.0 * h))
+            / (12.0 * h);
+        let peak = numeric.iter().copied().map(f64::abs).fold(0.0, f64::max);
+        assert!(peak > 0.0);
+        for (&a, &b) in dp.iter().zip(&numeric) {
+            assert!(a.is_finite() && (a - b).abs() < 2e-5 * peak);
+        }
+    }
+
+    #[test]
     fn default_partition_derivative_matches_power_law() {
         struct PowerLaw;
         impl PartitionFactor for PowerLaw {
@@ -606,11 +828,20 @@ mod tests {
         let xs = absorber
             .cross_section(wv.view(), t.view(), p.view(), pself.view())
             .unwrap();
-        let (combined_xs, derivative) = absorber
-            .cross_section_with_temperature_derivative(wv.view(), t.view(), p.view(), pself.view())
+        let (combined_xs, derivatives) = absorber
+            .cross_section_with_derivatives(
+                wv.view(),
+                t.view(),
+                p.view(),
+                pself.view(),
+                [
+                    LineDerivative::Temperature,
+                    LineDerivative::Pressure(array![0.21].view()),
+                ],
+            )
             .unwrap();
         assert!(xs.iter().all(|&v| v == 0.0));
         assert!(combined_xs.iter().all(|&v| v == 0.0));
-        assert!(derivative.iter().all(|&v| v == 0.0));
+        assert!(derivatives.iter().all(|d| d.iter().all(|&v| v == 0.0)));
     }
 }

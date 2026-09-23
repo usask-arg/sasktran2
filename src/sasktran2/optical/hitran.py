@@ -41,11 +41,18 @@ class LineAbsorber(OpticalProperty):
         return self._internal.atmosphere_quantities(atmo, **kwargs)
 
     def optical_derivatives(self, atmo, **kwargs):
-        """Temperature cross-section derivatives at fixed total and self pressure.
+        """Temperature and pressure cross-section derivatives.
 
-        Included automatically when atmospheric temperature derivatives are enabled.
+        Temperature derivatives hold total and self pressure fixed. Pressure
+        derivatives are per Pa at fixed temperature and VMR, including the
+        self-pressure response ``p_self = vmr * pressure_pa``. Without a supplied
+        VMR, self pressure and its pressure derivative are zero.
+
+        Included automatically when the corresponding atmospheric derivatives
+        are enabled. Broadening, line shifts, and line mixing are included.
         Line shapes and strengths are differentiated analytically; the partition
-        function derivative uses a local difference of the supplied HAPI function.
+        function temperature derivative uses a local difference of the supplied
+        HAPI function and is skipped for pressure-only requests.
         """
         return self._internal.optical_derivatives(atmo, **kwargs)
 
@@ -53,8 +60,9 @@ class LineAbsorber(OpticalProperty):
         """Return optical quantities and enabled derivatives in one line-list pass.
 
         The result is a ``(quantities, derivatives)`` tuple, with derivatives
-        keyed by ``"temperature_k"``. If temperature derivatives are disabled,
-        this uses the value-only kernels and returns an empty derivative dict.
+        keyed by ``"temperature_k"`` and/or ``"pressure_pa"``. Requesting both
+        shares profile evaluations. If both are disabled, this uses the
+        value-only kernels and returns an empty derivative dict.
         Absorber constituents use this combined evaluation automatically.
         """
         return self._internal.atmosphere_quantities_and_derivatives(atmo, **kwargs)
