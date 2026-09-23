@@ -230,15 +230,20 @@ pub trait PartitionFactor {
     /// d ln(Q) / dT. Providers may override this with an analytic/table derivative.
     /// The fallback only samples the inexpensive partition function, once per
     /// isotopologue and temperature, and is never called by value-only spectra.
-    fn log_temperature_derivative(&self, mol_id: i32, iso_id: i32, temperature: f64) -> f64 {
+    fn log_temperature_derivative(
+        &self,
+        mol_id: i32,
+        iso_id: i32,
+        temperature: f64,
+    ) -> Result<f64> {
         let step = temperature * f64::EPSILON.cbrt();
-        (self
+        Ok((self
             .partition_factor(mol_id, iso_id, temperature + step)
             .ln()
             - self
                 .partition_factor(mol_id, iso_id, temperature - step)
                 .ln())
-            / (2.0 * step)
+            / (2.0 * step))
     }
 }
 

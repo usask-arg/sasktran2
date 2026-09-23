@@ -43,6 +43,41 @@ impl PartitionFactor for PyPartitionFactor {
         });
         result
     }
+
+    fn log_temperature_derivative(
+        &self,
+        mol_id: i32,
+        iso_id: i32,
+        temperature: f64,
+    ) -> anyhow::Result<f64> {
+        Python::attach(|py| {
+            let tips = self.py_tips.bind(py);
+            let log_partition = |t| -> anyhow::Result<f64> {
+                let q: f64 = tips.call1((mol_id, iso_id, t))?.extract()?;
+                anyhow::ensure!(
+                    q.is_finite() && q > 0.0,
+                    "Partition factor must be positive and finite"
+                );
+                Ok(q.ln())
+            };
+            let step = temperature * f64::EPSILON.cbrt();
+            match (
+                log_partition(temperature + step),
+                log_partition(temperature - step),
+            ) {
+                (Ok(above), Ok(below)) => Ok((above - below) / (2.0 * step)),
+                // Tables such as HAPI include their endpoints but reject samples
+                // beyond them. Use a second-order one-sided stencil there.
+                (Ok(above), Err(_)) => Ok((-3.0 * log_partition(temperature)? + 4.0 * above
+                    - log_partition(temperature + 2.0 * step)?)
+                    / (2.0 * step)),
+                (Err(_), Ok(below)) => Ok((3.0 * log_partition(temperature)? - 4.0 * below
+                    + log_partition(temperature - 2.0 * step)?)
+                    / (2.0 * step)),
+                (Err(error), Err(_)) => Err(error),
+            }
+        })
+    }
 }
 
 impl MolecularMass for PyMolecularMass {

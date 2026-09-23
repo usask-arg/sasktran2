@@ -52,7 +52,13 @@ class LineAbsorber(OpticalProperty):
         are enabled. Broadening, line shifts, and line mixing are included.
         Line shapes and strengths are differentiated analytically; the partition
         function temperature derivative uses a local difference of the supplied
-        HAPI function and is skipped for pressure-only requests.
+        HAPI function, using a one-sided difference at table boundaries, and is
+        skipped for pressure-only requests. Returned derivatives support both
+        ``cross_section`` and the Python optical-property name ``d_extinction``.
+
+        These are local derivatives of the current line-shape approximation.
+        Line selection and approximation-region switches are held fixed;
+        clipped non-positive cross sections have zero derivatives.
         """
         return self._internal.optical_derivatives(atmo, **kwargs)
 

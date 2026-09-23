@@ -3,12 +3,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import sasktran2 as sk
+import sasktran2.atmosphere as atmosphere_module
 from sasktran2._core_rust import LineDatabaseType, PyLineAbsorber
 from sasktran2.constituent.base import Constituent
 from sasktran2.optical.hitran import LineAbsorber
 
 
-def _absorber(tmp_path):
+def _absorber(tmp_path, partition_function=None):
     """A local synthetic O2 line list, without downloads or a HAPI dependency."""
     records = []
     for center, energy in [(13100.0, 30.0), (13100.8, 450.0)]:
@@ -26,6 +27,8 @@ def _absorber(tmp_path):
 
     def partition(_mol, _iso, temperature):
         partition_temperatures.append(temperature)
+        if partition_function is not None:
+            return partition_function(temperature)
         return temperature**1.5
 
     absorber = LineAbsorber.__new__(LineAbsorber)
@@ -48,7 +51,11 @@ class _FixedEmission(Constituent):
         pass
 
 
-def _scenario(spectral_mode=sk.SpectralGridMode.Monochromatic, **atmosphere_options):
+def _scenario(
+    spectral_mode=sk.SpectralGridMode.Monochromatic,
+    wavenumbers=None,
+    **atmosphere_options,
+):
     config = sk.Config()
     config.spectral_grid_mode = spectral_mode
     config.single_scatter_source = sk.SingleScatterSource.NoSource
@@ -66,7 +73,9 @@ def _scenario(spectral_mode=sk.SpectralGridMode.Monochromatic, **atmosphere_opti
     atmosphere = sk.Atmosphere(
         geometry,
         config,
-        wavenumber_cminv=np.linspace(13099.8, 13101.0, 151),
+        wavenumber_cminv=(
+            np.linspace(13099.8, 13101.0, 151) if wavenumbers is None else wavenumbers
+        ),
         **atmosphere_options,
     )
     atmosphere.temperature_k = np.array([288, 240, 220, 250, 210, 200], dtype=float)
@@ -300,3 +309,127 @@ def test_pressure_derivative_switches(tmp_path):
         if not pressure_derivative:
             assert absorber.optical_derivatives(atmo) == {}
         assert all(t in [296.0, *atmo.temperature_k] for t in sampled)
+
+
+def test_line_derivatives_compose_with_python_optical_properties(tmp_path):
+    absorber, _ = _absorber(tmp_path)
+    atmo, engine = _scenario()
+    vmr = np.full(6, 0.21)
+    derivatives = absorber.optical_derivatives(atmo, vmr=vmr)
+    combined = absorber + absorber
+    summed = combined.optical_derivatives(atmo, vmr=vmr)
+    for key, derivative in derivatives.items():
+        np.testing.assert_array_equal(derivative.d_extinction, derivative.cross_section)
+        np.testing.assert_array_equal(derivative.d_ssa, derivative.ssa)
+        assert derivative.d_leg_coeff is None
+        np.testing.assert_array_equal(
+            summed[key].d_extinction, 2 * derivative.cross_section
+        )
+
+    atmo["o2"] = sk.constituent.VMRAltitudeAbsorber(
+        combined, atmo.model_geometry.altitudes(), vmr
+    )
+    atmo["emission"] = _FixedEmission()
+    result = engine.calculate_radiance(atmo)
+    reference_atmo, reference_engine = _scenario()
+    for name in ["o2a", "o2b"]:
+        reference_atmo[name] = sk.constituent.VMRAltitudeAbsorber(
+            absorber, reference_atmo.model_geometry.altitudes(), vmr
+        )
+    reference_atmo["emission"] = _FixedEmission()
+    reference = reference_engine.calculate_radiance(reference_atmo)
+    for name in ["radiance", "wf_temperature_k", "wf_pressure_pa"]:
+        # Separate mappings sum the density and cross-section terms in a
+        # different floating-point order, including where they nearly cancel.
+        np.testing.assert_allclose(
+            result[name], reference[name], rtol=1e-10, atol=1e-10
+        )
+
+
+def test_temperature_derivative_at_partition_table_boundaries(tmp_path):
+    def partition(temperature):
+        if not 150.0 <= temperature <= 350.0:
+            msg = "Temperature outside the partition table"
+            raise ValueError(msg)
+        return temperature**1.5
+
+    absorber, _ = _absorber(tmp_path, partition)
+    atmo, _ = _scenario(pressure_derivative=False)
+    original = np.array([150.0, 150.00001, 230.0, 296.0, 349.99999, 350.0])
+    atmo.temperature_k = original.copy()
+    analytic = absorber.optical_derivatives(atmo)["temperature_k"].cross_section
+    # An independent fourth-order one-sided stencil stays within the table.
+    step = np.where(original < 250.0, 0.01, -0.01)
+    samples = []
+    for i in range(5):
+        atmo.temperature_k = original + i * step
+        samples.append(absorber.atmosphere_quantities(atmo).cross_section.copy())
+    numeric = sum(
+        weight * value
+        for weight, value in zip([-25, 48, -36, 16, -3], samples, strict=True)
+    ) / (12 * step[:, None])
+    np.testing.assert_allclose(analytic, numeric, rtol=2e-5, atol=1e-35)
+
+
+def test_partition_derivative_callback_errors_are_propagated(tmp_path):
+    def partition(temperature):
+        if temperature != 296.0:
+            msg = "Partition samples unavailable"
+            raise ValueError(msg)
+        return temperature**1.5
+
+    absorber, _ = _absorber(tmp_path, partition)
+    atmo, _ = _scenario(pressure_derivative=False)
+    atmo.temperature_k[:] = 296.0
+    absorber.atmosphere_quantities(atmo)
+    with pytest.raises(RuntimeError, match="Partition samples unavailable"):
+        absorber.optical_derivatives(atmo)
+    atmo["o2"] = sk.constituent.VMRAltitudeAbsorber(
+        absorber, atmo.model_geometry.altitudes(), np.full(6, 0.21)
+    )
+    with pytest.raises(RuntimeError, match="Partition samples unavailable"):
+        atmo.internal_object()
+
+
+def test_derivatives_reduce_from_distinct_fine_spectral_grid(tmp_path, monkeypatch):
+    absorber, _ = _absorber(tmp_path)
+    fine_atmo, _ = _scenario()
+    fine_grid = sk.basis.Grid.from_triangles(fine_atmo.wavenumbers_cminv)
+    coarse_wavenumbers = np.linspace(13099.8, 13101.0, 11)
+    coarse_grid = sk.basis.Grid.from_triangles(coarse_wavenumbers)
+    native_atmosphere = atmosphere_module.PyAtmosphere
+
+    def with_fine_grid(*args):
+        return native_atmosphere(*args[:7], fine_grid._internal_object(), *args[8:])
+
+    # The public constructor currently uses the same fine and output grids.
+    # Supply distinct native grids to check actual spectral reduction.
+    with monkeypatch.context() as patch:
+        patch.setattr(atmosphere_module, "PyAtmosphere", with_fine_grid)
+        coarse_atmo, _ = _scenario(
+            spectral_mode=sk.SpectralGridMode.AtmosphereIntegratedLineShape,
+            wavenumbers=coarse_wavenumbers,
+        )
+    vmr = np.full(6, 0.21)
+    fine, fine_derivatives = absorber.atmosphere_quantities_and_derivatives(
+        fine_atmo, vmr=vmr
+    )
+    coarse, coarse_derivatives = absorber.atmosphere_quantities_and_derivatives(
+        coarse_atmo, vmr=vmr
+    )
+    separate = absorber.optical_derivatives(coarse_atmo, vmr=vmr)
+    mapping = fine_grid.mapping_to(coarse_grid, normalize=False)
+    assert coarse.cross_section.shape == (6, 11)
+    np.testing.assert_allclose(
+        coarse.cross_section, fine.cross_section @ mapping.T, rtol=1e-12
+    )
+    for key in ["temperature_k", "pressure_pa"]:
+        np.testing.assert_allclose(
+            coarse_derivatives[key].cross_section,
+            fine_derivatives[key].cross_section @ mapping.T,
+            rtol=1e-12,
+            atol=1e-35,
+        )
+        np.testing.assert_array_equal(
+            separate[key].cross_section, coarse_derivatives[key].cross_section
+        )

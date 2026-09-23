@@ -157,15 +157,15 @@ impl LineAbsorber {
             params
                 .keys()
                 .map(|&(mol, iso)| {
-                    (
+                    Ok((
                         (mol, iso),
                         temperature
                             .iter()
                             .map(|&t| partition.log_temperature_derivative(mol, iso, t))
-                            .collect(),
-                    )
+                            .collect::<Result<Vec<_>>>()?,
+                    ))
                 })
-                .collect()
+                .collect::<Result<_>>()?
         } else {
             HashMap::new()
         };
@@ -488,9 +488,9 @@ mod tests {
         fn partition_factor(&self, _: i32, _: i32, t: f64) -> f64 {
             t.powf(1.5)
         }
-        fn log_temperature_derivative(&self, _: i32, _: i32, t: f64) -> f64 {
+        fn log_temperature_derivative(&self, _: i32, _: i32, t: f64) -> Result<f64> {
             self.derivative_calls.fetch_add(1, Ordering::Relaxed);
-            1.5 / t
+            Ok(1.5 / t)
         }
     }
     struct Mass;
@@ -767,7 +767,9 @@ mod tests {
             }
         }
         for t in [100.0, 200.0, 296.0, 500.0] {
-            assert!((PowerLaw.log_temperature_derivative(7, 1, t) - 1.5 / t).abs() < 1e-11);
+            assert!(
+                (PowerLaw.log_temperature_derivative(7, 1, t).unwrap() - 1.5 / t).abs() < 1e-11
+            );
         }
     }
 
