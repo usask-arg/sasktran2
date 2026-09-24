@@ -508,6 +508,9 @@ pub fn oxygen_a_band_lte_line_weights(
     temperature_k: ArrayView1<'_, f64>,
     line_weight_model: AEmissionLineWeightModel,
 ) -> Result<Array2<f64>> {
+    if temperature_k.iter().any(|t| !t.is_finite() || *t <= 0.0) {
+        return Err(anyhow!("Emission temperatures must be positive and finite"));
+    }
     match line_weight_model {
         AEmissionLineWeightModel::EinsteinABranching => {
             oxygen_a_band_einstein_branching_line_weights(band, temperature_k)
@@ -516,6 +519,34 @@ pub fn oxygen_a_band_lte_line_weights(
             oxygen_a_band_hitran_line_strength_weights(band, temperature_k)
         }
     }
+}
+
+/// Derivative at fixed total VER in each vibrational band. Both supported
+/// weight models have normalized weights proportional to exp(-c2 E_upper/T);
+/// their temperature-dependent common factors cancel in the normalization.
+pub fn oxygen_a_band_lte_line_weights_with_temperature_derivative(
+    band: &EmissionBand,
+    temperature_k: ArrayView1<'_, f64>,
+    line_weight_model: AEmissionLineWeightModel,
+) -> Result<(Array2<f64>, Array2<f64>)> {
+    let weights = oxygen_a_band_lte_line_weights(band, temperature_k, line_weight_model)?;
+    let mut derivative = Array2::zeros(weights.raw_dim());
+    for state in unique_upper_vibrational_states(band) {
+        let indices = line_indices_for_upper_vibrational_state(band, &state);
+        // Subtract a common energy to avoid cancellation of vibrational energy.
+        let reference = band.lines[indices[0]].upper_energy_cminv;
+        for (alt, &temperature) in temperature_k.iter().enumerate() {
+            let mean_energy: f64 = indices
+                .iter()
+                .map(|&i| weights[[alt, i]] * (band.lines[i].upper_energy_cminv - reference))
+                .sum();
+            for &i in &indices {
+                derivative[[alt, i]] = weights[[alt, i]] * C2_K_CM / temperature.powi(2)
+                    * (band.lines[i].upper_energy_cminv - reference - mean_energy);
+            }
+        }
+    }
+    Ok((weights, derivative))
 }
 
 pub fn oxygen_a_band_line_list_weights_from_populations<'a>(
@@ -658,6 +689,11 @@ fn oxygen_a_band_einstein_branching_line_weights(
     for vibrational_state in unique_upper_vibrational_states(band) {
         let line_indices = line_indices_for_upper_vibrational_state(band, &vibrational_state);
 
+        let reference_energy = line_indices
+            .iter()
+            .map(|&i| band.lines[i].upper_energy_cminv)
+            .fold(f64::INFINITY, f64::min);
+
         for (alt_idx, &temperature) in temperature_k.iter().enumerate() {
             let mut row_sum = 0.0;
             for &line_idx in &line_indices {
@@ -665,7 +701,7 @@ fn oxygen_a_band_einstein_branching_line_weights(
                 let upper_g = line.upper_statistical_weight.unwrap_or(0.0);
                 let upper_population_weight = line.isotope_abundance
                     * upper_g
-                    * (-C2_K_CM * line.upper_energy_cminv / temperature).exp();
+                    * (-C2_K_CM * (line.upper_energy_cminv - reference_energy) / temperature).exp();
                 let weight = upper_population_weight * line.upper_branching_ratio;
                 weights[[alt_idx, line_idx]] = weight;
                 row_sum += weight;
@@ -835,6 +871,75 @@ fn normalize_band_line_weights(lines: &mut [EmissionBandLine]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalized_rotational_weight_derivatives_match_finite_differences() {
+        let mut lines = vec![
+            test_line(760.0, "b 0", "X 0", 2.0),
+            test_line(761.0, "b 0", "X 0", 6.0),
+            test_line(762.0, "b 1", "X 1", 3.0),
+            test_line(763.0, "b 1", "X 1", 8.0),
+        ];
+        for (i, line) in lines.iter_mut().enumerate() {
+            line.lower_energy = [10.0, 800.0, 1500.0, 1900.0][i];
+        }
+        let band = EmissionBand::oxygen_a_band_from_hitran(&OpticalLineDB { lines }).unwrap();
+        let temperatures = array![100.0, 220.0, 400.0];
+        for model in [
+            AEmissionLineWeightModel::EinsteinABranching,
+            AEmissionLineWeightModel::HitranLineStrength,
+        ] {
+            let (weights, derivative) = oxygen_a_band_lte_line_weights_with_temperature_derivative(
+                &band,
+                temperatures.view(),
+                model,
+            )
+            .unwrap();
+            let above =
+                oxygen_a_band_lte_line_weights(&band, (&temperatures + 0.001).view(), model)
+                    .unwrap();
+            let below =
+                oxygen_a_band_lte_line_weights(&band, (&temperatures - 0.001).view(), model)
+                    .unwrap();
+            let numeric = (above - below) / 0.002;
+            for (analytic, numeric) in derivative.iter().zip(numeric.iter()) {
+                assert!((analytic - numeric).abs() < 1e-10);
+            }
+            for state in unique_upper_vibrational_states(&band) {
+                let indices = line_indices_for_upper_vibrational_state(&band, &state);
+                for alt in 0..temperatures.len() {
+                    assert!(
+                        (indices.iter().map(|&i| weights[[alt, i]]).sum::<f64>() - 1.0).abs()
+                            < 1e-14
+                    );
+                    assert!(
+                        indices
+                            .iter()
+                            .map(|&i| derivative[[alt, i]])
+                            .sum::<f64>()
+                            .abs()
+                            < 1e-14
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rotational_weights_avoid_common_vibrational_underflow() {
+        let db = OpticalLineDB {
+            lines: vec![test_line(760.0, "b 0", "X 0", 2.0)],
+        };
+        let band = EmissionBand::oxygen_a_band_from_hitran(&db).unwrap();
+        let (weights, derivative) = oxygen_a_band_lte_line_weights_with_temperature_derivative(
+            &band,
+            array![10.0].view(),
+            AEmissionLineWeightModel::EinsteinABranching,
+        )
+        .unwrap();
+        assert_eq!(weights[[0, 0]], 1.0);
+        assert_eq!(derivative[[0, 0]], 0.0);
+    }
 
     #[test]
     fn transition_photon_ver_is_population_times_einstein_a() {

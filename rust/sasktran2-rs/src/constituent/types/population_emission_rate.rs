@@ -1,7 +1,9 @@
 use crate::atmosphere::*;
 use crate::constituent::traits::*;
+use crate::constituent::types::band_volume_emission_rate::BandVolumeEmissionRate;
 use crate::constituent::types::line_list_volume_emission_rate::LineListVolumeEmissionRate;
 use crate::constituent::types::volume_emission_rate::MonochromaticVolumeEmissionRate;
+use crate::emission::o2::{O2BandEmissionModel, oxygen_emission_band};
 use crate::optical::line::OpticalLineDB;
 use crate::photchem::emission::{
     AEmissionLineWeightModel, EmissionBand, oxygen_a_band_line_list_weights_from_populations,
@@ -85,7 +87,9 @@ impl PopulationEmissionProfiles {
 }
 
 pub struct PopulationEmissionRate {
+    /// Construction-time spectra retained for the existing inspection API.
     pub line_list_emissions: Vec<LineListVolumeEmissionRate>,
+    pub band_emissions: Vec<BandVolumeEmissionRate<O2BandEmissionModel>>,
     pub monochromatic_emissions: Vec<MonochromaticVolumeEmissionRate>,
 }
 
@@ -103,6 +107,7 @@ impl PopulationEmissionRate {
         }
 
         let mut line_list_emissions = Vec::new();
+        let mut band_emissions = Vec::new();
         let monochromatic_emissions = Vec::new();
 
         for species in species {
@@ -121,12 +126,38 @@ impl PopulationEmissionRate {
                     {
                         line_list_emissions.push(emission);
                     }
+                    let a_band = EmissionBand::oxygen_a_band_from_hitran(db)?;
+                    let b_band = EmissionBand::oxygen_b_band_from_hitran(db)?;
+                    for (transition, state, available) in [
+                        ("0-0", "O2(b)", Some(&a_band)),
+                        ("1-1", "O2(b, v=1)", Some(&a_band)),
+                        ("1-0", "O2(b, v=1)", b_band.as_ref()),
+                    ] {
+                        if !available.is_some_and(|band| {
+                            band.lines
+                                .iter()
+                                .any(|line| line.upper_vibrational_state == state)
+                        }) {
+                            continue;
+                        }
+                        let band = oxygen_emission_band(db, transition)?;
+                        let photon_ver = profiles
+                            .optional_population(state)
+                            .map(|population| band.photon_ver(population))
+                            .unwrap_or_else(|| Array1::zeros(profiles.altitudes_m.len()));
+                        band_emissions.push(BandVolumeEmissionRate::new(
+                            profiles.altitudes_m.clone(),
+                            photon_ver,
+                            O2BandEmissionModel::new(band, line_weight_model)?,
+                        )?);
+                    }
                 }
             }
         }
 
         Ok(Self {
             line_list_emissions,
+            band_emissions,
             monochromatic_emissions,
         })
     }
@@ -136,6 +167,11 @@ impl PopulationEmissionRate {
     }
 
     pub fn with_interp_mode(mut self, interp_mode: crate::interpolation::OutOfBoundsMode) -> Self {
+        self.band_emissions = self
+            .band_emissions
+            .into_iter()
+            .map(|band| band.with_interp_mode(interp_mode))
+            .collect();
         self.line_list_emissions = self
             .line_list_emissions
             .into_iter()
@@ -152,7 +188,7 @@ impl PopulationEmissionRate {
 
 impl Constituent for PopulationEmissionRate {
     fn add_to_atmosphere(&self, storage: &mut impl AtmosphereStorageAccess) -> Result<()> {
-        for emission in &self.line_list_emissions {
+        for emission in &self.band_emissions {
             emission.add_to_atmosphere(storage)?;
         }
 
@@ -165,9 +201,17 @@ impl Constituent for PopulationEmissionRate {
 
     fn register_derivatives(
         &self,
-        _storage: &mut impl AtmosphereStorageAccess,
-        _constituent_name: &str,
+        storage: &mut impl AtmosphereStorageAccess,
+        constituent_name: &str,
     ) -> Result<()> {
+        for emission in &self.band_emissions {
+            let name = format!(
+                "{}_{}",
+                constituent_name,
+                emission.band_name().replace('-', "_")
+            );
+            emission.register_emission_derivatives(storage, &name, false)?;
+        }
         Ok(())
     }
 }

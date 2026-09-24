@@ -5,6 +5,7 @@ pub mod emission;
 pub mod line_list_volume_emission_rate;
 pub mod manual;
 pub mod number_density_scatterer;
+pub mod o2_band_emission_rate;
 pub mod population_emission_rate;
 pub mod rayleigh;
 pub mod vmr_absorber_2d;
