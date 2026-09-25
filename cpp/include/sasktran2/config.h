@@ -119,7 +119,13 @@ namespace sasktran2 {
          * discrete_ordinates
          *
          * 'volume_emission_rate' Uses the emission source defined in the
-         * atmosphere grid storage class as a volume emission rate
+         * atmosphere grid storage class as a volume emission rate per
+         * steradian. With twostream multiple scattering, includes scattering
+         * and surface reflection of the emitted radiation.
+         *
+         * 'twostream' Solves thermal emission and its scattering with the
+         * dedicated two-stream solver, interpreting the source as a Planck
+         * function.
          */
         enum class EmissionSource {
             standard = 0,
