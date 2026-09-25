@@ -26,6 +26,15 @@
     sasktran2.optical.Mie
 ```
 
+## Optical-property interface
+
+```{eval-rst}
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.optical.base.OpticalProperty
+```
+
 ## Metal resonance properties
 
 See the [metal resonance guide](../users_guide/metal_resonance.md) for executable

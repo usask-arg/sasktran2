@@ -707,7 +707,7 @@ class Atmosphere:
     @property
     def deriv_mappings(self) -> dict:
         """
-        A nested dictionary of :py:class:`sasktran2.atmosphere.DerivativeMapping` objects.
+        The Python-side derivative mapping dictionary.
 
         Returns
         -------

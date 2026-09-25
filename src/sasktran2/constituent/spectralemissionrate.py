@@ -183,7 +183,8 @@ class MetalVolumeEmissionRate(SpectralVolumeEmissionRate):
     much coarser than an instrument's resolution. Inspect ``metadata`` before
     interpreting a fitted VER. The source wavelength convention and uncertainty
     are retained there; an unspecified convention is not converted to vacuum.
-    See :class:`SpectralVolumeEmissionRate` for units and normalization.
+    See :class:`sasktran2.constituent.SpectralVolumeEmissionRate` for units and
+    normalization.
     """
 
     def __init__(

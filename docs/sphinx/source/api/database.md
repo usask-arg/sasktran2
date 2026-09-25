@@ -34,6 +34,16 @@ object takes precedence over both global settings.
     sasktran2.database.MetalSpectroscopyDatabase
 ```
 
+## Database Interface
+
+```{eval-rst}
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.database.base.AbstractDatabase
+    sasktran2.database.base.CachedDatabase
+```
+
 ## Solar Databases
 ```{eval-rst}
 .. autosummary::

@@ -13,7 +13,8 @@ class MetalSpectroscopyDatabase(AbstractDatabase):
     """Cached spectroscopy for metal resonance and volume-emission properties.
 
     Files live below ``spectroscopy/metals/{atomic,molecular,emission}`` in the normal
-    SASKTRAN2 database. Missing files are obtained through :class:`StandardDatabase`.
+    SASKTRAN2 database. Missing files are obtained through
+    :class:`sasktran2.database.StandardDatabase`.
     An explicit ``db_root`` instead selects a local-only database, useful for
     offline work and independently prepared spectroscopy.
     See ``tools/spectroscopy`` for reproducible data preparation and provenance.

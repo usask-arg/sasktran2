@@ -100,4 +100,4 @@ We see two parameters, `wf_brdf_L` and `wf_brdf_M`. These are the derivatives
 with respect to the input parameters `L` and `M` of the Kokhanovsky model.
 
 # Available BRDFs
-A full list of available surface parameterizations can be found at [BRDFs](../api/constituents.rst#brdfs).
+A full list of available surface parameterizations can be found at {ref}`BRDFs <constituents_api_brdf>`.

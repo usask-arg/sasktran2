@@ -18,7 +18,7 @@ By default SASKTRAN2 runs on a single thread. To change this behaviour you can s
 config.num_threads = 8
 ```
 which will let the model run on 8 threads.  For maximum performance
-it is reccomended to set {py:attr}`config.num_threads` to the number of `physical`
+it is recommended to set {py:attr}`config.num_threads <sasktran2.Config.num_threads>` to the number of `physical`
 cores on your machine, which may be less than the number of logical cores.
 
 SASKTRAN2 is most efficiently multi-threaded over the wavelength dimension, which
