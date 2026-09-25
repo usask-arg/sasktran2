@@ -31,6 +31,7 @@ object takes precedence over both global settings.
 
     sasktran2.database.MieDatabase
     sasktran2.database.StratosphericAerosolDatabase
+    sasktran2.database.MetalSpectroscopyDatabase
 ```
 
 ## Solar Databases

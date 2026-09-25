@@ -351,7 +351,12 @@ def test_default_mie_constituent(source, monkeypatch):
         sk.GeometryType.Spherical,
     )
     atmosphere = sk.Atmosphere(
-        geometry, config, wavelengths_nm=np.array([525.0, 756.0, 1021.0])
+        geometry,
+        config,
+        wavelengths_nm=np.array([525.0, 756.0, 1021.0]),
+        # This checks aerosol-only optical assembly, including zero-density
+        # endpoints. Density retrievals there require background scattering.
+        calculate_derivatives=False,
     )
     atmosphere["aerosol"] = c
     atmosphere.internal_object()

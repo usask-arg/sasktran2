@@ -1,0 +1,169 @@
+[
+  {
+    "species": "Ti_II",
+    "lower_level_id": "022002.000022",
+    "upper_level_id": "022002.000078",
+    "wavelength_nm": 271.810227,
+    "nist_a_s": 2880000.0,
+    "nist_f": 0.000638,
+    "lower_j": 4.5,
+    "upper_j": 5.5,
+    "resolution": "All seven affected Ti II records have one J=11/2 level and displayed f differs by a factor of six (g=12 versus 2). A values and resolved J are corroborated in scale by Wood et al. 2013 Table 4; the 335.036506 nm A value is also identical in the NIST Persistent Lines table. Retain ASD A (Pickering 2001/2002) and recompute f from resolved J; do not substitute the distinct Wood measurements.",
+    "references": [
+      "https://physics.nist.gov/PhysRefData/ASD/Html/lineshelp.html",
+      "https://doi.org/10.1086/318958",
+      "https://cdsarc.cds.unistra.fr/ftp/J/ApJS/208/27/table4.dat",
+      "https://doi.org/10.1088/0067-0049/208/2/27",
+      "https://physics.nist.gov/PhysRefData/Handbook/Tables/titaniumtable4.htm"
+    ],
+    "verified_utc": "2026-09-24"
+  },
+  {
+    "species": "Ti_II",
+    "lower_level_id": "022002.000031",
+    "upper_level_id": "022002.000077",
+    "wavelength_nm": 303.961094,
+    "nist_a_s": 2390000.0,
+    "nist_f": 0.0166,
+    "lower_j": 5.5,
+    "upper_j": 4.5,
+    "resolution": "All seven affected Ti II records have one J=11/2 level and displayed f differs by a factor of six (g=12 versus 2). A values and resolved J are corroborated in scale by Wood et al. 2013 Table 4; the 335.036506 nm A value is also identical in the NIST Persistent Lines table. Retain ASD A (Pickering 2001/2002) and recompute f from resolved J; do not substitute the distinct Wood measurements.",
+    "references": [
+      "https://physics.nist.gov/PhysRefData/ASD/Html/lineshelp.html",
+      "https://doi.org/10.1086/318958",
+      "https://cdsarc.cds.unistra.fr/ftp/J/ApJS/208/27/table4.dat",
+      "https://doi.org/10.1088/0067-0049/208/2/27",
+      "https://physics.nist.gov/PhysRefData/Handbook/Tables/titaniumtable4.htm"
+    ],
+    "verified_utc": "2026-09-24"
+  },
+  {
+    "species": "Ti_II",
+    "lower_level_id": "022002.000031",
+    "upper_level_id": "022002.000072",
+    "wavelength_nm": 322.516802,
+    "nist_a_s": 72000000.0,
+    "nist_f": 0.561,
+    "lower_j": 5.5,
+    "upper_j": 4.5,
+    "resolution": "All seven affected Ti II records have one J=11/2 level and displayed f differs by a factor of six (g=12 versus 2). A values and resolved J are corroborated in scale by Wood et al. 2013 Table 4; the 335.036506 nm A value is also identical in the NIST Persistent Lines table. Retain ASD A (Pickering 2001/2002) and recompute f from resolved J; do not substitute the distinct Wood measurements.",
+    "references": [
+      "https://physics.nist.gov/PhysRefData/ASD/Html/lineshelp.html",
+      "https://doi.org/10.1086/318958",
+      "https://cdsarc.cds.unistra.fr/ftp/J/ApJS/208/27/table4.dat",
+      "https://doi.org/10.1088/0067-0049/208/2/27",
+      "https://physics.nist.gov/PhysRefData/Handbook/Tables/titaniumtable4.htm"
+    ],
+    "verified_utc": "2026-09-24"
+  },
+  {
+    "species": "Ti_II",
+    "lower_level_id": "022002.000012",
+    "upper_level_id": "022002.000078",
+    "wavelength_nm": 326.252496,
+    "nist_a_s": 177000000.0,
+    "nist_f": 0.0565,
+    "lower_j": 4.5,
+    "upper_j": 5.5,
+    "resolution": "All seven affected Ti II records have one J=11/2 level and displayed f differs by a factor of six (g=12 versus 2). A values and resolved J are corroborated in scale by Wood et al. 2013 Table 4; the 335.036506 nm A value is also identical in the NIST Persistent Lines table. Retain ASD A (Pickering 2001/2002) and recompute f from resolved J; do not substitute the distinct Wood measurements.",
+    "references": [
+      "https://physics.nist.gov/PhysRefData/ASD/Html/lineshelp.html",
+      "https://doi.org/10.1086/318958",
+      "https://cdsarc.cds.unistra.fr/ftp/J/ApJS/208/27/table4.dat",
+      "https://doi.org/10.1088/0067-0049/208/2/27",
+      "https://physics.nist.gov/PhysRefData/Handbook/Tables/titaniumtable4.htm"
+    ],
+    "verified_utc": "2026-09-24"
+  },
+  {
+    "species": "Ti_II",
+    "lower_level_id": "022002.000004",
+    "upper_level_id": "022002.000041",
+    "wavelength_nm": 335.036506,
+    "nist_a_s": 168000000.0,
+    "nist_f": 0.0565,
+    "lower_j": 4.5,
+    "upper_j": 5.5,
+    "resolution": "All seven affected Ti II records have one J=11/2 level and displayed f differs by a factor of six (g=12 versus 2). A values and resolved J are corroborated in scale by Wood et al. 2013 Table 4; the 335.036506 nm A value is also identical in the NIST Persistent Lines table. Retain ASD A (Pickering 2001/2002) and recompute f from resolved J; do not substitute the distinct Wood measurements.",
+    "references": [
+      "https://physics.nist.gov/PhysRefData/ASD/Html/lineshelp.html",
+      "https://doi.org/10.1086/318958",
+      "https://cdsarc.cds.unistra.fr/ftp/J/ApJS/208/27/table4.dat",
+      "https://doi.org/10.1088/0067-0049/208/2/27",
+      "https://physics.nist.gov/PhysRefData/Handbook/Tables/titaniumtable4.htm"
+    ],
+    "verified_utc": "2026-09-24"
+  },
+  {
+    "species": "Ti_II",
+    "lower_level_id": "022002.000020",
+    "upper_level_id": "022002.000041",
+    "wavelength_nm": 344.529311,
+    "nist_a_s": 10600000.0,
+    "nist_f": 0.00377,
+    "lower_j": 4.5,
+    "upper_j": 5.5,
+    "resolution": "All seven affected Ti II records have one J=11/2 level and displayed f differs by a factor of six (g=12 versus 2). A values and resolved J are corroborated in scale by Wood et al. 2013 Table 4; the 335.036506 nm A value is also identical in the NIST Persistent Lines table. Retain ASD A (Pickering 2001/2002) and recompute f from resolved J; do not substitute the distinct Wood measurements.",
+    "references": [
+      "https://physics.nist.gov/PhysRefData/ASD/Html/lineshelp.html",
+      "https://doi.org/10.1086/318958",
+      "https://cdsarc.cds.unistra.fr/ftp/J/ApJS/208/27/table4.dat",
+      "https://doi.org/10.1088/0067-0049/208/2/27",
+      "https://physics.nist.gov/PhysRefData/Handbook/Tables/titaniumtable4.htm"
+    ],
+    "verified_utc": "2026-09-24"
+  },
+  {
+    "species": "Ti_II",
+    "lower_level_id": "022002.000031",
+    "upper_level_id": "022002.000055",
+    "wavelength_nm": 455.08971,
+    "nist_a_s": 25300000.0,
+    "nist_f": 0.393,
+    "lower_j": 5.5,
+    "upper_j": 4.5,
+    "resolution": "All seven affected Ti II records have one J=11/2 level and displayed f differs by a factor of six (g=12 versus 2). A values and resolved J are corroborated in scale by Wood et al. 2013 Table 4; the 335.036506 nm A value is also identical in the NIST Persistent Lines table. Retain ASD A (Pickering 2001/2002) and recompute f from resolved J; do not substitute the distinct Wood measurements.",
+    "references": [
+      "https://physics.nist.gov/PhysRefData/ASD/Html/lineshelp.html",
+      "https://doi.org/10.1086/318958",
+      "https://cdsarc.cds.unistra.fr/ftp/J/ApJS/208/27/table4.dat",
+      "https://doi.org/10.1088/0067-0049/208/2/27",
+      "https://physics.nist.gov/PhysRefData/Handbook/Tables/titaniumtable4.htm"
+    ],
+    "verified_utc": "2026-09-24"
+  },
+  {
+    "species": "Zn_I",
+    "lower_level_id": "030001.000001",
+    "upper_level_id": "030001.000005",
+    "wavelength_nm": 213.924778,
+    "nist_a_s": 714000000.0,
+    "nist_f": 10.35,
+    "lower_j": 0.0,
+    "upper_j": 1.0,
+    "resolution": "ASD A and resolved J corroborated by the NIST Persistent Lines table (Morton 2003); ASD displayed f differs by a factor of ten. Retain A and recompute f.",
+    "references": [
+      "https://physics.nist.gov/PhysRefData/ASD/Html/lineshelp.html",
+      "https://physics.nist.gov/PhysRefData/Handbook/Tables/zinctable3_a.htm",
+      "https://doi.org/10.1086/377639"
+    ],
+    "verified_utc": "2026-09-24"
+  },
+  {
+    "species": "Zn_I",
+    "lower_level_id": "030001.000001",
+    "upper_level_id": "030001.000003",
+    "wavelength_nm": 307.679063,
+    "nist_a_s": 38000.0,
+    "nist_f": 0.00162,
+    "lower_j": 0.0,
+    "upper_j": 1.0,
+    "resolution": "ASD A and resolved J corroborated by the NIST Persistent Lines table (Morton 2003); ASD displayed f differs by a factor of ten. Retain A and recompute f.",
+    "references": [
+      "https://physics.nist.gov/PhysRefData/ASD/Html/lineshelp.html",
+      "https://physics.nist.gov/PhysRefData/Handbook/Tables/zinctable3_a.htm",
+      "https://doi.org/10.1086/377639"
+    ],
+    "verified_utc": "2026-09-24"
+  }
+]
