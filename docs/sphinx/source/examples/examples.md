@@ -10,6 +10,7 @@
 aerosol/basic
 aerosol/cloud
 aerosol/stratospheric
+metals/sodium
 ers
 ```
 

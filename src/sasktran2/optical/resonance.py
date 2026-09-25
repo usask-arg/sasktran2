@@ -126,7 +126,7 @@ class LineResonance(OpticalProperty):
     ----------
     db_filepath, db
         Exactly one NetCDF file or in-memory line dataset. See the metal
-        resonance user guide for the schema and source assumptions.
+        resonance model API reference for the schema and source assumptions.
     line_wing_cutoff_nm
         Symmetric hard truncation about each vacuum line center, default
         0.1 nm, without renormalization. Set to None for complete Voigt wings.

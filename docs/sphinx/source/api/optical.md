@@ -28,8 +28,17 @@
 
 ## Metal resonance properties
 
-See the [metal resonance guide](../users_guide/metal_resonance.md) for the
-line model, data preparation, and limits of the elastic-return approximation.
+See the [metal resonance guide](../users_guide/metal_resonance.md) for executable
+examples, [Supported metals](supported_metals.md) for the available species and
+sources, and the [model reference](metal_resonance.md) for equations and the
+custom-data format.
+
+```{toctree}
+:hidden:
+
+supported_metals
+metal_resonance
+```
 
 ```{eval-rst}
 .. autosummary::

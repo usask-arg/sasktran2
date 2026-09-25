@@ -31,13 +31,7 @@
 : In-depth details on how to use the build in Mie scattering database generation
 
 [Metal Resonance Scattering](users_guide/metal_resonance.md)
-: Atomic and molecular line cross sections, phase functions, and elastic return branching
-
-[Metal Volume Emission Rates](users_guide/metal_emission.md)
-: Free VER retrievals with FeO, provisional NiO, and custom spectral templates
-
-[OSIRIS Metal Candidates](users_guide/metal_candidates.md)
-: Ordinary mesospheric targets, spectroscopy sources, and remaining data gaps
+: Calculate and plot metal line cross sections, phase functions, and a metal layer
 
 [Ray Tracing and Refraction](users_guide/refraction.md)
 : Including refractive effects in the ray-tracing
@@ -67,8 +61,6 @@ users_guide/aerosols.md
 users_guide/flux.md
 users_guide/mie.md
 users_guide/metal_resonance.md
-users_guide/metal_emission.md
-users_guide/metal_candidates.md
 users_guide/refraction.md
 users_guide/orbital_plane.md
 users_guide/polarization.md

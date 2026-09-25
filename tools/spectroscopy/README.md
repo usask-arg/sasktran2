@@ -150,7 +150,7 @@ For chemical emission, `build_metal_emission_templates.py --output
 "<database_root>/spectroscopy/metals/emission"` prepares a numerical FeO template
 and an explicitly approximate NiO template, with original source files and trace
 provenance. These support free band VERs without an abundance/excitation model;
-see the user guide `metal_emission.md` and the source metadata for limitations.
+see `EMISSION.md` and the source metadata for limitations.
 
 Line centers must be resolved in the radiative-transfer calculation before
 instrument convolution. Using cross sections already smoothed to OSIRIS's spectral

@@ -165,3 +165,73 @@ def test_extinction_scatterer_matches_python_reference(optical_cls):
     _assert_mapping_parity(
         rust_atmo, reference_atmo, "wf_aerosol_lognormal_median_radius"
     )
+
+
+@pytest.mark.parametrize(
+    "optical_cls",
+    [
+        sk.optical.database.OpticalDatabaseGenericScattererRust,
+        sk.optical.database.OpticalDatabaseGenericScatterer,
+    ],
+)
+@pytest.mark.parametrize("extinction_space", [False, True])
+@pytest.mark.parametrize("num_stokes", [1, 3])
+def test_mie_size_derivative_on_distinct_grid_matches_finite_difference(
+    optical_cls, extinction_space, num_stokes
+):
+    """Changing size interpolates optics and reference-density conversion separately."""
+    config = sk.Config()
+    config.num_stokes = num_stokes
+    config.num_singlescatter_moments = 32
+    config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
+    config.delta_m_scaling = False
+    native_altitudes = np.arange(0.0, 60001.0, 5000.0)
+    altitudes = np.array([0.0, 20000.0, 40000.0, 60000.0])
+    geometry = sk.Geometry1D(
+        0.6,
+        0.0,
+        6372000.0,
+        native_altitudes,
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.Spherical,
+    )
+    atmosphere = sk.Atmosphere(
+        geometry, config, wavelengths_nm=np.array([400.0, 525.0, 750.0])
+    )
+    sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+    atmosphere["rayleigh"] = sk.constituent.Rayleigh()
+    profile = np.exp(-0.5 * ((altitudes - 20000.0) / 15000.0) ** 2)
+    radius = np.linspace(83.0, 173.0, len(altitudes))
+    if extinction_space:
+        constituent = sk.constituent.ExtinctionScatterer(
+            _optical_property(optical_cls),
+            altitudes,
+            2e-7 * profile,
+            525.0,
+            lognormal_median_radius=radius,
+        )
+    else:
+        constituent = sk.constituent.NumberDensityScatterer(
+            _optical_property(optical_cls),
+            altitudes,
+            1e7 * profile,
+            lognormal_median_radius=radius,
+        )
+    atmosphere["aerosol"] = constituent
+    viewing = sk.ViewingGeometry()
+    for tangent in [10000.0, 25000.0]:
+        viewing.add_ray(sk.TangentAltitudeSolar(tangent, 0.4, 200000.0, 0.6))
+    engine = sk.Engine(config, geometry, viewing)
+    baseline = engine.calculate_radiance(atmosphere)
+    for index in [1, 2]:
+        step = 0.001
+        constituent.lognormal_median_radius[index] += step
+        above = engine.calculate_radiance(atmosphere).radiance
+        constituent.lognormal_median_radius[index] -= 2 * step
+        below = engine.calculate_radiance(atmosphere).radiance
+        constituent.lognormal_median_radius[index] += step
+        numerical = (above - below) / (2 * step)
+        analytic = baseline.wf_aerosol_lognormal_median_radius.isel(
+            aerosol_altitude=index
+        )
+        np.testing.assert_allclose(analytic, numerical, rtol=2e-6, atol=1e-12)
