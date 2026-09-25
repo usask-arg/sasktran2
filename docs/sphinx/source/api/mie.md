@@ -19,6 +19,7 @@
 
 ```
 
+(_api_mie_distributions)=
 ## Particle Size Distributions
 ```{eval-rst}
 .. autosummary::
@@ -32,6 +33,7 @@
 
 ```
 
+(_api_mie_refractive_indices)=
 ## Refractive Index Containers
 ```{eval-rst}
 .. autosummary::

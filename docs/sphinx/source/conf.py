@@ -11,6 +11,7 @@ copyright = '2025, USask-ARG'
 author = 'USask-ARG'
 
 from importlib.metadata import version as get_version
+from inspect import getdoc
 
 release: str = get_version('sasktran2')
 # for example take major/minor
@@ -53,10 +54,24 @@ exclude_patterns = []
 autodoc_docstring_signature = True
 autodoc_default_options = {
     'members': True,
+    # Autosummary lists these members too; generate their reference targets.
+    'undoc-members': True,
+    'inherited-members': True,
     'show-inheritance': True,
     'member_order': 'groupwise'
 }
 autoclass_content = 'both'
+
+
+def _skip_private_members(_app, _what, _name, obj, _skip, _options):
+    """Keep autosummary tables consistent with autodoc's private-member filter."""
+    if ':meta private:' in (getdoc(obj) or ''):
+        return True
+    return None
+
+
+def setup(app):
+    app.connect('autodoc-skip-member', _skip_private_members)
 
 
 

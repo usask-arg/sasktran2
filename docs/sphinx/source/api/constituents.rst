@@ -45,8 +45,19 @@ Emissions
     sasktran2.constituent.O2BandEmissionRate
     sasktran2.constituent.PopulationEmissionRate
     sasktran2.constituent.LineListVolumeEmissionRate
+    sasktran2.constituent.SpectralVolumeEmissionRate
+    sasktran2.constituent.MetalVolumeEmissionRate
+    sasktran2.constituent.FeOVolumeEmissionRate
+    sasktran2.constituent.NiOVolumeEmissionRate
     sasktran2.constituent.ThermalEmission
     sasktran2.constituent.SurfaceThermalEmission
+
+Photochemical Models
+--------------------
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.photchem.models.Yankovsky
 
 Dummy Constituents
 ------------------
@@ -54,3 +65,12 @@ Dummy Constituents
     :toctree: generated/
 
     sasktran2.constituent.AirMassFactor
+
+Constituent Interface
+---------------------
+
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.constituent.base.Constituent
+    sasktran2.constituent.brdf.WavelengthInterpolatorMixin

@@ -15,6 +15,38 @@ from .hitran import (
     HITRANAbsorber,  # noqa: F401
 )
 from .mie import Mie  # noqa: F401
+from .resonance import (  # noqa: F401
+    Aluminium,
+    AluminiumOxide,
+    AtomicResonance,
+    Barium,
+    Calcium,
+    CalciumIon,
+    CalciumOxide,
+    Chromium,
+    Cobalt,
+    Copper,
+    Iron,
+    IronIon,
+    LineResonance,
+    Lithium,
+    Magnesium,
+    MagnesiumIon,
+    MagnesiumOxide,
+    Manganese,
+    MolecularResonance,
+    Nickel,
+    Potassium,
+    Rubidium,
+    Silicon,
+    Sodium,
+    Strontium,
+    Titanium,
+    TitaniumOxide,
+    Zinc,
+    resonance_phase_function,
+    resonance_polarizability,
+)
 from .xsec_absorber import (  # noqa: F401
     IOBremen,
     IOGeisa,

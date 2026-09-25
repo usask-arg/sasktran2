@@ -18,7 +18,7 @@ alongside the radiative transfer calculation, instead databases are generated us
 can then be re-used.
 
 Mie scatterers are parameterized by two quantities, the refractive index, and a particle size distribution.
-SASKTRAN2 contains several built in refractive index functions (see [Refractive Index Containers](../api/mie.md#refractive-index-containers)), let's create one for sulfates,
+SASKTRAN2 contains several built in refractive index functions (see {ref}`Refractive Index Containers <_api_mie_refractive_indices>`), let's create one for sulfates,
 {py:class}`sasktran2.mie.refractive.H2SO4`
 
 ```{code-cell}
@@ -32,7 +32,7 @@ plt.ylabel("Real Part of Refractive Index")
 it is also possible to define your own refractive index entirely using the {py:class}`sasktran2.mie.refractive.RefractiveIndex`
 object.
 
-The second quantity that we need is a particle size distribution (see [Particle Size Distributions](../api/mie.md#particle-size-distributions)).  Here we will create a log-normal particle size distribution
+The second quantity that we need is a particle size distribution (see {ref}`Particle Size Distributions <_api_mie_distributions>`).  Here we will create a log-normal particle size distribution
 
 ```{code-cell}
 distribution = sk.mie.distribution.LogNormalDistribution()

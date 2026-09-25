@@ -1,5 +1,5 @@
 context:
-  version: "2025.4.0"
+  version: "2026.9.0"
   python_min: '3.10'
 
 # Note: This recipe is specifically designed to work well with the autotick bot.

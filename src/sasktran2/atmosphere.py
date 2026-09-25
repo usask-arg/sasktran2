@@ -246,6 +246,11 @@ class Atmosphere:
 
         self._nstokes = config.num_stokes
         self._spectral_integration_mode = config.spectral_grid_mode
+        self._spectral_coordinate = (
+            None
+            if wavenumber_space is None
+            else "wavenumber_cminv" if wavenumber_space else "wavelength_nm"
+        )
         self._calculate_derivatives = calculate_derivatives
         self._pressure_derivative = pressure_derivative
         self._temperature_derivative = temperature_derivative
@@ -702,7 +707,7 @@ class Atmosphere:
     @property
     def deriv_mappings(self) -> dict:
         """
-        A nested dictionary of :py:class:`sasktran2.atmosphere.DerivativeMapping` objects.
+        The Python-side derivative mapping dictionary.
 
         Returns
         -------
@@ -735,6 +740,16 @@ class Atmosphere:
         np.ndarray
         """
         return self._unscaled_extinction
+
+    @property
+    def spectral_coordinate(self) -> str | None:
+        """Coordinate of the spectral grid supplied at construction.
+
+        Spectral densities are per nm for ``"wavelength_nm"`` and per
+        inverse centimetre for ``"wavenumber_cminv"``. Returns ``None`` when only
+        ``numwavel`` was supplied.
+        """
+        return self._spectral_coordinate
 
     @property
     def spectral_integration_mode(self) -> sk.SpectralGridMode:

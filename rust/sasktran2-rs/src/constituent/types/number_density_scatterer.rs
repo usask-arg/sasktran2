@@ -300,7 +300,12 @@ where
 
         let num_locations = inputs.altitude_m().len();
         let interp_matrix = self.interpolation_matrix(&inputs.altitude_m());
-        self.validate_spatial_values(&self.number_density, num_locations, "Number density")?;
+        let interp_numden = self.spatial_values(
+            &self.number_density,
+            interp_matrix.as_ref(),
+            num_locations,
+            "Number density",
+        )?;
         let aux_inputs = self.spatial_aux_inputs(interp_matrix.as_ref(), num_locations)?;
 
         let optical_prop = self
@@ -312,6 +317,45 @@ where
         let optical_legendre = optical_quants.legendre.as_ref().ok_or_else(|| {
             anyhow!("Scattering optical property did not provide legendre coefficients")
         })?;
+
+        // At zero total scattering, normalized SSA/phase derivatives cannot
+        // represent the directional addition of a scattering species. Silently
+        // substituting zero for the singular factors loses the source derivative.
+        // Reject only active parameters that can add scattering: zero-opacity
+        // wavelengths and locations outside the profile's support remain valid.
+        let active_density_parameter: Vec<bool> = match interp_matrix.as_ref() {
+            Some(matrix) => matrix
+                .rows()
+                .into_iter()
+                .map(|row| {
+                    row.iter()
+                        .zip(self.vertical_deriv_factor.iter())
+                        .any(|(&weight, &factor)| weight != 0.0 && factor != 0.0)
+                })
+                .collect(),
+            None => self
+                .vertical_deriv_factor
+                .iter()
+                .map(|&factor| factor != 0.0)
+                .collect(),
+        };
+        for ((location, wavelength), &species_scattering) in optical_quants.ssa.indexed_iter() {
+            if active_density_parameter[location]
+                && species_scattering > 0.0
+                && outputs.ssa[[location, wavelength]]
+                    * outputs.total_extinction[[location, wavelength]]
+                    == 0.0
+            {
+                anyhow::bail!(
+                    "Cannot compute wf_{constituent_name}_{}: total scattering is zero at native \
+                     location {location}, wavelength index {wavelength}, but this parameter can \
+                     add scattering. Include nonzero physical background scattering, use a \
+                     positive starting density, or set calculate_derivatives=False for a \
+                     forward-only calculation.",
+                    self.wf_name
+                );
+            }
+        }
         let thread_pool = crate::threading::thread_pool()?;
 
         let mut species_ssa = optical_quants.ssa.clone();
@@ -367,8 +411,11 @@ where
                                      total_ssa,
                                      total_ext| {
                                         *d_extinction += *species_ext;
-                                        *scat_factor +=
-                                            species_ssa_val * species_ext / (total_ssa * total_ext);
+                                        let total_scattering = total_ssa * total_ext;
+                                        if total_scattering > 0.0 {
+                                            *scat_factor +=
+                                                species_ssa_val * species_ext / total_scattering;
+                                        }
                                     },
                                 );
                         },
@@ -392,8 +439,10 @@ where
                                 .and(&total_ext_col)
                                 .for_each(
                                     |d_ssa, species_ext, species_ssa_val, total_ssa, total_ext| {
-                                        *d_ssa +=
-                                            species_ext * (species_ssa_val - total_ssa) / total_ext;
+                                        if *total_ext > 0.0 {
+                                            *d_ssa += species_ext * (species_ssa_val - total_ssa)
+                                                / total_ext;
+                                        }
                                     },
                                 );
                         },
@@ -425,6 +474,63 @@ where
             });
         }
 
+        // For extinction-normalized profiles, n_source = extinction_source * v_source.
+        // An optical input changes both sigma(aux_native) and v(aux_source).
+        // These two chain-rule terms have different spatial interpolation weights,
+        // so accumulate a separate density-conversion mapping into the same output.
+        let conversion_on_native_grid = self.native_grid || self.altitudes == inputs.altitude_m();
+        for (key, d_vertical) in &self.d_vertical_deriv_factor {
+            if conversion_on_native_grid {
+                // The terms share spatial weights and can use one phase
+                // derivative group when source and native grids coincide.
+                continue;
+            }
+            let assign_name = format!("wf_{constituent_name}_{key}");
+            let mapping_name = format!("{assign_name}_density_conversion");
+            let mut conversion = deriv_generator
+                .get_derivative_mapping(&mapping_name)
+                .with_scatterer();
+            {
+                let density = deriv_mapping.mut_view();
+                let mut mapping = conversion.mut_view();
+                mapping.d_extinction.assign(&density.d_extinction);
+                mapping.d_ssa.assign(&density.d_ssa);
+                mapping
+                    .d_legendre
+                    .as_mut()
+                    .ok_or_else(|| anyhow!("Conversion mapping missing d_legendre"))?
+                    .assign(
+                        density
+                            .d_legendre
+                            .as_ref()
+                            .ok_or_else(|| anyhow!("Density mapping missing d_legendre"))?,
+                    );
+                mapping
+                    .scat_factor
+                    .as_mut()
+                    .ok_or_else(|| anyhow!("Conversion mapping missing scat_factor"))?
+                    .assign(
+                        density
+                            .scat_factor
+                            .as_ref()
+                            .ok_or_else(|| anyhow!("Density mapping missing scat_factor"))?,
+                    );
+            }
+            let d_number_density = &self.number_density * d_vertical / &self.vertical_deriv_factor;
+            if let Some(interp_matrix) = interp_matrix.as_ref() {
+                let mut interpolator = interp_matrix.clone();
+                Zip::from(interpolator.columns_mut())
+                    .and(&d_number_density)
+                    .for_each(|mut column, factor| column *= *factor);
+                conversion.set_interpolator(&interpolator);
+                conversion.set_interp_dim(&format!("{constituent_name}_altitude"));
+            } else {
+                scale_native_scatterer_derivative(&mut conversion.mut_view(), &d_number_density)?;
+                conversion.set_interp_dim("location");
+            }
+            conversion.set_assign_name(&assign_name);
+        }
+
         if let Some(interp_matrix) = interp_matrix.as_ref() {
             let mut density_interpolator = interp_matrix.clone();
             Zip::from(density_interpolator.columns_mut())
@@ -443,6 +549,23 @@ where
         let optical_derivs = optical_prop.optical_derivatives(inputs, &aux_inputs)?;
 
         for (key, val) in optical_derivs.iter() {
+            let native_state_parameter = !self.aux_inputs.contains_key(key)
+                && !self.d_vertical_deriv_factor.contains_key(key)
+                && matches!(
+                    key.as_str(),
+                    "temperature_k" | "pressure_pa" | "specific_humidity"
+                );
+            if native_state_parameter {
+                let enabled = match key.as_str() {
+                    "temperature_k" => inputs.calculate_temperature_derivative(),
+                    "pressure_pa" => inputs.calculate_pressure_derivative(),
+                    "specific_humidity" => inputs.calculate_specific_humidity_derivative(),
+                    _ => unreachable!(),
+                };
+                if !enabled {
+                    continue;
+                }
+            }
             let mapping_name = format!("wf_{constituent_name}_{key}");
             let mut deriv_mapping = deriv_generator
                 .get_derivative_mapping(&mapping_name)
@@ -486,8 +609,13 @@ where
                                     .and(&species_ext_col)
                                     .for_each(
                                         |d_ssa, d_scat, d_ext, species_ssa_val, species_ext| {
-                                            *d_ssa +=
-                                                (d_scat - d_ext * species_ssa_val) / species_ext;
+                                            // A line scatterer can have exactly zero opacity
+                                            // outside its spectral support. Its albedo has
+                                            // no derivative there; avoid forming 0 / 0.
+                                            if *species_ext > 0.0 {
+                                                *d_ssa += (d_scat - d_ext * species_ssa_val)
+                                                    / species_ext;
+                                            }
                                         },
                                     );
                             },
@@ -510,33 +638,17 @@ where
                         });
                 });
 
-                if let Some(d_vert) = self.d_vertical_deriv_factor.get(key) {
-                    let interp_vertical = self.spatial_values(
-                        &self.vertical_deriv_factor,
-                        interp_matrix.as_ref(),
-                        num_locations,
-                        "Vertical derivative factor",
-                    )?;
-                    let interp_d_vertical = self.spatial_values(
-                        d_vert,
-                        interp_matrix.as_ref(),
-                        num_locations,
-                        &format!("Derivative factor for {key}"),
-                    )?;
-
-                    thread_pool.install(|| {
-                        Zip::from(mapping.d_extinction.axis_iter_mut(Axis(1)))
-                            .and(optical_quants.cross_section.axis_iter(Axis(1)))
-                            .par_for_each(|mut d_ext_col, species_ext_col| {
-                                Zip::from(&mut d_ext_col)
-                                    .and(&species_ext_col)
-                                    .and(&interp_vertical)
-                                    .and(&interp_d_vertical)
-                                    .for_each(|d_ext, species_ext, vert, d_vert| {
-                                        *d_ext += species_ext / vert * d_vert;
-                                    });
-                            });
-                    });
+                if conversion_on_native_grid
+                    && let Some(d_vertical) = self.d_vertical_deriv_factor.get(key)
+                {
+                    for (location, mut row) in
+                        mapping.d_extinction.rows_mut().into_iter().enumerate()
+                    {
+                        row.scaled_add(
+                            d_vertical[location] / self.vertical_deriv_factor[location],
+                            &optical_quants.cross_section.row(location),
+                        );
+                    }
                 }
 
                 thread_pool.install(|| {
@@ -559,9 +671,15 @@ where
                                 let species_ssa_val = species_ssa[[geo_idx, wavelength_idx]];
                                 let species_ext =
                                     optical_quants.cross_section[[geo_idx, wavelength_idx]];
-                                let factor = mapping.d_ssa[[geo_idx, wavelength_idx]]
-                                    / species_ssa_val
-                                    + mapping.d_extinction[[geo_idx, wavelength_idx]] / species_ext;
+                                let factor = if species_ext > 0.0 && species_ssa_val > 0.0 {
+                                    mapping.d_ssa[[geo_idx, wavelength_idx]] / species_ssa_val
+                                        + mapping.d_extinction[[geo_idx, wavelength_idx]]
+                                            / species_ext
+                                } else {
+                                    // A species with no scattering contributes no phase
+                                    // weighting, including at a hard line-wing cutoff.
+                                    0.0
+                                };
 
                                 Zip::from(&mut d_legendre_col)
                                     .and(&optical_legendre_row)
@@ -601,7 +719,11 @@ where
                                          total_ext| {
                                             *d_ssa *= species_ext;
                                             *d_ssa += d_ext * (species_ssa_val - total_ssa);
-                                            *d_ssa /= total_ext;
+                                            if *total_ext > 0.0 {
+                                                *d_ssa /= total_ext;
+                                            } else {
+                                                *d_ssa = 0.0;
+                                            }
                                         },
                                     );
                             },
@@ -631,10 +753,15 @@ where
                                         norm_factor = 1.0;
                                     }
 
-                                    scat_factor_col[geo_idx] = species_ssa_col[geo_idx]
-                                        * species_ext_col[geo_idx]
-                                        / (total_ssa_col[geo_idx] * total_ext_col[geo_idx])
-                                        * norm_factor;
+                                    let total_scattering =
+                                        total_ssa_col[geo_idx] * total_ext_col[geo_idx];
+                                    scat_factor_col[geo_idx] = if total_scattering > 0.0 {
+                                        species_ssa_col[geo_idx] * species_ext_col[geo_idx]
+                                            / total_scattering
+                                            * norm_factor
+                                    } else {
+                                        0.0
+                                    };
 
                                     d_legendre_col.mapv_inplace(|val| val / norm_factor);
                                 }
@@ -643,12 +770,24 @@ where
                 });
             }
 
-            if let Some(interp_matrix) = interp_matrix.as_ref() {
+            if native_state_parameter {
+                // Without an auxiliary override, the optical property reads
+                // temperature/pressure/humidity directly on the atmosphere
+                // grid. Its derivative must not be resampled to the density
+                // profile grid and contributes to the shared state Jacobian.
+                let mut mapping = deriv_mapping.mut_view();
+                scale_native_scatterer_derivative(&mut mapping, &interp_numden.to_owned())?;
+                // The atmosphere finalizer selects native 2D or altitude-only
+                // state topology from assign_name, as for VMR absorbers.
+                deriv_mapping.set_interp_dim("altitude");
+                deriv_mapping.set_assign_name(&format!("wf_{key}"));
+            } else if let Some(interp_matrix) = interp_matrix.as_ref() {
                 let mut optical_interpolator = interp_matrix.clone();
-                Zip::from(optical_interpolator.columns_mut())
-                    .and(&self.number_density)
-                    .for_each(|mut col, number_density| {
-                        col *= *number_density;
+                // d(n_native * sigma(aux_native))/d(aux_source) at fixed density.
+                Zip::from(optical_interpolator.rows_mut())
+                    .and(&interp_numden)
+                    .for_each(|mut row, number_density| {
+                        row *= *number_density;
                     });
                 deriv_mapping.set_interpolator(&optical_interpolator);
                 deriv_mapping.set_interp_dim(&format!("{constituent_name}_altitude"));

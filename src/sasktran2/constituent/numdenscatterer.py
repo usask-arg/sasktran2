@@ -37,6 +37,14 @@ class NumberDensityScatterer(Constituent):
             Interpolation mode outside of the boundaries, "extend" and "zero" are supported, by default "zero"
         kwargs : dict
             Additional arguments to pass to the optical property.
+
+        Notes
+        -----
+        Density derivatives require nonzero total atmospheric scattering wherever
+        a fitted density can add scattering. A calculation with derivatives raises
+        an error at unsupported zero-scattering locations. Include the physical
+        background scattering or use a positive starting density. Forward-only
+        calculations with ``calculate_derivatives=False`` allow zero densities.
         """
         super().__init__()
 

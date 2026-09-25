@@ -132,6 +132,30 @@ class NumberDensityScatterer(Constituent):
         deriv_mapping.scat_factor[:] += (
             self._optical_quants.ssa * self._optical_quants.extinction
         ) / (atmo.storage.ssa * atmo.storage.total_extinction)
+        # n_source = extinction_source / sigma_reference(aux_source). Keep
+        # this source-grid conversion separate from the native optical response.
+        conversion_on_native_grid = np.array_equal(
+            self._altitudes_m, atmo.model_geometry.altitudes()
+        )
+        for key, derivative in self._d_vertical_deriv_factor.items():
+            if conversion_on_native_grid:
+                continue
+            conversion = atmo.storage.get_derivative_mapping(
+                f"wf_{name}_{key}_density_conversion"
+            )
+            conversion.d_extinction[:] = deriv_mapping.d_extinction
+            conversion.d_ssa[:] = deriv_mapping.d_ssa
+            conversion.d_leg_coeff[:] = deriv_mapping.d_leg_coeff
+            conversion.scat_factor[:] = deriv_mapping.scat_factor
+            conversion.interpolator = (
+                interp_matrix
+                * (self._number_density * derivative / self._vertical_deriv_factor)[
+                    np.newaxis, :
+                ]
+            )
+            conversion.interp_dim = f"{name}_altitude"
+            conversion.assign_name = f"wf_{name}_{key}"
+
         deriv_mapping.interpolator = (
             interp_matrix * self._vertical_deriv_factor[np.newaxis, :]
         )
@@ -152,20 +176,13 @@ class NumberDensityScatterer(Constituent):
             ) / self._optical_quants.extinction
             deriv_mapping.d_leg_coeff[:] += val.d_leg_coeff
 
-            if key in self._d_vertical_deriv_factor:
-                # Have to make some adjustments
-
-                # The change in extinction is adjusted
+            if conversion_on_native_grid and key in self._d_vertical_deriv_factor:
                 deriv_mapping.d_extinction[:] += (
                     self._optical_quants.extinction
-                    / (interp_matrix @ self._vertical_deriv_factor)[:, np.newaxis]
-                    * (interp_matrix @ self._d_vertical_deriv_factor[key])[
-                        :, np.newaxis
-                    ]
+                    * (
+                        self._d_vertical_deriv_factor[key] / self._vertical_deriv_factor
+                    )[:, None]
                 )
-
-                # Change in single scatter albedo should be invariant whether or not we are
-                # in extinction space or number density space
 
             # Start with leg_coeff
             deriv_mapping.d_leg_coeff[:] += (
@@ -196,7 +213,7 @@ class NumberDensityScatterer(Constituent):
             deriv_mapping.scat_factor[:] *= norm_factor
 
             deriv_mapping.interpolator = (
-                interp_matrix * self._number_density[np.newaxis, :]
+                interp_matrix * (interp_matrix @ self._number_density)[:, None]
             )
             deriv_mapping.interp_dim = f"{name}_altitude"
 

@@ -33,6 +33,7 @@ Solar Geometry
 
     sasktran2.solar.SolarGeometryHandlerAstropy
     sasktran2.solar.SolarGeometryHandlerForced
+    sasktran2.solar.SolarGeometryHandlerBase
 
 
 Conversions
@@ -49,3 +50,4 @@ Containers
     :toctree: generated/
 
     sasktran2.viewinggeo.LimbVertical
+    sasktran2.viewinggeo.base.ViewingGeometryContainer

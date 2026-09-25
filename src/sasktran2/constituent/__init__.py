@@ -17,6 +17,12 @@ from .o2bandemissionrate import O2BandEmissionRate
 from .populationemissionrate import PopulationEmissionRate
 from .rayleigh import Rayleigh
 from .solar import SolarIrradiance
+from .spectralemissionrate import (
+    FeOVolumeEmissionRate,
+    MetalVolumeEmissionRate,
+    NiOVolumeEmissionRate,
+    SpectralVolumeEmissionRate,
+)
 from .vmrabsorber2d import VMRAbsorber2D
 from .vmraltitudeabsorber import VMRAltitudeAbsorber
 from .volumeemissionrate import MonochromaticVolumeEmissionRate

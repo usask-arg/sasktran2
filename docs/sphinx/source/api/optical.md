@@ -26,6 +26,63 @@
     sasktran2.optical.Mie
 ```
 
+## Optical-property interface
+
+```{eval-rst}
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.optical.base.OpticalProperty
+```
+
+## Metal resonance properties
+
+See the [metal resonance guide](../users_guide/metal_resonance.md) for executable
+examples, [Supported metals](supported_metals.md) for the available species and
+sources, and the [model reference](metal_resonance.md) for equations and the
+custom-data format.
+
+```{toctree}
+:hidden:
+
+supported_metals
+metal_resonance
+```
+
+```{eval-rst}
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.optical.LineResonance
+    sasktran2.optical.AtomicResonance
+    sasktran2.optical.MolecularResonance
+    sasktran2.optical.Sodium
+    sasktran2.optical.Potassium
+    sasktran2.optical.Lithium
+    sasktran2.optical.Magnesium
+    sasktran2.optical.MagnesiumIon
+    sasktran2.optical.Calcium
+    sasktran2.optical.CalciumIon
+    sasktran2.optical.Iron
+    sasktran2.optical.IronIon
+    sasktran2.optical.Aluminium
+    sasktran2.optical.Nickel
+    sasktran2.optical.Chromium
+    sasktran2.optical.Manganese
+    sasktran2.optical.Titanium
+    sasktran2.optical.Cobalt
+    sasktran2.optical.Copper
+    sasktran2.optical.Zinc
+    sasktran2.optical.Silicon
+    sasktran2.optical.Rubidium
+    sasktran2.optical.Strontium
+    sasktran2.optical.Barium
+    sasktran2.optical.AluminiumOxide
+    sasktran2.optical.MagnesiumOxide
+    sasktran2.optical.CalciumOxide
+    sasktran2.optical.TitaniumOxide
+```
+
 ## Special Modules
 
 ```{eval-rst}
