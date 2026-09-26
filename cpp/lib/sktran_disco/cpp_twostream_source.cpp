@@ -457,6 +457,7 @@ namespace {
             chapman;
         double solar_cosine = 0.0;
         double quadrature_cosine = 0.5;
+        bool volume_emission = false;
     };
 
     struct ViewGeometry {
@@ -510,6 +511,8 @@ namespace {
         std::vector<Var> secant;
         std::vector<Var> thermal_b0;
         std::vector<Var> thermal_b1;
+        // VER per steradian integrated over each layer's vertical thickness.
+        std::vector<Var> integrated_emission;
         std::array<Homogeneous, 2> homogeneous;
         std::array<Particular, 2> particular;
         std::array<Bvp, 2> bvp;
@@ -811,7 +814,8 @@ namespace {
     template <bool Solar>
     Var spherical_radiance(const SphericalGeometry& spherical,
                            const std::vector<ColumnSolution>& columns,
-                           const std::vector<Var>& extinction, int view,
+                           const std::vector<Var>& extinction,
+                           const std::vector<Var>& emission, int view,
                            const Var& albedo, const Var& thermal_surface,
                            const Var& zero);
 } // namespace
@@ -1368,11 +1372,16 @@ struct CppTwoStreamSourceAdapter<SOURCE_TYPE>::Impl {
         const int n = nlevels - 1;
         const int nviews = static_cast<int>(
             spherical ? spherical->ground_hit.size() : views.size());
-        if (spherical && calculate_explicit_spherical_packet<Solar>(
-                             block, packet_base, worker)) {
+        // VER uses the differentiated solver below. Its source is integrated
+        // in geometric distance, including the zero-optical-depth limit;
+        // the explicit fast path assumes a Planck source per optical depth.
+        const bool volume_emission = columns.front().volume_emission;
+        if (!volume_emission && spherical &&
+            calculate_explicit_spherical_packet<Solar>(block, packet_base,
+                                                       worker)) {
             return;
         }
-        if (!spherical &&
+        if (!volume_emission && !spherical &&
             calculate_explicit_packet<Solar>(block, packet_base, worker)) {
             return;
         }
@@ -1424,8 +1433,8 @@ struct CppTwoStreamSourceAdapter<SOURCE_TYPE>::Impl {
         for (int view = 0; view < nviews; ++view) {
             if (spherical) {
                 workspace.outputs.push_back(spherical_radiance<Solar>(
-                    *spherical, workspace.columns, workspace.extinction, view,
-                    albedo, thermal_surface, zero));
+                    *spherical, workspace.columns, workspace.extinction,
+                    workspace.emission, view, albedo, thermal_surface, zero));
             } else {
                 workspace.outputs.push_back(plane_radiance<Solar>(
                     columns[0], workspace.columns[0], views[view], albedo,
@@ -1583,28 +1592,41 @@ namespace {
                 value =
                     value + p.ap[layer] * yp * plus + p.am[layer] * ym * minus;
             } else {
-                const Var plus = solution.thermal_b0[layer] *
-                                 stable_exp_difference(
-                                     h.k[layer], solution.thermal_b1[layer],
-                                     solution.od[layer] * fraction_from_top);
-                const Var minus =
-                    solution.thermal_b0[layer] * fraction_from_bottom *
-                    stable_exp_difference(solution.thermal_b1[layer] *
-                                              fraction_from_top,
-                                          solution.thermal_b1[layer] +
-                                              h.k[layer] * fraction_from_bottom,
-                                          solution.od[layer]);
+                Var plus = zero;
+                Var minus = zero;
+                if (geometry.volume_emission) {
+                    const Var rate = h.k[layer] * solution.od[layer];
+                    plus = solution.integrated_emission[layer] *
+                           stable_exp_difference(rate, zero,
+                                                 zero + fraction_from_top);
+                    minus = solution.integrated_emission[layer] *
+                            stable_exp_difference(zero, rate,
+                                                  zero + fraction_from_bottom);
+                } else {
+                    plus = solution.thermal_b0[layer] *
+                           stable_exp_difference(
+                               h.k[layer], solution.thermal_b1[layer],
+                               solution.od[layer] * fraction_from_top);
+                    minus = solution.thermal_b0[layer] * fraction_from_bottom *
+                            stable_exp_difference(
+                                solution.thermal_b1[layer] * fraction_from_top,
+                                solution.thermal_b1[layer] +
+                                    h.k[layer] * fraction_from_bottom,
+                                solution.od[layer]);
+                }
                 value = value + p.at[layer] * (yp * plus + ym * minus);
             }
             source = source + azimuth_weight[az] * value;
         }
 
         if constexpr (!Solar) {
-            const Var thermal = (-solution.thermal_b1[layer] *
-                                 solution.od[layer] * fraction_from_top)
-                                    .exp();
-            source = source + solution.thermal_b0[layer] * thermal *
-                                  (1.0 - solution.ssa[layer]);
+            if (!geometry.volume_emission) {
+                const Var thermal = (-solution.thermal_b1[layer] *
+                                     solution.od[layer] * fraction_from_top)
+                                        .exp();
+                source = source + solution.thermal_b0[layer] * thermal *
+                                      (1.0 - solution.ssa[layer]);
+            }
         }
         return source;
     }
@@ -1664,6 +1686,23 @@ namespace {
                     const Var dp = solution.transmission[layer] * dp_ratio;
                     const Var dm = solution.transmission[layer] * dm_ratio;
                     particular = p.ap[layer] * yp * dm + p.am[layer] * ym * dp;
+                } else if (geometry.volume_emission) {
+                    // Rescale the integrals to unit layer thickness before
+                    // multiplying by the integrated VER. No division by
+                    // extinction or absorption is needed, even in vacuum.
+                    const Var dp =
+                        solution.integrated_emission[layer] *
+                        solution.od[layer] * inverse_view *
+                        stable_integrated_exp_difference(
+                            h.k[layer] * solution.od[layer],
+                            inverse_view * solution.od[layer], zero + 1.0);
+                    const Var dm =
+                        solution.integrated_emission[layer] *
+                        solution.od[layer] * inverse_view *
+                        stable_integrated_exp_difference(
+                            (h.k[layer] + inverse_view) * solution.od[layer],
+                            inverse_view * solution.od[layer], zero + 1.0);
+                    particular = p.at[layer] * (yp * dm + ym * dp);
                 } else {
                     const Var dp = solution.thermal_b0[layer] * dp_ratio;
                     const Var dm = solution.thermal_b0[layer] * dm_ratio;
@@ -1676,8 +1715,18 @@ namespace {
                               particular);
             }
             if constexpr (!Solar) {
-                source = source + solution.thermal_b0[layer] * source_integral *
-                                      (1.0 - solution.ssa[layer]);
+                if (geometry.volume_emission) {
+                    source = source + solution.integrated_emission[layer] *
+                                          inverse_view *
+                                          stable_exp_difference(
+                                              zero,
+                                              inverse_view * solution.od[layer],
+                                              zero + 1.0);
+                } else {
+                    source = source + solution.thermal_b0[layer] *
+                                          source_integral *
+                                          (1.0 - solution.ssa[layer]);
+                }
             }
             integrated = integrated + source * attenuation;
             attenuation = attenuation * beam;
@@ -1708,7 +1757,8 @@ namespace {
     template <bool Solar>
     Var spherical_radiance(const SphericalGeometry& spherical,
                            const std::vector<ColumnSolution>& columns,
-                           const std::vector<Var>& extinction, int view,
+                           const std::vector<Var>& extinction,
+                           const std::vector<Var>& emission, int view,
                            const Var& albedo, const Var& thermal_surface,
                            const Var& zero) {
         const std::size_t start = spherical.ray_offsets[view];
@@ -1761,6 +1811,25 @@ namespace {
                         weight;
             }
             radiance = radiance * transmission + source * (1.0 - transmission);
+            if constexpr (!Solar) {
+                if (spherical.columns[lower].volume_emission) {
+                    // The ray stencil integrates a linearly interpolated VER
+                    // in geometric distance, including partial limb layers.
+                    Var integrated_emission = zero;
+                    for (std::size_t stencil = spherical.od_offsets[segment];
+                         stencil < spherical.od_offsets[segment + 1];
+                         ++stencil) {
+                        integrated_emission =
+                            integrated_emission +
+                            emission[spherical.od_indices[stencil]] *
+                                spherical.od_weights[stencil];
+                    }
+                    radiance = radiance +
+                               integrated_emission *
+                                   stable_exp_difference(zero, optical_depth,
+                                                         zero + 1.0);
+                }
+            }
         }
         return radiance;
     }
@@ -3088,6 +3157,7 @@ namespace {
         resize_vars(solution.secant, n, zero);
         resize_vars(solution.thermal_b0, n, zero);
         resize_vars(solution.thermal_b1, n, zero);
+        resize_vars(solution.integrated_emission, n, zero);
         for (int az = 0; az < naz; ++az) {
             auto& h = solution.homogeneous[az];
             resize_vars(h.k, n, zero);
@@ -3188,9 +3258,19 @@ namespace {
                                       scattering_bottom * level_b1[layer + 1]),
                                average_scattering);
             if constexpr (!Solar) {
-                solution.thermal_b0[layer] = emission[layer];
-                solution.thermal_b1[layer] = thermal_profile_slope(
-                    emission[layer], emission[layer + 1], solution.od[layer]);
+                if (geometry.volume_emission) {
+                    // Piecewise-constant layer VER, integrated over vertical
+                    // distance. This stays linear at zero emission and finite
+                    // at zero extinction or unit single-scattering albedo.
+                    solution.integrated_emission[layer] =
+                        0.5 * (emission[layer] + emission[layer + 1]) *
+                        geometry.layer_thickness[layer];
+                } else {
+                    solution.thermal_b0[layer] = emission[layer];
+                    solution.thermal_b1[layer] = thermal_profile_slope(
+                        emission[layer], emission[layer + 1],
+                        solution.od[layer]);
+                }
             }
         }
 
@@ -3284,15 +3364,25 @@ namespace {
                     p.gmb[layer] = ap * cp * xm;
                 } else {
                     const Var at =
-                        (1.0 - solution.ssa[layer]) * (xp + xm) / norm;
+                        (geometry.volume_emission ? zero + 1.0
+                                                  : 1.0 - solution.ssa[layer]) *
+                        (xp + xm) / norm;
                     const Var cp =
-                        solution.thermal_b0[layer] *
-                        stable_exp_difference(k, solution.thermal_b1[layer],
-                                              solution.od[layer]);
-                    const Var cm = solution.thermal_b0[layer] *
-                                   stable_exp_difference(
-                                       zero, solution.thermal_b1[layer] + k,
-                                       solution.od[layer]);
+                        geometry.volume_emission
+                            ? solution.integrated_emission[layer] *
+                                  stable_exp_difference(k * solution.od[layer],
+                                                        zero, zero + 1.0)
+                            : solution.thermal_b0[layer] *
+                                  stable_exp_difference(
+                                      k, solution.thermal_b1[layer],
+                                      solution.od[layer]);
+                    const Var cm =
+                        geometry.volume_emission
+                            ? cp
+                            : solution.thermal_b0[layer] *
+                                  stable_exp_difference(
+                                      zero, solution.thermal_b1[layer] + k,
+                                      solution.od[layer]);
                     p.at[layer] = at;
                     p.gpt[layer] = at * cm * xm;
                     p.gpb[layer] = at * cp * xp;
@@ -3397,6 +3487,10 @@ void CppTwoStreamSourceAdapter<SOURCE_TYPE>::initialize_geometry(
         auto layers = std::make_unique<sasktran_disco::GeometryLayerArray<1>>(
             *pconfig, impl.geometry);
         ColumnGeometry column;
+        column.volume_emission =
+            sasktran2::twostream::has_thermal<SOURCE_TYPE>() &&
+            impl.config->emission_source() ==
+                sasktran2::Config::EmissionSource::volume_emission_rate;
         column.layer_thickness.resize(nlyr);
         column.chapman = layers->chapman_factors();
         column.solar_cosine = cos_sza;

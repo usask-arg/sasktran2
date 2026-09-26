@@ -6,6 +6,7 @@
 #include <sasktran2/config.h>
 #include <sasktran2/atmosphere/atmosphere.h>
 
+#include <cmath>
 #include <stdexcept>
 
 namespace sasktran2::emission {
@@ -82,37 +83,58 @@ namespace sasktran2::emission {
             }
 
             double source_factor;
-            double emission_cell;
+            double source_factor_derivative;
+            double emission_average;
             if constexpr (EMISSION_SOURCE_TYPE ==
                           Config::EmissionSource::standard) {
                 source_factor = 1.0 - attenuation(lane);
-                emission_cell =
-                    source_factor * ((1.0 - ssa_start) * emission_start *
-                                         layer.od_quad_start_fraction +
-                                     (1.0 - ssa_end) * emission_end *
-                                         layer.od_quad_end_fraction);
+                source_factor_derivative = attenuation(lane);
+                emission_average =
+                    (1.0 - ssa_start) * emission_start *
+                        layer.od_quad_start_fraction +
+                    (1.0 - ssa_end) * emission_end * layer.od_quad_end_fraction;
             } else {
-                source_factor = layer.layer_distance;
-                emission_cell = source_factor *
-                                (emission_start * layer.od_quad_start_fraction +
-                                 emission_end * layer.od_quad_end_fraction);
+                // Integrate the cell-averaged VER in geometric distance:
+                // L * (1 - exp(-tau)) / tau. Incoming radiance is attenuated
+                // by the source integrator, but emission born inside this
+                // cell must also be attenuated before leaving it.
+                const double depth = shell_od.od(lane);
+                double integral, derivative;
+                if (std::abs(depth) < 1.0e-3) {
+                    // Taylor limits avoid cancellation and retain the
+                    // nonzero extinction derivative at zero optical depth.
+                    integral =
+                        1.0 +
+                        depth * (-0.5 +
+                                 depth * (1.0 / 6.0 +
+                                          depth * (-1.0 / 24.0 +
+                                                   depth * (1.0 / 120.0 -
+                                                            depth / 720.0))));
+                    derivative =
+                        -0.5 +
+                        depth * (1.0 / 3.0 + depth * (-1.0 / 8.0 +
+                                                      depth * (1.0 / 30.0 -
+                                                               depth / 144.0)));
+                } else {
+                    integral = -std::expm1(-depth) / depth;
+                    derivative = (attenuation(lane) - integral) / depth;
+                }
+                source_factor = layer.layer_distance * integral;
+                source_factor_derivative = layer.layer_distance * derivative;
+                emission_average =
+                    emission_start * layer.od_quad_start_fraction +
+                    emission_end * layer.od_quad_end_fraction;
             }
-            source.value(0, lane) += emission_cell;
+            source.value(0, lane) += source_factor * emission_average;
 
             if (source.derivative_size() == 0) {
                 continue;
             }
-            if constexpr (EMISSION_SOURCE_TYPE ==
-                          Config::EmissionSource::standard) {
-                for (auto derivative = shell_od.derivative_iterator();
-                     derivative; ++derivative) {
-                    source.derivative(derivative.index(), batch.count)(
-                        0, lane) += derivative.value() * attenuation(lane) *
-                                    ((1.0 - ssa_start) * emission_start *
-                                         layer.od_quad_start_fraction +
-                                     (1.0 - ssa_end) * emission_end *
-                                         layer.od_quad_end_fraction);
-                }
+            for (auto derivative = shell_od.derivative_iterator(); derivative;
+                 ++derivative) {
+                source.derivative(derivative.index(), batch.count)(0, lane) +=
+                    derivative.value() * source_factor_derivative *
+                    emission_average;
             }
 
             const auto add_endpoint_derivatives =
