@@ -61,7 +61,8 @@ def tangent_path_length_m(tangent_altitude_m: float = 15_000.0) -> float:
     return 2.0 * np.sqrt(top_radius**2 - tangent_radius**2)
 
 
-def test_constant_volume_emission_matches_analytic_path_integral():
+@pytest.mark.parametrize("extinction", [0.0, 1.0e-6, 1.0e-5])
+def test_constant_volume_emission_matches_analytic_path_integral(extinction):
     config = emission_config(sk.EmissionSource.VolumeEmissionRate)
     config.num_threads = 2
     geometry = geometry2d()
@@ -72,7 +73,7 @@ def test_constant_volume_emission_matches_analytic_path_integral():
         calculate_derivatives=False,
     )
     emission = np.array([2.0e-6, 3.0e-6])
-    atmosphere.storage.total_extinction[:] = 0.0
+    atmosphere.storage.total_extinction[:] = extinction
     atmosphere.storage.ssa[:] = 0.0
     atmosphere.storage.emission_source[:] = emission
 
@@ -80,15 +81,22 @@ def test_constant_volume_emission_matches_analytic_path_integral():
         atmosphere
     )
 
+    distance = tangent_path_length_m()
+    integral = (
+        distance
+        if extinction == 0.0
+        else -np.expm1(-extinction * distance) / extinction
+    )
     np.testing.assert_allclose(
-        result.radiance[:, 0, 0],
-        emission * tangent_path_length_m(),
-        rtol=2.0e-12,
+        result.radiance[:, 0, 0], emission * integral, rtol=2.0e-12
     )
 
 
-def test_standard_emission_and_native_derivatives_match_analytic_and_numeric():
-    config = emission_config(sk.EmissionSource.Standard)
+@pytest.mark.parametrize(
+    "source", [sk.EmissionSource.Standard, sk.EmissionSource.VolumeEmissionRate]
+)
+def test_emission_and_native_derivatives_match_analytic_and_numeric(source):
+    config = emission_config(source)
     geometry = geometry2d()
     atmosphere = sk.Atmosphere(
         geometry,
@@ -105,11 +113,10 @@ def test_standard_emission_and_native_derivatives_match_analytic_and_numeric():
 
     base = engine.calculate_radiance(atmosphere)
     path_length = tangent_path_length_m()
-    np.testing.assert_allclose(
-        base.radiance[:, 0, 0],
-        emission * (1.0 - np.exp(-extinction * path_length)),
-        rtol=2.0e-12,
-    )
+    expected = emission * -np.expm1(-extinction * path_length)
+    if source == sk.EmissionSource.VolumeEmissionRate:
+        expected /= extinction
+    np.testing.assert_allclose(base.radiance[:, 0, 0], expected, rtol=2.0e-12)
     assert base.wf_extinction.shape == (3, 3, 2, 1, 1)
     assert base.wf_emission.shape == (3, 3, 2, 1, 1)
 
