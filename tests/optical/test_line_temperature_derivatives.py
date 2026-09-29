@@ -264,6 +264,11 @@ def test_pressure_cross_section_derivative(tmp_path, spectral_mode, vmr_value):
 def test_pressure_radiance_jacobian(tmp_path, temperature_derivative):
     absorber, sampled = _absorber(tmp_path)
     atmo, engine = _scenario(temperature_derivative=temperature_derivative)
+    # At 0.002 Pa, wing radiance differences approach floating-point roundoff;
+    # larger steps cross the line-profile clipping boundary. Keep this stencil
+    # above those wings, as in the cross-section test. The Rust kernel tests
+    # cover zero pressure and clipping separately.
+    atmo.pressure_pa = np.maximum(atmo.pressure_pa, 1.0)
     atmo["o2"] = sk.constituent.VMRAltitudeAbsorber(
         absorber, atmo.model_geometry.altitudes(), np.full(6, 0.21)
     )
@@ -277,9 +282,7 @@ def test_pressure_radiance_jacobian(tmp_path, temperature_derivative):
         assert "wf_temperature_k" not in result
     for level in range(len(atmo.pressure_pa)):
         original = atmo.pressure_pa[level]
-        # Resolve the very small radiance change at the highest altitude while
-        # keeping the stencil on the same side of the clipped line-wing boundary.
-        step = min(original * 0.025, max(original * 1e-3, 1e-3))
+        step = max(original * 1e-3, 1e-3)
         atmo.pressure_pa[level] = original + step
         above = engine.calculate_radiance(atmo).radiance
         atmo.pressure_pa[level] = original - step
