@@ -125,6 +125,37 @@ profile. To also include scattered sunlight, enable a scattering source and add
 `Rayleigh()` and `SolarIrradiance(photon_units=True)` when setting up the
 atmosphere. See {ref}`_users_solar_irradiance` for absolute radiance units.
 
+### Scatter the emitted light with two streams
+
+To include scattering and surface reflection of photochemical emission with
+the dedicated two-stream solver, use:
+
+```python
+config.num_streams = 2
+config.single_scatter_source = sk.SingleScatterSource.Exact
+config.multiple_scatter_source = sk.MultipleScatterSource.TwoStream
+config.emission_source = sk.EmissionSource.VolumeEmissionRate
+```
+
+Set these options before constructing the atmosphere and engine. This combination
+includes direct emission, scattered emission, and scattered sunlight. Keep
+`VolumeEmissionRate` for VER constituents; `EmissionSource.TwoStream` instead
+interprets the atmospheric emission array as a thermal Planck source. With
+`MultipleScatterSource.NoSource`, VER includes only the direct viewing-path
+contribution.
+
+The two-stream diffuse calculation uses the average VER at each layer's endpoints.
+Refine the altitude grid to resolve narrow emitting layers. Zero-emission
+wavelengths, transparent layers, and conservative scattering are supported, as
+are VER and optical-property weighting functions. The VER calculation uses the
+solver's differentiated integration path rather than its thermal fast path.
+
+When combining photon VER with sunlight, use `SolarIrradiance(photon_units=True)`
+so the source units agree. For an emission-only calculation with scattering,
+leave out the solar irradiance constituent, set
+`config.single_scatter_source = sk.SingleScatterSource.NoSource`, and set
+`atmosphere.storage.solar_irradiance[:] = 0.0`.
+
 ## Use VER and temperature weighting functions
 
 The output contains `wf_o2_00_photon_ver` for changes to the input VER profile and

@@ -245,8 +245,15 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
             m_source_terms[m_source_terms.size() - 1].get());
     }
 
+    const bool twostream_volume_emission =
+        m_config.emission_source() ==
+            sasktran2::Config::EmissionSource::volume_emission_rate &&
+        m_config.multiple_scatter_source() ==
+            sasktran2::Config::MultipleScatterSource::twostream;
+
     if (m_config.emission_source() ==
-        sasktran2::Config::EmissionSource::volume_emission_rate) {
+            sasktran2::Config::EmissionSource::volume_emission_rate &&
+        !twostream_volume_emission) {
         m_source_terms.emplace_back(
             std::make_unique<sasktran2::emission::EmissionSource<
                 NSTOKES,
@@ -257,7 +264,8 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
     }
 
     if (m_config.emission_source() ==
-        sasktran2::Config::EmissionSource::twostream) {
+            sasktran2::Config::EmissionSource::twostream ||
+        twostream_volume_emission) {
         if constexpr (NSTOKES == 1) {
             m_source_terms.emplace_back(
                 std::make_unique<CppTwoStreamSourceAdapter<
