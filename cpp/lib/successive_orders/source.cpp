@@ -6,6 +6,7 @@
 #include "problem.h"
 #include "problem_scratch.h"
 #include "ray_transport.h"
+#include "ray_transport_scratch.h"
 #include "scattering_assembler.h"
 
 #include <sasktran2/geometry.h>
@@ -526,14 +527,16 @@ namespace sasktran2::successive_orders {
                     });
                 warn_if_not_converged(jvp_diagnostics, m_solver_settings,
                                       block.start, "JVP solve");
-                work.los_transport_tangent.resize(
-                    work.los_transport.values().size());
-                m_los_map->assemble_jvp(*m_atmosphere, block.start,
-                                        native_tangent,
-                                        work.los_transport_tangent);
-                work.los_transport.template apply_jvp_stokes<NSTOKES>(
-                    work.state, work.state_tangent, work.los_transport_tangent,
-                    work.los_tangent);
+                with_los_derivative_workspace(
+                    work, work.los_transport_tangent, block.start, threadidx,
+                    "jvp", [&](auto& values, auto&) {
+                        values.resize(work.los_transport.values().size());
+                        m_los_map->assemble_jvp(*m_atmosphere, block.start,
+                                                native_tangent, values);
+                        work.los_transport.template apply_jvp_stokes<NSTOKES>(
+                            work.state, work.state_tangent, values,
+                            work.los_tangent);
+                    });
             }
             work.jacobian.resize(0, 0);
             work.active_wavelength = block.start;
@@ -627,6 +630,46 @@ namespace sasktran2::successive_orders {
         }
 
       private:
+        /** Only temporary LOS value derivatives and layer scratch are leased;
+         * state cotangents and ray products remain with the worker.
+         */
+        template <typename Operation>
+        void with_los_derivative_workspace(WorkerState& work,
+                                           Eigen::VectorXd& owned_values,
+                                           int wavelength, int worker,
+                                           const char* operation,
+                                           Operation&& calculate) {
+            if constexpr (NSTOKES == 1) {
+                ScalarRayTransportWorkspaceLease scratch;
+                std::forward<Operation>(calculate)(scratch.values(),
+                                                   scratch.workspace());
+                if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
+                    std::fprintf(
+                        stderr,
+                        "SASKTRAN2_MEMORY "
+                        "{\"kind\":\"successive_orders_los_workspace\","
+                        "\"provider\":\"%p\",\"worker_storage\":\"%p\","
+                        "\"allocation_id\":%llu,\"shared\":%s,"
+                        "\"operation\":\"%s\",\"wavelength\":%d,"
+                        "\"worker\":%d,\"instance_id\":%llu,"
+                        "\"value_bytes\":%zu,\"workspace_bytes\":%zu,"
+                        "\"storage_bytes\":%zu}\n",
+                        static_cast<void*>(this), static_cast<void*>(&work),
+                        static_cast<unsigned long long>(
+                            scratch.allocation_id()),
+                        scratch.shared() ? "true" : "false", operation,
+                        wavelength, worker,
+                        static_cast<unsigned long long>(
+                            m_atmosphere_instance_id),
+                        scratch.value_bytes(), scratch.workspace_bytes(),
+                        scratch.storage_bytes());
+                }
+            } else {
+                std::forward<Operation>(calculate)(owned_values,
+                                                   work.los_vjp_workspace);
+            }
+        }
+
         /** Each invocation completes synchronously and returns scalar
          * diagnostics. No workspace reference can escape into ray callbacks or
          * caches.
@@ -875,13 +918,16 @@ namespace sasktran2::successive_orders {
                      Eigen::Ref<Eigen::VectorXd> native_gradient,
                      bool emit_convergence_warning = true) {
             work.state_cotangent.resize(work.state.size());
-            work.los_value_gradient.resize(work.los_transport.values().size());
-            work.los_transport.template apply_vjp_stokes<NSTOKES>(
-                work.state, los_cotangent, work.state_cotangent,
-                work.los_value_gradient);
-            m_los_map->accumulate_vjp(*m_atmosphere, wavelength,
-                                      work.los_value_gradient, native_gradient,
-                                      work.los_vjp_workspace);
+            with_los_derivative_workspace(
+                work, work.los_value_gradient, wavelength, threadidx, "vjp",
+                [&](auto& values, auto& workspace) {
+                    values.resize(work.los_transport.values().size());
+                    work.los_transport.template apply_vjp_stokes<NSTOKES>(
+                        work.state, los_cotangent, work.state_cotangent,
+                        values);
+                    m_los_map->accumulate_vjp(*m_atmosphere, wavelength, values,
+                                              native_gradient, workspace);
+                });
             bool skip_scattering_parameter_vjp = false;
             if constexpr (NSTOKES == 1) {
                 // Spatial Lambertian albedo derivatives are carried by the

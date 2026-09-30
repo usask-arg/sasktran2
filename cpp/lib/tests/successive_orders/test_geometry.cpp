@@ -1059,7 +1059,9 @@ TEST_CASE("Successive-orders structured layer storage preserves every weight "
     adopt_optical_depth_storage(traced, compiled);
 
     REQUIRE(compiled.layers.is_structured());
-    REQUIRE(compiled.layers.capacity_bytes() == 3 * 8);
+    REQUIRE(compiled.layers.is_compact_structured());
+    REQUIRE(compiled.layers.capacity_bytes() ==
+            3 * sizeof(CompactStructuredLayerInterpolation));
     REQUIRE(compiled.atmosphere_weights.capacity() == 0);
     REQUIRE(compiled.optical_depth_indices.capacity() == 0);
     REQUIRE(compiled.structured_atmosphere_weights.size() == 6);

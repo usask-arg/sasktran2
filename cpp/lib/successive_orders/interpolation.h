@@ -4,6 +4,7 @@
 
 #include <sasktran2/raytracing.h>
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstddef>
@@ -177,6 +178,46 @@ namespace sasktran2::successive_orders {
     static_assert(sizeof(StructuredLayerInterpolation) == 8,
                   "Structured layer descriptors must stay compact");
 
+    /** A structured cell whose midpoint offset fits twelve bits.
+     *
+     * The source offset and cell base keep their full sixteen-bit ranges. The
+     * four corner-mask bits share a naturally aligned uint16_t with the
+     * midpoint offset; no unaligned loads or floating-point decoding are used.
+     */
+    class CompactStructuredLayerInterpolation {
+      public:
+        static constexpr std::uint16_t maximum_atmosphere_offset = 4095;
+
+        explicit CompactStructuredLayerInterpolation(
+            const StructuredLayerInterpolation& layer)
+            : m_source_offset(layer.source_offset),
+              m_cell_base(layer.cell_base) {
+            if (layer.atmosphere_offset > maximum_atmosphere_offset ||
+                layer.atmosphere_mask > 15 || layer.reserved != 0) {
+                throw std::out_of_range("Compact structured layer overflow");
+            }
+            m_atmosphere_offset_mask = static_cast<std::uint16_t>(
+                layer.atmosphere_offset |
+                (static_cast<std::uint16_t>(layer.atmosphere_mask) << 12));
+        }
+        StructuredLayerInterpolation expanded() const {
+            return {static_cast<std::uint16_t>(m_atmosphere_offset_mask & 4095),
+                    m_source_offset, m_cell_base,
+                    static_cast<std::uint8_t>(m_atmosphere_offset_mask >> 12),
+                    0};
+        }
+
+      private:
+        std::uint16_t m_atmosphere_offset_mask = 0;
+        std::uint16_t m_source_offset = 0;
+        std::uint16_t m_cell_base = 0;
+    };
+
+    static_assert(sizeof(CompactStructuredLayerInterpolation) == 6,
+                  "Compact structured layer descriptors must use six bytes");
+    static_assert(alignof(CompactStructuredLayerInterpolation) == 2,
+                  "Compact structured layer descriptors use aligned fields");
+
     /** Construction uses wide descriptors; immutable reads decode either form.
      */
     class LayerInterpolationStorage {
@@ -193,7 +234,17 @@ namespace sasktran2::successive_orders {
                               m_values);
         }
         bool empty() const { return size() == 0; }
-        bool is_structured() const { return m_values.index() == 1; }
+        bool is_structured() const { return m_values.index() != 0; }
+        bool is_compact_structured() const { return m_values.index() == 2; }
+        std::size_t element_bytes() const {
+            return std::visit(
+                [](const auto& values) {
+                    using Value =
+                        typename std::decay_t<decltype(values)>::value_type;
+                    return sizeof(Value);
+                },
+                m_values);
+        }
         std::size_t capacity_bytes() const {
             return std::visit(
                 [](const auto& values) {
@@ -216,22 +267,63 @@ namespace sasktran2::successive_orders {
             }
             return *values;
         }
-        const StructuredLayerInterpolation&
-        structured_layer(std::size_t index) const {
+        StructuredLayerInterpolation structured_layer(std::size_t index) const {
+            if (const auto* values = std::get_if<
+                    std::vector<CompactStructuredLayerInterpolation>>(
+                    &m_values)) {
+                return (*values)[index].expanded();
+            }
             return std::get<std::vector<StructuredLayerInterpolation>>(
                 m_values)[index];
         }
         LayerInterpolation operator[](std::size_t index) const {
-            if (const auto* values =
-                    std::get_if<std::vector<LayerInterpolation>>(&m_values)) {
-                return (*values)[index];
+            if (const auto* values = std::get_if<
+                    std::vector<CompactStructuredLayerInterpolation>>(
+                    &m_values)) {
+                return structured_descriptor(*values, index);
             }
-            const auto& values =
-                std::get<std::vector<StructuredLayerInterpolation>>(m_values);
-            const auto& layer = values[index];
+            if (const auto* values =
+                    std::get_if<std::vector<StructuredLayerInterpolation>>(
+                        &m_values)) {
+                return structured_descriptor(*values, index);
+            }
+            return std::get<std::vector<LayerInterpolation>>(m_values)[index];
+        }
+        void
+        assign_structured(std::vector<StructuredLayerInterpolation>&& values,
+                          std::uint32_t source_weight_count) {
+            const bool compact = std::all_of(
+                values.begin(), values.end(), [](const auto& layer) {
+                    return layer.atmosphere_offset <=
+                               CompactStructuredLayerInterpolation::
+                                   maximum_atmosphere_offset &&
+                           layer.atmosphere_mask <= 15 && layer.reserved == 0;
+                });
+            if (compact) {
+                std::vector<CompactStructuredLayerInterpolation> compact_values;
+                compact_values.reserve(values.size());
+                for (const auto& layer : values) {
+                    compact_values.emplace_back(layer);
+                }
+                m_values = std::move(compact_values);
+            } else {
+                m_values = std::move(values);
+            }
+            m_source_weight_count = source_weight_count;
+        }
+
+      private:
+        template <typename Descriptor>
+        LayerInterpolation
+        structured_descriptor(const std::vector<Descriptor>& values,
+                              std::size_t index) const {
+            const auto current = values.cbegin() + index;
+            const auto next = current + 1;
+            const auto layer = expanded_descriptor(*current);
             const std::uint32_t source_end =
-                index + 1 == values.size() ? m_source_weight_count
-                                           : values[index + 1].source_offset;
+                next == values.cend()
+                    ? m_source_weight_count
+                    : expanded_descriptor(*next).source_offset;
             constexpr std::array<std::uint8_t, 16> mask_counts = {
                 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4};
             return {layer.atmosphere_offset,
@@ -241,16 +333,17 @@ namespace sasktran2::successive_orders {
                     static_cast<std::uint32_t>(index * 4),
                     4};
         }
-        void
-        assign_structured(std::vector<StructuredLayerInterpolation>&& values,
-                          std::uint32_t source_weight_count) {
-            m_values = std::move(values);
-            m_source_weight_count = source_weight_count;
+        static StructuredLayerInterpolation
+        expanded_descriptor(const StructuredLayerInterpolation& layer) {
+            return layer;
         }
-
-      private:
+        static StructuredLayerInterpolation
+        expanded_descriptor(const CompactStructuredLayerInterpolation& layer) {
+            return layer.expanded();
+        }
         std::variant<std::vector<LayerInterpolation>,
-                     std::vector<StructuredLayerInterpolation>>
+                     std::vector<StructuredLayerInterpolation>,
+                     std::vector<CompactStructuredLayerInterpolation>>
             m_values;
         std::uint32_t m_source_weight_count = 0;
     };

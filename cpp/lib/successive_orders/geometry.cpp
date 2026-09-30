@@ -1145,6 +1145,12 @@ namespace sasktran2::successive_orders {
         std::size_t structured_midpoint_weight_count = 0;
         std::size_t structured_payload_bytes_saved = 0;
         std::size_t layer_metadata_bytes = 0;
+        std::size_t compact_structured_rays = 0;
+        std::size_t compact_structured_layer_count = 0;
+        std::size_t full_structured_rays = 0;
+        std::size_t full_structured_layer_count = 0;
+        std::size_t compact_descriptor_bytes_saved = 0;
+        std::size_t maximum_structured_atmosphere_offset = 0;
         std::size_t midpoint_weight_bytes = 0;
         std::size_t optical_depth_index_bytes = 0;
         for (std::size_t ray = 0; ray < m_incoming_viewing.traced_rays.size();
@@ -1166,34 +1172,67 @@ namespace sasktran2::successive_orders {
             if (interpolation.layers.is_structured()) {
                 ++structured_rays;
                 structured_layer_count += interpolation.layers.size();
+                if (interpolation.layers.is_compact_structured()) {
+                    ++compact_structured_rays;
+                    compact_structured_layer_count +=
+                        interpolation.layers.size();
+                    compact_descriptor_bytes_saved +=
+                        interpolation.layers.size() *
+                        (sizeof(StructuredLayerInterpolation) -
+                         sizeof(CompactStructuredLayerInterpolation));
+                } else {
+                    ++full_structured_rays;
+                    full_structured_layer_count += interpolation.layers.size();
+                }
+                // Verified structured offsets are cumulative. The final layer
+                // therefore supplies the maximum without scanning the ray.
+                if (!interpolation.layers.empty()) {
+                    maximum_structured_atmosphere_offset =
+                        std::max(maximum_structured_atmosphere_offset,
+                                 static_cast<std::size_t>(
+                                     interpolation.layers
+                                         .structured_layer(
+                                             interpolation.layers.size() - 1)
+                                         .atmosphere_offset));
+                }
                 structured_midpoint_weight_count +=
                     interpolation.structured_atmosphere_weights.size();
                 structured_payload_bytes_saved +=
                     interpolation.layers.size() *
                         (sizeof(LayerInterpolation) -
-                         sizeof(StructuredLayerInterpolation) +
+                         interpolation.layers.element_bytes() +
                          4 * sizeof(int)) +
                     interpolation.structured_atmosphere_weights.size() *
                         (sizeof(InterpolationWeight) - sizeof(double));
             }
         }
         if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
-            std::fprintf(stderr,
-                         "SASKTRAN2_MEMORY {\"kind\":\"od_compaction\","
-                         "\"rays\":%zu,\"released_capacity_bytes\":%zu,"
-                         "\"layer_count\":%zu,\"structured_rays\":%zu,"
-                         "\"structured_layer_count\":%zu,"
-                         "\"structured_midpoint_weight_count\":%zu,"
-                         "\"structured_payload_bytes_saved\":%zu,"
-                         "\"layer_metadata_bytes\":%zu,"
-                         "\"midpoint_weight_bytes\":%zu,"
-                         "\"optical_depth_index_bytes\":%zu}\n",
-                         m_incoming_interpolation.size(),
-                         released_capacity_bytes, layer_count, structured_rays,
-                         structured_layer_count,
-                         structured_midpoint_weight_count,
-                         structured_payload_bytes_saved, layer_metadata_bytes,
-                         midpoint_weight_bytes, optical_depth_index_bytes);
+            std::fprintf(
+                stderr,
+                "SASKTRAN2_MEMORY {\"kind\":\"od_compaction\","
+                "\"rays\":%zu,\"released_capacity_bytes\":%zu,"
+                "\"layer_count\":%zu,\"structured_rays\":%zu,"
+                "\"structured_layer_count\":%zu,"
+                "\"structured_midpoint_weight_count\":%zu,"
+                "\"structured_payload_bytes_saved\":%zu,"
+                "\"layer_metadata_bytes\":%zu,"
+                "\"compact_structured_rays\":%zu,"
+                "\"compact_structured_layer_count\":%zu,"
+                "\"full_structured_rays\":%zu,"
+                "\"full_structured_layer_count\":%zu,"
+                "\"compact_descriptor_bytes_saved\":%zu,"
+                "\"maximum_structured_atmosphere_offset\":%zu,"
+                "\"midpoint_weight_bytes\":%zu,"
+                "\"optical_depth_index_bytes\":%zu}\n",
+                m_incoming_interpolation.size(), released_capacity_bytes,
+                layer_count, structured_rays, structured_layer_count,
+                structured_midpoint_weight_count,
+                structured_payload_bytes_saved, layer_metadata_bytes,
+                compact_structured_rays, compact_structured_layer_count,
+                full_structured_rays, full_structured_layer_count,
+                compact_descriptor_bytes_saved,
+                maximum_structured_atmosphere_offset, midpoint_weight_bytes,
+                optical_depth_index_bytes);
         }
         m_incoming_viewing.traced_rays.clear();
         m_incoming_viewing.traced_rays.shrink_to_fit();

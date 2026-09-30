@@ -27,9 +27,11 @@ add_executable(
   successive_orders/test_first_order_scratch.cpp
   successive_orders/test_fixed_point.cpp
   successive_orders/test_geometry.cpp
+  successive_orders/test_layer_storage.cpp
   successive_orders/test_problem.cpp
   successive_orders/test_problem_scratch.cpp
   successive_orders/test_ray_transport.cpp
+  successive_orders/test_ray_transport_scratch.cpp
   successive_orders/test_scattering.cpp
   successive_orders/test_scattering_assembler.cpp
   successive_orders/test_source.cpp
