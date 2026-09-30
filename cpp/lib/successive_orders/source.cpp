@@ -4,6 +4,7 @@
 #include "fixed_point.h"
 #include "geometry.h"
 #include "problem.h"
+#include "problem_scratch.h"
 #include "ray_transport.h"
 #include "scattering_assembler.h"
 
@@ -247,7 +248,9 @@ namespace sasktran2::successive_orders {
                   los_transport(los_map.sparsity()),
                   scattering(assembler.create_operator()),
                   problem(transport, scattering) {
-                workspace.resize(transport, scattering);
+                if constexpr (NSTOKES != 1) {
+                    workspace.resize(transport, scattering);
+                }
                 forcing.resize(scattering.input_size());
                 state.resize(scattering.output_size());
                 const int los_size = los_transport.sparsity().rows() * NSTOKES;
@@ -513,10 +516,14 @@ namespace sasktran2::successive_orders {
                 Adapter::assemble_jvp(*m_scattering_assembler, *m_atmosphere,
                                       block.start, native_tangent,
                                       work.tangent);
-                const auto jvp_diagnostics = work.problem.solve_jvp(
-                    work.forcing, work.state, work.tangent, work.state_tangent,
-                    m_solver_settings, work.workspace,
-                    compact_scalar ? &work.direct_transport_tangent : nullptr);
+                const auto jvp_diagnostics = solve_with_workspace(
+                    work, block.start, threadidx, "jvp", [&](auto& workspace) {
+                        return work.problem.solve_jvp(
+                            work.forcing, work.state, work.tangent,
+                            work.state_tangent, m_solver_settings, workspace,
+                            compact_scalar ? &work.direct_transport_tangent
+                                           : nullptr);
+                    });
                 warn_if_not_converged(jvp_diagnostics, m_solver_settings,
                                       block.start, "JVP solve");
                 work.los_transport_tangent.resize(
@@ -620,6 +627,49 @@ namespace sasktran2::successive_orders {
         }
 
       private:
+        /** Each invocation completes synchronously and returns scalar
+         * diagnostics. No workspace reference can escape into ray callbacks or
+         * caches.
+         */
+        template <typename Solve>
+        FixedPointDiagnostics
+        solve_with_workspace(WorkerState& work, int wavelength, int worker,
+                             const char* operation, Solve&& solve) {
+            if constexpr (NSTOKES == 1) {
+                ScalarProblemWorkspaceLease scratch;
+                const auto diagnostics =
+                    std::forward<Solve>(solve)(scratch.workspace());
+                if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
+                    std::fprintf(
+                        stderr,
+                        "SASKTRAN2_MEMORY "
+                        "{\"kind\":\"successive_orders_ephemeral_workspace\","
+                        "\"provider\":\"%p\",\"worker_storage\":\"%p\","
+                        "\"allocation_id\":%llu,\"shared\":%s,"
+                        "\"operation\":\"%s\",\"wavelength\":%d,"
+                        "\"worker\":%d,\"instance_id\":%llu,"
+                        "\"input_size\":%d,\"output_size\":%d,"
+                        "\"anderson_depth\":%d,"
+                        "\"problem_bytes\":%zu,\"fixed_point_bytes\":%zu,"
+                        "\"storage_bytes\":%zu}\n",
+                        static_cast<void*>(this), static_cast<void*>(&work),
+                        static_cast<unsigned long long>(
+                            scratch.allocation_id()),
+                        scratch.shared() ? "true" : "false", operation,
+                        wavelength, worker,
+                        static_cast<unsigned long long>(
+                            m_atmosphere_instance_id),
+                        work.problem.incoming_size(), work.problem.state_size(),
+                        m_solver_settings.anderson_depth,
+                        scratch.problem_bytes(), scratch.fixed_point_bytes(),
+                        scratch.storage_bytes());
+                }
+                return diagnostics;
+            } else {
+                return std::forward<Solve>(solve)(work.workspace);
+            }
+        }
+
         void create_worker_states(int count) {
             if (count < 1 || m_transport_map == nullptr ||
                 m_los_map == nullptr || m_scattering_assembler == nullptr) {
@@ -776,9 +826,12 @@ namespace sasktran2::successive_orders {
                 }
             }
             if (!reuse_primal) {
-                const auto diagnostics =
-                    work.problem.solve(work.forcing, work.state,
-                                       m_solver_settings, work.workspace);
+                const auto diagnostics = solve_with_workspace(
+                    work, wavelength, threadidx, "primal",
+                    [&](auto& workspace) {
+                        return work.problem.solve(work.forcing, work.state,
+                                                  m_solver_settings, workspace);
+                    });
                 warn_if_not_converged(diagnostics, m_solver_settings,
                                       wavelength, "primal solve");
             }
@@ -858,11 +911,15 @@ namespace sasktran2::successive_orders {
                     work.profiled_parameter_vjp_case = parameter_vjp_case;
                 }
             }
-            const auto diagnostics = work.problem.solve_vjp(
-                work.forcing, work.state, work.state_cotangent, work.gradient,
-                m_solver_settings, work.workspace, work.adjoint,
-                !m_first_order.uses_compact_scalar_kernel(),
-                skip_scattering_parameter_vjp);
+            const auto diagnostics = solve_with_workspace(
+                work, wavelength, threadidx, "vjp", [&](auto& workspace) {
+                    return work.problem.solve_vjp(
+                        work.forcing, work.state, work.state_cotangent,
+                        work.gradient, m_solver_settings, workspace,
+                        work.adjoint,
+                        !m_first_order.uses_compact_scalar_kernel(),
+                        skip_scattering_parameter_vjp);
+                });
             if (emit_convergence_warning) {
                 warn_if_not_converged(diagnostics, m_solver_settings,
                                       wavelength, "VJP solve");

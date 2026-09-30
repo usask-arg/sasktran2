@@ -305,6 +305,166 @@ TEST_CASE("Source slot widths preserve complete ray transport products bitwise",
     REQUIRE_THROWS_AS(invalid_byte.make_map(), std::invalid_argument);
 }
 
+TEST_CASE("Encoded source weights preserve complete native ray products "
+          "through atmosphere updates",
+          "[successive_orders][ray_transport][storage][linearization]") {
+    using namespace sasktran2::successive_orders;
+    const auto require_same = [](const Eigen::VectorXd& actual,
+                                 const Eigen::VectorXd& expected) {
+        REQUIRE(actual.size() == expected.size());
+        REQUIRE(actual.allFinite());
+        REQUIRE(expected.allFinite());
+        REQUIRE(std::memcmp(actual.data(), expected.data(),
+                            actual.size() * sizeof(double)) == 0);
+    };
+    const auto positive_weight = [](int index) {
+        const auto exponent = static_cast<std::uint64_t>(1010 + index % 15);
+        const auto mantissa =
+            (0x000123456789abcdULL +
+             static_cast<std::uint64_t>(index) * 0x0000000123456789ULL) &
+            0x000fffffffffffffULL;
+        const auto bits = (exponent << 52) | mantissa;
+        double result;
+        std::memcpy(&result, &bits, sizeof(result));
+        return result;
+    };
+
+    constexpr int row_size = 256;
+    constexpr int weights_per_layer = 256;
+    RayTransportFixture fixture;
+    Eigen::MatrixXd albedo(3, num_wavelengths);
+    albedo << 0.1, 0.2, 0.3, 0.4, 0.7, 0.8;
+    fixture.atmosphere.surface().set_spatial_lambertian_albedo(albedo);
+    auto wide_rays = fixture.interpolation;
+    auto& first_ray = wide_rays[0];
+    first_ray.transport_row_nnz = row_size;
+    first_ray.layers = {{0, 2, 0, weights_per_layer, 0, 2},
+                        {2, 2, weights_per_layer, weights_per_layer, 2, 2}};
+    first_ray.source_weights = {};
+    for (int index = 0; index < 2 * weights_per_layer; ++index) {
+        first_ray.source_weights.wide_values().emplace_back(
+            (index * 37) % row_size, positive_weight(index));
+    }
+    // Finite escapes span signed zero, negative coefficients, subnormals and
+    // widely separated exponents while the majority forces encoded storage.
+    first_ray.source_weights.wide_values()[3] = {255, -0.0};
+    first_ray.source_weights.wide_values()[17] = {0, -0.3123456789012345};
+    first_ray.source_weights.wide_values()[23] = {
+        255, std::numeric_limits<double>::max() / 1024.0};
+    first_ray.source_weights.wide_values()[weights_per_layer + 9] = {
+        0, std::numeric_limits<double>::denorm_min()};
+    first_ray.source_weights.wide_values()[weights_per_layer + 31] = {
+        255, std::numeric_limits<double>::min()};
+    first_ray.ground_weights = {};
+    for (int index = 0; index < 128; ++index) {
+        first_ray.ground_weights.wide_values().emplace_back(
+            (index * 5) % row_size, positive_weight(index + 11));
+    }
+    first_ray.ground_weights.wide_values()[5] = {255, -0.0};
+    first_ray.ground_weights.wide_values()[9] = {0, -0.02123456789012345};
+    first_ray.ground_weights.wide_values()[17] = {
+        255, std::numeric_limits<double>::denorm_min()};
+    first_ray.ground_horizontal_weights = {{0, 0.25}, {2, 0.75}};
+    wide_rays[1].transport_value_offset = row_size;
+
+    std::vector<int> columns(row_size + 2);
+    std::iota(columns.begin(), columns.begin() + row_size, 0);
+    columns[row_size] = 1;
+    columns[row_size + 1] = 3;
+    const TransportSparsity sparsity(row_size, {0, row_size, row_size + 2},
+                                     columns);
+    auto encoded_rays = wide_rays;
+    for (auto& ray : encoded_rays) {
+        compact_ray_interpolation(ray);
+    }
+    REQUIRE(encoded_rays[0].source_weights.is_encoded());
+    REQUIRE(encoded_rays[0].source_weights.encoded_escape_count() >= 5);
+    REQUIRE(encoded_rays[0].ground_weights.is_encoded());
+    REQUIRE(encoded_rays[0].ground_weights.encoded_escape_count() >= 3);
+    REQUIRE_FALSE(encoded_rays[1].source_weights.is_encoded());
+
+    const RayTransportMap wide_map(wide_rays, sparsity);
+    const RayTransportMap encoded_map(encoded_rays, sparsity);
+    TransportOperator wide_transport(wide_map.sparsity());
+    TransportOperator encoded_transport(encoded_map.sparsity());
+    const Eigen::VectorXd tangent =
+        Eigen::VectorXd::LinSpaced(fixture.atmosphere.num_deriv(), -0.07, 0.09);
+    const Eigen::VectorXd value_gradient =
+        Eigen::VectorXd::LinSpaced(sparsity.nonzeros(), -0.21, 0.31);
+    const Eigen::VectorXd state =
+        Eigen::VectorXd::LinSpaced(row_size, -0.4, 0.6);
+    const Eigen::VectorXd incoming_cotangent =
+        (Eigen::VectorXd(2) << -0.37, 0.21).finished();
+    const Eigen::MatrixXd original_extinction =
+        fixture.atmosphere.storage().total_extinction;
+    const Eigen::MatrixXd original_ssa = fixture.atmosphere.storage().ssa;
+    std::array<Eigen::VectorXd, num_wavelengths> initial_values;
+    std::array<Eigen::VectorXd, num_wavelengths> initial_jvp;
+    std::array<Eigen::VectorXd, num_wavelengths> initial_vjp;
+    RayTransportWorkspace wide_workspace, encoded_workspace;
+
+    for (int update = 0; update < 3; ++update) {
+        CAPTURE(update);
+        if (update == 1) {
+            for (int wavelength = 0; wavelength < num_wavelengths;
+                 ++wavelength) {
+                fixture.perturb(wavelength, tangent, 0.02);
+            }
+            fixture.atmosphere.surface().set_spatial_lambertian_albedo(0.93 *
+                                                                       albedo);
+        } else if (update == 2) {
+            fixture.atmosphere.storage().total_extinction = original_extinction;
+            fixture.atmosphere.storage().ssa = original_ssa;
+            fixture.atmosphere.surface().set_spatial_lambertian_albedo(albedo);
+        }
+        for (const int wavelength : {0, 1}) {
+            CAPTURE(wavelength);
+            wide_map.assemble_values(fixture.atmosphere, wavelength,
+                                     wide_transport);
+            encoded_map.assemble_values(fixture.atmosphere, wavelength,
+                                        encoded_transport);
+            require_same(encoded_transport.values(), wide_transport.values());
+            Eigen::VectorXd wide_jvp(sparsity.nonzeros());
+            Eigen::VectorXd encoded_jvp(sparsity.nonzeros());
+            wide_map.assemble_jvp(fixture.atmosphere, wavelength, tangent,
+                                  wide_jvp);
+            encoded_map.assemble_jvp(fixture.atmosphere, wavelength, tangent,
+                                     encoded_jvp);
+            require_same(encoded_jvp, wide_jvp);
+            Eigen::VectorXd wide_gradient =
+                Eigen::VectorXd::Zero(fixture.atmosphere.num_deriv());
+            Eigen::VectorXd encoded_gradient = wide_gradient;
+            wide_map.accumulate_vjp(fixture.atmosphere, wavelength,
+                                    value_gradient, wide_gradient,
+                                    wide_workspace);
+            encoded_map.accumulate_vjp(fixture.atmosphere, wavelength,
+                                       value_gradient, encoded_gradient,
+                                       encoded_workspace);
+            require_same(encoded_gradient, wide_gradient);
+            Eigen::VectorXd wide_value(2), encoded_value(2);
+            wide_transport.apply(state, wide_value);
+            encoded_transport.apply(state, encoded_value);
+            require_same(encoded_value, wide_value);
+            Eigen::VectorXd wide_transpose(row_size);
+            Eigen::VectorXd encoded_transpose(row_size);
+            wide_transport.apply_transpose(incoming_cotangent, wide_transpose);
+            encoded_transport.apply_transpose(incoming_cotangent,
+                                              encoded_transpose);
+            require_same(encoded_transpose, wide_transpose);
+            if (update == 0) {
+                initial_values[wavelength] = encoded_transport.values();
+                initial_jvp[wavelength] = encoded_jvp;
+                initial_vjp[wavelength] = encoded_gradient;
+            } else if (update == 2) {
+                require_same(encoded_transport.values(),
+                             initial_values[wavelength]);
+                require_same(encoded_jvp, initial_jvp[wavelength]);
+                require_same(encoded_gradient, initial_vjp[wavelength]);
+            }
+        }
+    }
+}
+
 TEST_CASE("Successive-orders packed ray transport assembles layer and ground "
           "values",
           "[successive_orders][ray_transport]") {

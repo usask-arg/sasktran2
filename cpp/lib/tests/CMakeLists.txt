@@ -28,10 +28,12 @@ add_executable(
   successive_orders/test_fixed_point.cpp
   successive_orders/test_geometry.cpp
   successive_orders/test_problem.cpp
+  successive_orders/test_problem_scratch.cpp
   successive_orders/test_ray_transport.cpp
   successive_orders/test_scattering.cpp
   successive_orders/test_scattering_assembler.cpp
   successive_orders/test_source.cpp
+  successive_orders/test_source_weight_codec.cpp
   successive_orders/test_transport.cpp
   sktran_disco/test_util.cpp
   sktran_disco/test_band_factorization.cpp

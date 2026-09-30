@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <limits>
 #include <stdexcept>
 
@@ -121,6 +122,15 @@ namespace sasktran2::successive_orders {
             m_history_size = 0;
             m_history_start = 0;
             m_have_previous = false;
+        }
+
+        std::size_t storage_bytes() const {
+            return static_cast<std::size_t>(
+                       m_mapped.size() + m_residual.size() +
+                       m_previous_state.size() + m_previous_residual.size() +
+                       m_delta_states.size() + m_delta_residuals.size() +
+                       m_gram.size() + m_rhs.size() + m_coefficients.size()) *
+                   sizeof(double);
         }
 
         Eigen::VectorXd& mapped() { return m_mapped; }

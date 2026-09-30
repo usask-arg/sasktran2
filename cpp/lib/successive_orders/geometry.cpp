@@ -1012,7 +1012,14 @@ namespace sasktran2::successive_orders {
         std::size_t interpolation_weight_count = 0;
         std::size_t source_weight_count = 0;
         std::size_t source_weight_bytes = 0;
-        std::array<std::size_t, 3> source_width_counts{};
+        std::size_t source_weight_capacity_bytes = 0;
+        std::size_t source_weight_record_bytes = 0;
+        std::size_t source_weight_escape_bytes = 0;
+        std::size_t source_encoded_storage_count = 0;
+        std::size_t source_encoded_record_count = 0;
+        std::size_t source_encoded_escape_count = 0;
+        std::size_t source_encoded_capacity_bytes = 0;
+        std::array<std::size_t, 4> source_width_counts{};
         std::uint32_t maximum_row_nonzeros = 0;
         for (auto& ray : interpolation) {
             compile_transport_row(ray, columns);
@@ -1026,17 +1033,46 @@ namespace sasktran2::successive_orders {
             source_weight_count +=
                 ray.source_weights.size() + ray.ground_weights.size();
             const auto record_source_width = [&](const auto& weights) {
-                source_weight_bytes += weights.size() * weights.element_bytes();
-                const std::size_t slot = weights.element_bytes() == 9    ? 0
-                                         : weights.element_bytes() == 10 ? 1
-                                                                         : 2;
+                const auto record_bytes =
+                    weights.size() * weights.element_bytes();
+                const auto escape_bytes =
+                    weights.encoded_escape_count() * sizeof(std::uint64_t);
+                source_weight_record_bytes += record_bytes;
+                source_weight_escape_bytes += escape_bytes;
+                source_weight_bytes += record_bytes + escape_bytes;
+                source_weight_capacity_bytes += weights.capacity_bytes();
+                const std::size_t slot = weights.element_bytes() == 8    ? 0
+                                         : weights.element_bytes() == 9  ? 1
+                                         : weights.element_bytes() == 10 ? 2
+                                                                         : 3;
                 source_width_counts[slot] += weights.size();
+                if (weights.is_encoded()) {
+                    ++source_encoded_storage_count;
+                    source_encoded_record_count +=
+                        weights.encoded_record_count();
+                    source_encoded_escape_count +=
+                        weights.encoded_escape_count();
+                    source_encoded_capacity_bytes +=
+                        weights.encoded_storage_bytes();
+                }
             };
             record_source_width(ray.source_weights);
             record_source_width(ray.ground_weights);
             maximum_row_nonzeros =
                 std::max(maximum_row_nonzeros, ray.transport_row_nnz);
         }
+        const auto source_storage_count = interpolation.size() * 2;
+        const auto source_storage_header_bytes =
+            source_storage_count * sizeof(SourceInterpolationStorage);
+        const auto source_storage_header_growth_bytes =
+            source_storage_count *
+            SourceInterpolationStorage::encoded_header_growth_bytes();
+        const auto source_index_narrowing_bytes_saved =
+            (source_width_counts[0] + source_width_counts[1]) *
+                (sizeof(SourceInterpolationWeight) - 9) +
+            source_width_counts[2] * (sizeof(SourceInterpolationWeight) - 10);
+        const auto source_weight_encoding_payload_bytes_saved =
+            source_encoded_record_count - source_weight_escape_bytes;
         const auto transport_nonzeros = column_indices.size();
         TransportSparsity topology(total_num_outgoing(), std::move(row_offsets),
                                    std::move(column_indices));
@@ -1049,10 +1085,22 @@ namespace sasktran2::successive_orders {
                 "\"interpolation_weight_bytes\":%zu,"
                 "\"alignment_padding_bytes_saved\":%zu,"
                 "\"source_weight_count\":%zu,\"source_weight_bytes\":%zu,"
+                "\"source_weight_record_bytes\":%zu,"
+                "\"source_weight_escape_bytes\":%zu,"
+                "\"source_weight_capacity_bytes\":%zu,"
+                "\"source_storage_count\":%zu,"
+                "\"source_storage_header_bytes\":%zu,"
+                "\"source_storage_header_growth_bytes\":%zu,"
+                "\"source_encoded_storage_count\":%zu,"
+                "\"source_encoded_record_count\":%zu,"
+                "\"source_encoded_escape_count\":%zu,"
+                "\"source_encoded_capacity_bytes\":%zu,"
+                "\"source_weight_encoding_payload_bytes_saved\":%zu,"
                 "\"duplicate_index_bytes_saved\":%zu,"
                 "\"source_index_narrowing_bytes_saved\":%zu,"
-                "\"source_9byte_count\":%zu,\"source_10byte_count\":%zu,"
-                "\"source_12byte_count\":%zu,\"maximum_row_nonzeros\":%u,"
+                "\"source_8byte_count\":%zu,\"source_9byte_count\":%zu,"
+                "\"source_10byte_count\":%zu,\"source_12byte_count\":%zu,"
+                "\"maximum_row_nonzeros\":%u,"
                 "\"ray_descriptor_bytes\":%zu,"
                 "\"transport_nonzeros\":%zu,"
                 "\"transport_topology_bytes\":%zu,"
@@ -1063,11 +1111,17 @@ namespace sasktran2::successive_orders {
                 interpolation_weight_count,
                 interpolation_weight_count * sizeof(InterpolationWeight),
                 interpolation_weight_count * 4, source_weight_count,
-                source_weight_bytes, source_weight_count * 4,
-                source_weight_count * sizeof(SourceInterpolationWeight) -
-                    source_weight_bytes,
+                source_weight_bytes, source_weight_record_bytes,
+                source_weight_escape_bytes, source_weight_capacity_bytes,
+                source_storage_count, source_storage_header_bytes,
+                source_storage_header_growth_bytes,
+                source_encoded_storage_count, source_encoded_record_count,
+                source_encoded_escape_count, source_encoded_capacity_bytes,
+                source_weight_encoding_payload_bytes_saved,
+                source_weight_count * 4, source_index_narrowing_bytes_saved,
                 source_width_counts[0], source_width_counts[1],
-                source_width_counts[2], maximum_row_nonzeros,
+                source_width_counts[2], source_width_counts[3],
+                maximum_row_nonzeros,
                 interpolation.size() * sizeof(RayInterpolation),
                 transport_nonzeros, topology.storage_bytes(),
                 topology.column_indices().element_bytes(),

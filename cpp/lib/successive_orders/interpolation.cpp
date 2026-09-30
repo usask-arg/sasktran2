@@ -507,17 +507,16 @@ namespace sasktran2::successive_orders {
         compact(interpolation.atmosphere_weights);
         compact(interpolation.structured_atmosphere_weights);
         const auto compact_source = [&](SourceInterpolationStorage& values) {
-            const auto before = values.capacity_bytes();
-            const auto old_element_bytes = values.element_bytes();
+            const auto before_slack =
+                values.capacity_bytes() - values.payload_bytes();
             if (interpolation.transport_compiled) {
                 values.narrow(interpolation.transport_row_nnz);
             }
             values.shrink_to_fit();
-            const auto payload_saved =
-                values.size() * (old_element_bytes - values.element_bytes());
-            const auto after = values.capacity_bytes() + payload_saved;
-            if (before > after) {
-                released += before - after;
+            const auto after_slack =
+                values.capacity_bytes() - values.payload_bytes();
+            if (before_slack > after_slack) {
+                released += before_slack - after_slack;
             }
         };
         compact_source(interpolation.source_weights);
