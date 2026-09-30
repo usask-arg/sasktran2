@@ -319,7 +319,9 @@ namespace sasktran2::solartransmission {
      * entries for a three-dimensional table. Keeping the construction in CSR
      * form avoids the large temporary triplet list required by Eigen's sparse
      * matrix builder for the hundreds of thousands of endpoints used by the
-     * successive-orders source.
+     * successive-orders source. Completed rows can share identical ordered
+     * column patterns while keeping every row's original weights and product
+     * order.
      */
     class SolarTableInterpolation {
       private:
@@ -328,13 +330,19 @@ namespace sasktran2::solartransmission {
         std::vector<std::uint8_t> m_row_counts;
         std::vector<std::uint16_t> m_relative_inner;
         std::vector<std::uint32_t> m_row_bases;
+        std::vector<std::uint16_t> m_row_patterns16;
+        std::vector<std::uint32_t> m_row_patterns32;
+        std::vector<std::uint32_t> m_column_patterns;
         std::vector<double> m_values;
         Eigen::Index m_rows = 0;
         Eigen::Index m_cols = 0;
         Eigen::Index m_next_row = 0;
         bool m_compact_rows = false;
         bool m_relative_indices = false;
+        bool m_interned_indices = false;
         bool m_finalized = false;
+
+        bool try_intern_column_patterns(std::size_t maximum_index_bytes);
 
       public:
         void clear();
@@ -351,6 +359,14 @@ namespace sasktran2::solartransmission {
         }
         bool compact_row_counts() const { return m_compact_rows; }
         bool relative_column_indices() const { return m_relative_indices; }
+        bool interned_column_patterns() const { return m_interned_indices; }
+        int pattern_id_bits() const {
+            return m_interned_indices ? (m_row_patterns32.empty() ? 16 : 32)
+                                      : 0;
+        }
+        std::size_t unique_pattern_count() const {
+            return m_column_patterns.size();
+        }
 
         void apply(Eigen::Ref<const Eigen::VectorXd> table_values,
                    Eigen::Ref<Eigen::VectorXd> endpoint_values) const;

@@ -141,3 +141,87 @@ TEST_CASE("Solar interpolation validates original columns before narrowing",
     REQUIRE_FALSE(interpolation.relative_column_indices());
     check_solar_products(interpolation, sparse_rows, 65536);
 }
+
+TEST_CASE("Solar interpolation interns ordered indices without sharing weights",
+          "[solar_interpolation][interned_indices]") {
+    SolarTableInterpolation interpolation;
+    Rows rows;
+    for (int row = 0; row < 120; ++row) {
+        if (row % 5 == 0) {
+            rows.emplace_back();
+        } else {
+            const double scale = (row + 1) * 0.001;
+            rows.push_back({{99000, scale},
+                            {7, -0.17},
+                            {70000, 0.29},
+                            {99000, 0.09 - scale},
+                            {90000, 0.0},
+                            {65536, -0.0}});
+        }
+    }
+    initialize_solar(interpolation, rows, 131072);
+    REQUIRE(interpolation.interned_column_patterns());
+    REQUIRE(interpolation.pattern_id_bits() == 16);
+    check_solar_products(interpolation, rows, 131072);
+
+    // Replacing the geometry with unrelated rows must discard the dictionary.
+    const Rows sparse{{}, {{65535, 0.2}}};
+    initialize_solar(interpolation, sparse, 65536);
+    REQUIRE_FALSE(interpolation.interned_column_patterns());
+    REQUIRE(interpolation.pattern_id_bits() == 0);
+    check_solar_products(interpolation, sparse, 65536);
+    initialize_solar(interpolation, rows, 131072);
+    check_solar_products(interpolation, rows, 131072);
+    interpolation.clear();
+    REQUIRE_FALSE(interpolation.interned_column_patterns());
+    REQUIRE(interpolation.pattern_id_bits() == 0);
+    REQUIRE(interpolation.storage_bytes() == 0);
+}
+
+TEST_CASE("Solar interpolation retains the cheaper format for unique indices",
+          "[solar_interpolation][interned_indices]") {
+    SolarTableInterpolation interpolation;
+    Rows rows(120);
+    for (int row = 0; row < 120; ++row) {
+        rows[row] = {{row, 0.125}, {90000 + row, -0.25}, {70000 + row, 0.29}};
+    }
+    initialize_solar(interpolation, rows, 131072);
+    REQUIRE_FALSE(interpolation.interned_column_patterns());
+    REQUIRE_FALSE(interpolation.relative_column_indices());
+    check_solar_products(interpolation, rows, 131072);
+
+    for (const int count : {15, 16}) {
+        Rows repeated(120);
+        for (int row = 1; row < 120; ++row) {
+            for (int entry = 0; entry < count; ++entry) {
+                repeated[row].emplace_back(entry % 2 == 0 ? 0 : 90000,
+                                           entry % 2 == 0 ? 0.125 : -0.25);
+            }
+        }
+        initialize_solar(interpolation, repeated, 131072);
+        REQUIRE(interpolation.interned_column_patterns() == (count == 15));
+        check_solar_products(interpolation, repeated, 131072);
+    }
+}
+
+TEST_CASE("Solar interpolation widens pattern IDs at the uint16 boundary",
+          "[solar_interpolation][interned_indices]") {
+    SolarTableInterpolation interpolation;
+    for (const int unique_nonempty : {65535, 65536}) {
+        Rows rows(1);
+        rows.reserve(1 + 2 * unique_nonempty);
+        for (int repeat = 0; repeat < 2; ++repeat) {
+            for (int pattern = 0; pattern < unique_nonempty; ++pattern) {
+                rows.push_back({{pattern, 0.3 + repeat * 0.125},
+                                {90000 + pattern, -0.17},
+                                {pattern + 7, 0.29},
+                                {90000 + pattern, 0.09}});
+            }
+        }
+        initialize_solar(interpolation, rows, 160000);
+        REQUIRE(interpolation.interned_column_patterns());
+        REQUIRE(interpolation.pattern_id_bits() ==
+                (unique_nonempty == 65535 ? 16 : 32));
+        check_solar_products(interpolation, rows, 160000);
+    }
+}

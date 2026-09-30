@@ -108,6 +108,8 @@ namespace sasktran2::successive_orders {
             Eigen::Ref<const Eigen::VectorXd> forcing_cotangent,
             Eigen::Ref<Eigen::VectorXd> native_gradient);
 
+        /** Provider-owned storage; shared calling-thread product scratch is
+         * reported separately and retained until that OS thread exits. */
         std::size_t workspace_bytes() const;
 
       private:
@@ -242,7 +244,7 @@ namespace sasktran2::successive_orders {
             Eigen::VectorXd* direct_transport_tangent);
         void calculate_scalar_jvp_uniform_proportional(
             int wavelength, Eigen::Ref<const Eigen::VectorXd> native_tangent,
-            const Eigen::VectorXd& solar_tangent,
+            Eigen::Ref<const Eigen::VectorXd> solar_tangent,
             double extinction_direction_scale, double albedo,
             double albedo_tangent,
             const Eigen::VectorXd& layer_state_projection,
@@ -412,13 +414,8 @@ namespace sasktran2::successive_orders {
         mutable std::vector<
             Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>>
             m_vjp_cotangent_scratch;
-        mutable std::vector<Eigen::VectorXd> m_solar_product_scratch;
-        mutable std::vector<Eigen::VectorXd> m_solar_table_product_scratch;
         mutable std::vector<Eigen::VectorXd> m_phase_product_scratch;
         mutable std::vector<std::vector<int>> m_phase_order_scratch;
-        mutable std::vector<Eigen::VectorXd>
-            m_endpoint_extinction_tangent_scratch;
-        mutable std::vector<Eigen::VectorXd> m_endpoint_albedo_tangent_scratch;
         std::vector<int> m_scalar_phase_orders;
         std::vector<unsigned char> m_uniform_phase_active;
         std::vector<std::vector<double>> m_uniform_phase_values;

@@ -95,6 +95,22 @@ Wider rows and indices retain their original forms. Each product selects its
 storage format before its accumulation loop, preserving the original entry
 order. Finalization also releases unused construction capacity.
 
+When many solar interpolation rows have the same ordered column indices, the
+immutable topology stores each pattern once and gives each row a compact pattern
+ID. The double-valued weights remain independent and in their original order.
+Pattern IDs use 16 bits when possible, with wider IDs or the existing row
+representations as fallbacks. Pattern storage is selected only when it reduces
+retained memory; it does not combine or reorder floating-point contributions.
+
+Scalar first-order products lease temporary solar and endpoint tangent buffers
+from a calling-thread arena. Resident local engines can reuse this scratch
+because no product retains a view after its call returns. The backing arrays
+grow to the largest requested size and products use only their active ranges.
+Source threads receive separate solar cotangent ranges, and nested calls use
+private scratch while the thread's arena is busy. Physical transmission and
+medium caches, derivative lifetimes, and each wavelength's warm-start state
+remain owned by their engines.
+
 Geometry and ray transport maps share immutable CSR generations rather than
 copying their index arrays. A geometry refresh creates a new generation;
 existing handles keep the old generation alive until their users release it.

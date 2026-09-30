@@ -1,4 +1,5 @@
 #include "first_order.h"
+#include "first_order_scratch.h"
 
 #include <algorithm>
 #include <cmath>
@@ -18,6 +19,28 @@ namespace sasktran2::successive_orders {
     namespace {
         constexpr double minimum_layer_distance_m = 1.0e-4;
         constexpr double inverse_four_pi = 1.0 / (4.0 * EIGEN_PI);
+
+        void profile_product_scratch(const void* provider,
+                                     const FirstOrderScratchLease& scratch,
+                                     const char* operation, int wavelength,
+                                     int wavelength_thread) {
+            if (std::getenv("SASKTRAN2_PROFILE_MEMORY") == nullptr) {
+                return;
+            }
+            std::fprintf(
+                stderr,
+                "SASKTRAN2_MEMORY {\"kind\":\"first_order_ephemeral_arena\","
+                "\"provider\":\"%p\",\"operation\":\"%s\","
+                "\"wavelength\":%d,\"worker\":%d,\"allocation_id\":%llu,"
+                "\"shared\":%s,\"solar_product_bytes\":%zu,"
+                "\"solar_table_product_bytes\":%zu,\"endpoint_jvp_bytes\":%zu,"
+                "\"payload_bytes\":%zu}\n",
+                provider, operation, wavelength, wavelength_thread,
+                static_cast<unsigned long long>(scratch.allocation_id()),
+                scratch.shared() ? "true" : "false", scratch.solar_bytes(),
+                scratch.table_bytes(), scratch.endpoint_bytes(),
+                scratch.storage_bytes());
+        }
 
         using EndpointKey = std::vector<std::pair<int, std::uint64_t>>;
 
@@ -203,12 +226,8 @@ namespace sasktran2::successive_orders {
         m_gradient_scratch.clear();
         m_vjp_radiance_scratch.clear();
         m_vjp_cotangent_scratch.clear();
-        m_solar_product_scratch.clear();
-        m_solar_table_product_scratch.clear();
         m_phase_product_scratch.clear();
         m_phase_order_scratch.clear();
-        m_endpoint_extinction_tangent_scratch.clear();
-        m_endpoint_albedo_tangent_scratch.clear();
         m_scalar_phase_orders.clear();
         m_uniform_phase_active.clear();
         m_uniform_phase_values.clear();
@@ -269,12 +288,8 @@ namespace sasktran2::successive_orders {
         m_gradient_scratch.clear();
         m_vjp_radiance_scratch.clear();
         m_vjp_cotangent_scratch.clear();
-        m_solar_product_scratch.clear();
-        m_solar_table_product_scratch.clear();
         m_phase_product_scratch.clear();
         m_phase_order_scratch.clear();
-        m_endpoint_extinction_tangent_scratch.clear();
-        m_endpoint_albedo_tangent_scratch.clear();
         m_scalar_phase_orders.clear();
         m_uniform_phase_active.clear();
         m_uniform_phase_values.clear();
@@ -347,8 +362,6 @@ namespace sasktran2::successive_orders {
         m_gradient_scratch.resize(m_num_threads);
         m_vjp_radiance_scratch.resize(m_num_threads);
         m_vjp_cotangent_scratch.resize(m_num_threads);
-        m_solar_product_scratch.resize(m_num_threads);
-        m_solar_table_product_scratch.resize(m_num_threads);
         m_phase_product_scratch.resize(m_num_threads);
         m_phase_order_scratch.resize(m_num_threads);
         m_scalar_vjp_scratch.resize(m_num_threads);
@@ -614,12 +627,7 @@ namespace sasktran2::successive_orders {
                     m_endpoint_stencils.base_bits(),
                     m_endpoint_stencils.storage_bytes());
             }
-            m_endpoint_extinction_tangent_scratch.resize(m_num_threads);
-            m_endpoint_albedo_tangent_scratch.resize(m_num_threads);
             for (int thread = 0; thread < m_num_threads; ++thread) {
-                m_solar_product_scratch[thread].resize(solar_offset);
-                m_solar_table_product_scratch[thread].resize(
-                    m_solar_table->table_size());
                 auto& vjp = m_scalar_vjp_scratch[thread];
                 vjp.optical_depth.resize(maximum_layers);
                 vjp.attenuation.resize(maximum_layers);
@@ -904,12 +912,7 @@ namespace sasktran2::successive_orders {
                 endpoint_bytes, layer_bytes,
                 eigen_bytes(
                     m_scalar_volume_cache[wavelength_thread].ground_prefix),
-                eigen_bytes(
-                    m_endpoint_extinction_tangent_scratch[wavelength_thread]) +
-                    eigen_bytes(
-                        m_endpoint_albedo_tangent_scratch[wavelength_thread]),
-                eigen_bytes(m_solar_product_scratch[wavelength_thread]),
-                eigen_bytes(m_solar_table_product_scratch[wavelength_thread]),
+                std::size_t{0}, std::size_t{0}, std::size_t{0},
                 eigen_bytes(m_phase_product_scratch[wavelength_thread]));
         }
     }
@@ -962,7 +965,8 @@ namespace sasktran2::successive_orders {
         const int cache_slot = scalar_cache_index(wavelength);
         auto& transmission = m_cached_solar_transmission.at(cache_slot);
         if (m_cached_solar_active.at(cache_slot) == 0) {
-            auto& table = m_solar_table_product_scratch[wavelength_thread];
+            FirstOrderScratchLease scratch(0, 0, m_solar_table->table_size());
+            auto table = scratch.table();
             m_solar_table->apply(
                 m_atmosphere->storage().total_extinction.col(wavelength),
                 table);
@@ -976,6 +980,8 @@ namespace sasktran2::successive_orders {
                 }
             }
             m_cached_solar_active[cache_slot] = 1;
+            profile_product_scratch(this, scratch, "solar", wavelength,
+                                    wavelength_thread);
         }
         return transmission;
     }
@@ -1821,8 +1827,8 @@ namespace sasktran2::successive_orders {
     template <int NSTOKES>
     void FirstOrderProvider<NSTOKES>::calculate_scalar_jvp_uniform_proportional(
         int wavelength, Eigen::Ref<const Eigen::VectorXd> native_tangent,
-        const Eigen::VectorXd& solar_tangent, double extinction_direction_scale,
-        double albedo, double albedo_tangent,
+        Eigen::Ref<const Eigen::VectorXd> solar_tangent,
+        double extinction_direction_scale, double albedo, double albedo_tangent,
         const Eigen::VectorXd& layer_state_projection,
         const Eigen::VectorXd& ground_state_projection,
         Eigen::VectorXd& direct_transport_tangent,
@@ -1986,8 +1992,10 @@ namespace sasktran2::successive_orders {
         }
         const auto& solar =
             ensure_solar_transmission(wavelength, wavelength_thread);
-        auto& solar_tangent = m_solar_product_scratch[wavelength_thread];
-        auto& table_tangent = m_solar_table_product_scratch[wavelength_thread];
+        FirstOrderScratchLease scratch(1, solar.size(),
+                                       m_solar_table->table_size());
+        auto solar_tangent = scratch.solar(0);
+        auto table_tangent = scratch.table();
         const Eigen::Index solar_columns = m_solar_table->atmosphere_size();
         m_solar_table->apply(native_tangent.head(solar_columns), table_tangent);
         m_solar_interpolation.apply(table_tangent, solar_tangent);
@@ -2101,16 +2109,17 @@ namespace sasktran2::successive_orders {
                     uniform_albedo_tangent, *layer_state_projection,
                     *ground_state_projection, *direct_transport_tangent,
                     forcing_tangent);
+                profile_product_scratch(this, scratch, "jvp", wavelength,
+                                        wavelength_thread);
                 return;
             }
         }
-        auto& endpoint_extinction_tangent =
-            m_endpoint_extinction_tangent_scratch[wavelength_thread];
-        auto& endpoint_albedo_tangent =
-            m_endpoint_albedo_tangent_scratch[wavelength_thread];
         const int endpoint_count = static_cast<int>(m_endpoint_stencils.size());
-        endpoint_extinction_tangent.resize(endpoint_count);
-        endpoint_albedo_tangent.resize(endpoint_count);
+        scratch.prepare_endpoints(endpoint_count);
+        auto endpoint_extinction_tangent = scratch.endpoint_extinction();
+        auto endpoint_albedo_tangent = scratch.endpoint_albedo();
+        profile_product_scratch(this, scratch, "jvp", wavelength,
+                                wavelength_thread);
         m_endpoint_stencils.visit([&](const auto& stencils) {
             for (int slot = 0; slot < endpoint_extinction_tangent.size();
                  ++slot) {
@@ -2660,7 +2669,6 @@ namespace sasktran2::successive_orders {
         }
         for (int thread = first_thread; thread < last_thread; ++thread) {
             m_gradient_scratch[thread].setZero();
-            m_solar_product_scratch[thread].setZero();
             if constexpr (WITH_PHASE_GRADIENT) {
                 m_phase_product_scratch[thread].setZero();
             }
@@ -2671,6 +2679,13 @@ namespace sasktran2::successive_orders {
         const auto& ssa = m_atmosphere->storage().ssa;
         const auto& solar =
             ensure_solar_transmission(wavelength, wavelength_thread);
+        FirstOrderScratchLease product_scratch(
+            m_num_source_threads, solar.size(), m_solar_table->table_size());
+        for (int thread = 0; thread < m_num_source_threads; ++thread) {
+            product_scratch.solar(thread).setZero();
+        }
+        profile_product_scratch(this, product_scratch, "vjp", wavelength,
+                                wavelength_thread);
         ensure_endpoint_medium(wavelength);
         const auto endpoint_context =
             prepare_scalar_endpoint_context(wavelength, cache_slot);
@@ -2697,7 +2712,7 @@ namespace sasktran2::successive_orders {
                 scalar_endpoint_context_for_ray(endpoint_context, ray);
             const int thread = ray_thread_index(wavelength_thread);
             auto thread_gradient = m_gradient_scratch[thread].col(0);
-            auto& solar_gradient = m_solar_product_scratch[thread];
+            auto solar_gradient = product_scratch.solar(thread - first_thread);
             auto& coefficient_gradient = m_phase_product_scratch[thread];
             auto& scratch = m_scalar_vjp_scratch[thread];
             const auto& ray_interpolation = interpolation[ray];
@@ -3106,8 +3121,8 @@ namespace sasktran2::successive_orders {
                     }
                 }
             }
-            auto& solar_gradient = m_solar_product_scratch[thread];
-            auto& table_gradient = m_solar_table_product_scratch[thread];
+            auto solar_gradient = product_scratch.solar(thread - first_thread);
+            auto table_gradient = product_scratch.table();
             solar_gradient.array() *= solar.array();
             m_solar_interpolation.apply_transpose(solar_gradient,
                                                   table_gradient);
@@ -3460,23 +3475,11 @@ namespace sasktran2::successive_orders {
         for (const auto& scratch : m_vjp_cotangent_scratch) {
             result += static_cast<std::size_t>(scratch.size()) * sizeof(double);
         }
-        for (const auto& scratch : m_solar_product_scratch) {
-            result += static_cast<std::size_t>(scratch.size()) * sizeof(double);
-        }
-        for (const auto& scratch : m_solar_table_product_scratch) {
-            result += static_cast<std::size_t>(scratch.size()) * sizeof(double);
-        }
         for (const auto& scratch : m_phase_product_scratch) {
             result += static_cast<std::size_t>(scratch.size()) * sizeof(double);
         }
         for (const auto& scratch : m_phase_order_scratch) {
             result += scratch.capacity() * sizeof(int);
-        }
-        for (const auto& scratch : m_endpoint_extinction_tangent_scratch) {
-            result += static_cast<std::size_t>(scratch.size()) * sizeof(double);
-        }
-        for (const auto& scratch : m_endpoint_albedo_tangent_scratch) {
-            result += static_cast<std::size_t>(scratch.size()) * sizeof(double);
         }
         result += m_scalar_phase_orders.capacity() * sizeof(int);
         result += m_uniform_phase_active.capacity() * sizeof(unsigned char);

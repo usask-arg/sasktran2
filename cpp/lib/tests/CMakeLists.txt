@@ -24,6 +24,7 @@ add_executable(
   engine/hr/test_hr_basic.cpp
   successive_orders/test_angular_basis.cpp
   successive_orders/test_endpoint_stencil_storage.cpp
+  successive_orders/test_first_order_scratch.cpp
   successive_orders/test_fixed_point.cpp
   successive_orders/test_geometry.cpp
   successive_orders/test_problem.cpp

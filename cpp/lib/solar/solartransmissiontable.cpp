@@ -1,6 +1,7 @@
 #include "sasktran2/geometry.h"
 #include <sasktran2/solartransmission.h>
 #include <type_traits>
+#include <unordered_map>
 
 namespace sasktran2::solartransmission {
 
@@ -10,12 +11,16 @@ namespace sasktran2::solartransmission {
         std::vector<std::uint8_t>().swap(m_row_counts);
         std::vector<std::uint16_t>().swap(m_relative_inner);
         std::vector<std::uint32_t>().swap(m_row_bases);
+        std::vector<std::uint16_t>().swap(m_row_patterns16);
+        std::vector<std::uint32_t>().swap(m_row_patterns32);
+        std::vector<std::uint32_t>().swap(m_column_patterns);
         std::vector<double>().swap(m_values);
         m_rows = 0;
         m_cols = 0;
         m_next_row = 0;
         m_compact_rows = false;
         m_relative_indices = false;
+        m_interned_indices = false;
         m_finalized = false;
     }
 
@@ -33,10 +38,14 @@ namespace sasktran2::solartransmission {
         m_next_row = 0;
         m_compact_rows = false;
         m_relative_indices = false;
+        m_interned_indices = false;
         m_finalized = false;
         std::vector<std::uint8_t>().swap(m_row_counts);
         std::vector<std::uint16_t>().swap(m_relative_inner);
         std::vector<std::uint32_t>().swap(m_row_bases);
+        std::vector<std::uint16_t>().swap(m_row_patterns16);
+        std::vector<std::uint32_t>().swap(m_row_patterns32);
+        std::vector<std::uint32_t>().swap(m_column_patterns);
         m_outer.assign(static_cast<std::size_t>(rows) + 1, 0);
         m_inner.clear();
         m_values.clear();
@@ -68,6 +77,125 @@ namespace sasktran2::solartransmission {
             m_values.push_back(value);
         }
         ++m_next_row;
+    }
+
+    bool SolarTableInterpolation::try_intern_column_patterns(
+        std::size_t maximum_index_bytes) {
+        const auto rows = static_cast<std::size_t>(m_rows);
+        if (rows * sizeof(std::uint16_t) >= maximum_index_bytes) {
+            return false;
+        }
+        struct Pattern {
+            std::uint32_t begin;
+            std::uint32_t count;
+            std::uint32_t id;
+        };
+        std::unordered_multimap<std::uint64_t, Pattern> patterns;
+        patterns.reserve(std::min<std::size_t>(rows, 65536));
+        std::vector<std::uint16_t> row_ids16;
+        std::vector<std::uint32_t> row_ids32;
+        std::vector<std::uint32_t> descriptors;
+        std::vector<std::uint32_t> columns;
+        row_ids16.reserve(rows);
+        descriptors.reserve(std::min<std::size_t>(rows, 65536));
+        columns.reserve(std::min<std::size_t>(m_inner.size(), 65536));
+        bool wide_ids = false;
+        for (Eigen::Index row = 0; row < m_rows; ++row) {
+            const auto begin = m_outer[static_cast<std::size_t>(row)];
+            const auto end = m_outer[static_cast<std::size_t>(row) + 1];
+            const auto count = end - begin;
+            std::uint64_t hash = 14695981039346656037ULL;
+            hash = (hash ^ count) * 1099511628211ULL;
+            for (std::uint32_t entry = begin; entry < end; ++entry) {
+                hash = (hash ^ m_inner[entry]) * 1099511628211ULL;
+            }
+            bool found = false;
+            std::uint32_t id = 0;
+            const auto matching_hashes = patterns.equal_range(hash);
+            for (auto pattern = matching_hashes.first;
+                 pattern != matching_hashes.second; ++pattern) {
+                const auto& representative = pattern->second;
+                if (representative.count != count) {
+                    continue;
+                }
+                bool equal = true;
+                for (std::uint32_t entry = 0; entry < count; ++entry) {
+                    if (m_inner[begin + entry] !=
+                        m_inner[representative.begin + entry]) {
+                        equal = false;
+                        break;
+                    }
+                }
+                if (equal) {
+                    found = true;
+                    id = representative.id;
+                    break;
+                }
+            }
+            if (!found) {
+                // The descriptor's low four bits store the count; its high
+                // 28 bits address the shared ordered column array.
+                constexpr std::size_t maximum_dictionary_entries =
+                    std::size_t{1} << 28;
+                if (count > 15 ||
+                    columns.size() >= maximum_dictionary_entries ||
+                    columns.size() + count > maximum_dictionary_entries) {
+                    return false;
+                }
+                id = static_cast<std::uint32_t>(descriptors.size());
+                const bool need_wide_ids =
+                    id > std::numeric_limits<std::uint16_t>::max();
+                const auto id_bytes = need_wide_ids ? sizeof(std::uint32_t)
+                                                    : sizeof(std::uint16_t);
+                const auto retained_bytes =
+                    rows * id_bytes +
+                    (descriptors.size() + 1 + columns.size() + count) *
+                        sizeof(std::uint32_t);
+                // Stop growing the temporary dictionary as soon as even its
+                // current unique payload cannot improve the existing format.
+                if (retained_bytes >= maximum_index_bytes) {
+                    return false;
+                }
+                if (need_wide_ids && !wide_ids) {
+                    row_ids32.reserve(rows);
+                    row_ids32.insert(row_ids32.end(), row_ids16.begin(),
+                                     row_ids16.end());
+                    std::vector<std::uint16_t>().swap(row_ids16);
+                    wide_ids = true;
+                }
+                descriptors.push_back(
+                    (static_cast<std::uint32_t>(columns.size()) << 4) | count);
+                for (std::uint32_t entry = begin; entry < end; ++entry) {
+                    columns.push_back(m_inner[entry]);
+                }
+                patterns.emplace(hash, Pattern{begin, count, id});
+            }
+            if (wide_ids) {
+                row_ids32.push_back(id);
+            } else {
+                row_ids16.push_back(static_cast<std::uint16_t>(id));
+            }
+        }
+        row_ids16.shrink_to_fit();
+        row_ids32.shrink_to_fit();
+        descriptors.shrink_to_fit();
+        columns.shrink_to_fit();
+        const std::size_t allocated_bytes =
+            row_ids16.capacity() * sizeof(std::uint16_t) +
+            row_ids32.capacity() * sizeof(std::uint32_t) +
+            (descriptors.capacity() + columns.capacity()) *
+                sizeof(std::uint32_t);
+        if (allocated_bytes >= maximum_index_bytes) {
+            return false;
+        }
+        // Only complete arrays are committed. Original row weights and their
+        // floating-point operation sequence remain separate and unchanged.
+        m_row_patterns16.swap(row_ids16);
+        m_row_patterns32.swap(row_ids32);
+        m_column_patterns.swap(descriptors);
+        m_inner.swap(columns);
+        std::vector<std::uint32_t>().swap(m_outer);
+        return true;
     }
 
     void SolarTableInterpolation::finalize() {
@@ -109,6 +237,21 @@ namespace sasktran2::solartransmission {
             wide_span_rows == 0 &&
             m_inner.size() * sizeof(std::uint16_t) >
                 static_cast<std::size_t>(m_rows) * sizeof(std::uint32_t);
+        const std::size_t best_existing_index_bytes =
+            (maximum_row_nonzeros <= std::numeric_limits<std::uint8_t>::max()
+                 ? static_cast<std::size_t>(m_rows) * sizeof(std::uint8_t)
+                 : (static_cast<std::size_t>(m_rows) + 1) *
+                       sizeof(std::uint32_t)) +
+            (m_relative_indices
+                 ? m_inner.size() * sizeof(std::uint16_t) +
+                       static_cast<std::size_t>(m_rows) * sizeof(std::uint32_t)
+                 : m_inner.size() * sizeof(std::uint32_t));
+        m_interned_indices =
+            maximum_row_nonzeros <= 15 &&
+            try_intern_column_patterns(best_existing_index_bytes);
+        if (m_interned_indices) {
+            m_relative_indices = false;
+        }
         if (m_relative_indices) {
             m_row_bases.resize(static_cast<std::size_t>(m_rows));
             m_relative_inner.resize(m_inner.size());
@@ -130,6 +273,7 @@ namespace sasktran2::solartransmission {
         // Products consume complete rows in their original sequence; no
         // random row lookup needs the prefix array after construction.
         m_compact_rows =
+            !m_interned_indices &&
             maximum_row_nonzeros <= std::numeric_limits<std::uint8_t>::max();
         if (m_compact_rows) {
             m_row_counts.resize(static_cast<std::size_t>(m_rows));
@@ -151,6 +295,12 @@ namespace sasktran2::solartransmission {
                 "\"nonzeros\":%zu,\"maximum_row_span\":%u,"
                 "\"wide_span_rows\":%zu,\"maximum_row_nonzeros\":%u,"
                 "\"relative_column_indices\":%s,\"compact_row_counts\":%s,"
+                "\"interned_column_patterns\":%s,\"pattern_id_bits\":%d,"
+                "\"unique_patterns\":%zu,\"dictionary_descriptor_bytes\":%zu,"
+                "\"row_pattern_id_bytes\":%zu,\"dictionary_column_bytes\":%zu,"
+                "\"best_existing_index_bytes\":%zu,"
+                "\"retained_index_bytes\":%zu,"
+                "\"interned_index_bytes_saved\":%zu,"
                 "\"outer_size\":%zu,\"outer_capacity\":%zu,"
                 "\"inner_size\":%zu,\"inner_capacity\":%zu,"
                 "\"relative_inner_size\":%zu,\"relative_inner_capacity\":%zu,"
@@ -164,10 +314,24 @@ namespace sasktran2::solartransmission {
                 static_cast<long long>(m_cols), m_values.size(),
                 maximum_row_span, wide_span_rows, maximum_row_nonzeros,
                 m_relative_indices ? "true" : "false",
-                m_compact_rows ? "true" : "false", m_outer.size(),
-                m_outer.capacity(), m_inner.size(), m_inner.capacity(),
-                m_relative_inner.size(), m_relative_inner.capacity(),
-                m_row_bases.size(), m_row_bases.capacity(), m_row_counts.size(),
+                m_compact_rows ? "true" : "false",
+                m_interned_indices ? "true" : "false", pattern_id_bits(),
+                m_column_patterns.size(),
+                m_column_patterns.capacity() * sizeof(std::uint32_t),
+                m_row_patterns16.capacity() * sizeof(std::uint16_t) +
+                    m_row_patterns32.capacity() * sizeof(std::uint32_t),
+                m_interned_indices ? m_inner.capacity() * sizeof(std::uint32_t)
+                                   : 0,
+                best_existing_index_bytes,
+                storage_bytes() - m_values.capacity() * sizeof(double),
+                m_interned_indices ? best_existing_index_bytes -
+                                         (storage_bytes() -
+                                          m_values.capacity() * sizeof(double))
+                                   : 0,
+                m_outer.size(), m_outer.capacity(), m_inner.size(),
+                m_inner.capacity(), m_relative_inner.size(),
+                m_relative_inner.capacity(), m_row_bases.size(),
+                m_row_bases.capacity(), m_row_counts.size(),
                 m_row_counts.capacity(), m_values.size(), m_values.capacity(),
                 original_storage_bytes, storage_bytes(),
                 m_relative_indices
@@ -187,6 +351,31 @@ namespace sasktran2::solartransmission {
         if (table_values.size() != m_cols || endpoint_values.size() != m_rows) {
             throw std::invalid_argument(
                 "Invalid compact solar interpolation product dimensions");
+        }
+        if (m_interned_indices) {
+            const auto apply_patterns = [&](const auto& row_ids) {
+                std::uint32_t position = 0;
+                const double* values = table_values.data();
+                for (Eigen::Index row = 0; row < m_rows; ++row) {
+                    const auto descriptor =
+                        m_column_patterns[row_ids[static_cast<std::size_t>(
+                            row)]];
+                    std::uint32_t column_position = descriptor >> 4;
+                    const std::uint32_t end = position + (descriptor & 15);
+                    double result = 0.0;
+                    for (; position < end; ++position, ++column_position) {
+                        result += m_values[position] *
+                                  values[m_inner[column_position]];
+                    }
+                    endpoint_values(row) = result;
+                }
+            };
+            if (m_row_patterns32.empty()) {
+                apply_patterns(m_row_patterns16);
+            } else {
+                apply_patterns(m_row_patterns32);
+            }
+            return;
         }
         const auto apply_rows = [&](const auto& indices, const auto& rows,
                                     auto relative) {
@@ -240,6 +429,30 @@ namespace sasktran2::solartransmission {
                 "Invalid compact solar interpolation transpose dimensions");
         }
         table_values.setZero();
+        if (m_interned_indices) {
+            const auto apply_patterns = [&](const auto& row_ids) {
+                std::uint32_t position = 0;
+                double* values = table_values.data();
+                for (Eigen::Index row = 0; row < m_rows; ++row) {
+                    const auto descriptor =
+                        m_column_patterns[row_ids[static_cast<std::size_t>(
+                            row)]];
+                    std::uint32_t column_position = descriptor >> 4;
+                    const std::uint32_t end = position + (descriptor & 15);
+                    const double value = endpoint_values(row);
+                    for (; position < end; ++position, ++column_position) {
+                        values[m_inner[column_position]] +=
+                            m_values[position] * value;
+                    }
+                }
+            };
+            if (m_row_patterns32.empty()) {
+                apply_patterns(m_row_patterns16);
+            } else {
+                apply_patterns(m_row_patterns32);
+            }
+            return;
+        }
         const auto apply_rows = [&](const auto& indices, const auto& rows,
                                     auto relative) {
             constexpr bool compact_rows = std::is_same_v<
@@ -289,6 +502,9 @@ namespace sasktran2::solartransmission {
                m_row_counts.capacity() * sizeof(std::uint8_t) +
                m_relative_inner.capacity() * sizeof(std::uint16_t) +
                m_row_bases.capacity() * sizeof(std::uint32_t) +
+               m_row_patterns16.capacity() * sizeof(std::uint16_t) +
+               m_row_patterns32.capacity() * sizeof(std::uint32_t) +
+               m_column_patterns.capacity() * sizeof(std::uint32_t) +
                m_values.capacity() * sizeof(double);
     }
 
