@@ -17,11 +17,13 @@ add_executable(
   raytracing/test_rust_raytracer2d.cpp
   sourceintegrator/test_occultation2d.cpp
   sourceintegrator/test_singlescatter2d.cpp
+  sourceintegrator/test_solar_interpolation.cpp
   engine/test_engine_basic.cpp
   engine/wf/test_wf_singlescatter_scalar.cpp
   engine/wf/test_wf_vector.cpp
   engine/hr/test_hr_basic.cpp
   successive_orders/test_angular_basis.cpp
+  successive_orders/test_endpoint_stencil_storage.cpp
   successive_orders/test_fixed_point.cpp
   successive_orders/test_geometry.cpp
   successive_orders/test_problem.cpp

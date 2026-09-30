@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <utility>
@@ -11,13 +13,103 @@
 
 namespace sasktran2::successive_orders {
 
+    template <typename Index> class TransportTypedColumnView {
+      public:
+        TransportTypedColumnView(const Index* values, std::size_t size)
+            : m_values(values), m_size(size) {}
+        const Index* data() const { return m_values; }
+        std::size_t size() const { return m_size; }
+        const Index* begin() const { return m_values; }
+        const Index* end() const {
+            return m_size == 0 ? m_values : m_values + m_size;
+        }
+        int operator[](std::size_t index) const { return m_values[index]; }
+
+      private:
+        const Index* m_values;
+        std::size_t m_size;
+    };
+
+    /** Non-owning columns from one immutable CSR generation. Hot consumers
+     * visit once around their loop to select the actual index width. */
+    class TransportColumnView {
+      public:
+        TransportColumnView() = default;
+        TransportColumnView(const int* values, std::size_t size)
+            : m_values32(values), m_size(size) {}
+        TransportColumnView(const std::uint16_t* values, std::size_t size)
+            : m_values16(values), m_size(size), m_compact(true) {}
+
+        std::size_t size() const { return m_size; }
+        bool empty() const { return m_size == 0; }
+        bool is_compact() const { return m_compact; }
+        std::size_t element_bytes() const {
+            return m_compact ? sizeof(std::uint16_t) : sizeof(int);
+        }
+        const void* data() const {
+            return m_compact ? static_cast<const void*>(m_values16)
+                             : static_cast<const void*>(m_values32);
+        }
+        int operator[](std::size_t index) const {
+            return m_compact ? m_values16[index] : m_values32[index];
+        }
+        TransportColumnView subview(std::size_t offset,
+                                    std::size_t size) const {
+            if (offset > m_size || size > m_size - offset) {
+                throw std::out_of_range("invalid transport column subview");
+            }
+            if (m_compact) {
+                return {offset == 0 ? m_values16 : m_values16 + offset, size};
+            }
+            return {offset == 0 ? m_values32 : m_values32 + offset, size};
+        }
+        template <typename Visitor>
+        decltype(auto) visit(Visitor&& visitor) const {
+            if (m_compact) {
+                return std::forward<Visitor>(visitor)(
+                    TransportTypedColumnView<std::uint16_t>(m_values16,
+                                                            m_size));
+            }
+            return std::forward<Visitor>(visitor)(
+                TransportTypedColumnView<int>(m_values32, m_size));
+        }
+        bool operator==(const std::vector<int>& values) const {
+            if (m_size == 0) {
+                return values.empty();
+            }
+            return values.size() == m_size && visit([&](const auto& columns) {
+                       return std::equal(columns.begin(), columns.end(),
+                                         values.begin());
+                   });
+        }
+        bool operator!=(const std::vector<int>& values) const {
+            return !(*this == values);
+        }
+        /** Compatibility copy for owning constructors during construction. */
+        std::vector<int> to_vector() const {
+            if (empty()) {
+                return {};
+            }
+            return visit([](const auto& columns) {
+                return std::vector<int>(columns.begin(), columns.end());
+            });
+        }
+
+      private:
+        const int* m_values32 = nullptr;
+        const std::uint16_t* m_values16 = nullptr;
+        std::size_t m_size = 0;
+        bool m_compact = false;
+    };
+
     /** Fixed CSR topology for ray transport.
      *
      * Geometry construction creates one immutable topology generation, shared
      * by geometry and its transport maps. Only the values are rebuilt for a
      * changing atmosphere. Rows are incoming angular radiances and columns are
      * outgoing source samples. Copies keep the generation alive without
-     * copying either CSR array.
+     * copying either CSR array. Column indices use 16 bits when every possible
+     * column is representable; wider grids retain the original int storage.
      */
     class TransportSparsity {
       public:
@@ -26,64 +118,87 @@ namespace sasktran2::successive_orders {
                           std::vector<int> column_indices)
             : m_data(std::make_shared<const Data>(
                   columns, std::move(row_offsets), std::move(column_indices))) {
-            validate();
         }
 
         int rows() const {
-            return m_data->row_offsets.empty()
-                       ? 0
-                       : static_cast<int>(m_data->row_offsets.size()) - 1;
+            return static_cast<int>(m_data->row_offsets.size() - 1);
         }
         int columns() const { return m_data->columns; }
         int nonzeros() const {
-            return static_cast<int>(m_data->column_indices.size());
+            return static_cast<int>(column_indices().size());
         }
         const std::vector<int>& row_offsets() const {
             return m_data->row_offsets;
         }
-        const std::vector<int>& column_indices() const {
-            return m_data->column_indices;
+        TransportColumnView column_indices() const {
+            if (m_data->compact) {
+                return {m_data->column_indices16.data(),
+                        m_data->column_indices16.size()};
+            }
+            return {m_data->column_indices32.data(),
+                    m_data->column_indices32.size()};
+        }
+        bool compact_column_indices() const { return m_data->compact; }
+        std::size_t column_index_bytes() const {
+            return m_data->column_indices16.capacity() * sizeof(std::uint16_t) +
+                   m_data->column_indices32.capacity() * sizeof(int);
         }
         /** Payload size of this generation; shared handles do not add it. */
         std::size_t storage_bytes() const {
             return m_data->row_offsets.capacity() * sizeof(int) +
-                   m_data->column_indices.capacity() * sizeof(int);
+                   column_index_bytes();
         }
 
       private:
         struct Data {
             Data(int num_columns, std::vector<int> offsets,
                  std::vector<int> indices)
-                : columns(num_columns), row_offsets(std::move(offsets)),
-                  column_indices(std::move(indices)) {}
+                : columns(num_columns), row_offsets(std::move(offsets)) {
+                if (columns < 0 || row_offsets.empty() ||
+                    row_offsets.size() - 1 >
+                        static_cast<std::size_t>(
+                            std::numeric_limits<int>::max()) ||
+                    indices.size() > static_cast<std::size_t>(
+                                         std::numeric_limits<int>::max()) ||
+                    row_offsets.front() != 0 ||
+                    row_offsets.back() != static_cast<int>(indices.size()) ||
+                    !std::is_sorted(row_offsets.begin(), row_offsets.end())) {
+                    throw std::invalid_argument(
+                        "invalid successive-orders transport CSR offsets");
+                }
+                for (std::size_t row = 0; row + 1 < row_offsets.size(); ++row) {
+                    const auto begin = indices.begin() + row_offsets[row];
+                    const auto end = indices.begin() + row_offsets[row + 1];
+                    if (!std::is_sorted(begin, end) ||
+                        std::adjacent_find(begin, end) != end ||
+                        std::any_of(begin, end, [&](int column) {
+                            return column < 0 || column >= columns;
+                        })) {
+                        throw std::invalid_argument(
+                            "invalid successive-orders transport CSR columns");
+                    }
+                }
+                compact =
+                    columns <= static_cast<int>(
+                                   std::numeric_limits<std::uint16_t>::max()) +
+                                   1;
+                if (compact) {
+                    column_indices16.reserve(indices.size());
+                    for (const int column : indices) {
+                        column_indices16.push_back(
+                            static_cast<std::uint16_t>(column));
+                    }
+                } else {
+                    column_indices32 = std::move(indices);
+                }
+            }
 
             int columns;
             std::vector<int> row_offsets;
-            std::vector<int> column_indices;
+            std::vector<std::uint16_t> column_indices16;
+            std::vector<int> column_indices32;
+            bool compact = false;
         };
-
-        void validate() const {
-            const auto& offsets = row_offsets();
-            const auto& indices = column_indices();
-            if (columns() < 0 || offsets.empty() || offsets.front() != 0 ||
-                offsets.back() != static_cast<int>(indices.size()) ||
-                !std::is_sorted(offsets.begin(), offsets.end())) {
-                throw std::invalid_argument(
-                    "invalid successive-orders transport CSR offsets");
-            }
-            for (int row = 0; row < rows(); ++row) {
-                const auto begin = indices.begin() + offsets[row];
-                const auto end = indices.begin() + offsets[row + 1];
-                if (!std::is_sorted(begin, end) ||
-                    std::adjacent_find(begin, end) != end ||
-                    std::any_of(begin, end, [&](int column) {
-                        return column < 0 || column >= columns();
-                    })) {
-                    throw std::invalid_argument(
-                        "invalid successive-orders transport CSR columns");
-                }
-            }
-        }
 
         std::shared_ptr<const Data> m_data;
     };
@@ -106,15 +221,16 @@ namespace sasktran2::successive_orders {
                    Eigen::Ref<Eigen::VectorXd> incoming) const {
             validate_vectors(state, incoming);
             const auto& offsets = m_sparsity->row_offsets();
-            const auto& columns = m_sparsity->column_indices();
-            for (int row = 0; row < m_sparsity->rows(); ++row) {
-                double value = 0.0;
-                for (int index = offsets[row]; index < offsets[row + 1];
-                     ++index) {
-                    value += m_values(index) * state(columns[index]);
+            m_sparsity->column_indices().visit([&](const auto& columns) {
+                for (int row = 0; row < m_sparsity->rows(); ++row) {
+                    double value = 0.0;
+                    for (int index = offsets[row]; index < offsets[row + 1];
+                         ++index) {
+                        value += m_values(index) * state(columns[index]);
+                    }
+                    incoming(row) = value;
                 }
-                incoming(row) = value;
-            }
+            });
         }
 
         /** Applies one geometry operator to interleaved Stokes channels
@@ -129,17 +245,19 @@ namespace sasktran2::successive_orders {
             validate_stokes_vectors<NSTOKES>(state, incoming);
             incoming.setZero();
             const auto& offsets = m_sparsity->row_offsets();
-            const auto& columns = m_sparsity->column_indices();
-            for (int row = 0; row < m_sparsity->rows(); ++row) {
-                for (int index = offsets[row]; index < offsets[row + 1];
-                     ++index) {
-                    const int column = columns[index];
-                    for (int stokes = 0; stokes < NSTOKES; ++stokes) {
-                        incoming(row * NSTOKES + stokes) +=
-                            m_values(index) * state(column * NSTOKES + stokes);
+            m_sparsity->column_indices().visit([&](const auto& columns) {
+                for (int row = 0; row < m_sparsity->rows(); ++row) {
+                    for (int index = offsets[row]; index < offsets[row + 1];
+                         ++index) {
+                        const int column = columns[index];
+                        for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+                            incoming(row * NSTOKES + stokes) +=
+                                m_values(index) *
+                                state(column * NSTOKES + stokes);
+                        }
                     }
                 }
-            }
+            });
         }
 
         void apply_affine(Eigen::Ref<const Eigen::VectorXd> state,
@@ -162,14 +280,15 @@ namespace sasktran2::successive_orders {
             }
             state.setZero();
             const auto& offsets = m_sparsity->row_offsets();
-            const auto& columns = m_sparsity->column_indices();
-            for (int row = 0; row < m_sparsity->rows(); ++row) {
-                const double row_value = incoming(row);
-                for (int index = offsets[row]; index < offsets[row + 1];
-                     ++index) {
-                    state(columns[index]) += m_values(index) * row_value;
+            m_sparsity->column_indices().visit([&](const auto& columns) {
+                for (int row = 0; row < m_sparsity->rows(); ++row) {
+                    const double row_value = incoming(row);
+                    for (int index = offsets[row]; index < offsets[row + 1];
+                         ++index) {
+                        state(columns[index]) += m_values(index) * row_value;
+                    }
                 }
-            }
+            });
         }
 
         template <int NSTOKES>
@@ -182,17 +301,19 @@ namespace sasktran2::successive_orders {
             validate_stokes_vectors<NSTOKES>(state, incoming);
             state.setZero();
             const auto& offsets = m_sparsity->row_offsets();
-            const auto& columns = m_sparsity->column_indices();
-            for (int row = 0; row < m_sparsity->rows(); ++row) {
-                for (int index = offsets[row]; index < offsets[row + 1];
-                     ++index) {
-                    const int column = columns[index];
-                    for (int stokes = 0; stokes < NSTOKES; ++stokes) {
-                        state(column * NSTOKES + stokes) +=
-                            m_values(index) * incoming(row * NSTOKES + stokes);
+            m_sparsity->column_indices().visit([&](const auto& columns) {
+                for (int row = 0; row < m_sparsity->rows(); ++row) {
+                    for (int index = offsets[row]; index < offsets[row + 1];
+                         ++index) {
+                        const int column = columns[index];
+                        for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+                            state(column * NSTOKES + stokes) +=
+                                m_values(index) *
+                                incoming(row * NSTOKES + stokes);
+                        }
                     }
                 }
-            }
+            });
         }
 
         void apply_jvp(Eigen::Ref<const Eigen::VectorXd> state,
@@ -206,17 +327,18 @@ namespace sasktran2::successive_orders {
             }
             validate_vectors(state, incoming_tangent);
             const auto& offsets = m_sparsity->row_offsets();
-            const auto& columns = m_sparsity->column_indices();
-            for (int row = 0; row < m_sparsity->rows(); ++row) {
-                double value = 0.0;
-                for (int index = offsets[row]; index < offsets[row + 1];
-                     ++index) {
-                    const int column = columns[index];
-                    value += m_values(index) * state_tangent(column) +
-                             value_tangent(index) * state(column);
+            m_sparsity->column_indices().visit([&](const auto& columns) {
+                for (int row = 0; row < m_sparsity->rows(); ++row) {
+                    double value = 0.0;
+                    for (int index = offsets[row]; index < offsets[row + 1];
+                         ++index) {
+                        const int column = columns[index];
+                        value += m_values(index) * state_tangent(column) +
+                                 value_tangent(index) * state(column);
+                    }
+                    incoming_tangent(row) = value;
                 }
-                incoming_tangent(row) = value;
-            }
+            });
         }
 
         /** Applies only the direct value derivative, dT * state. */
@@ -230,15 +352,16 @@ namespace sasktran2::successive_orders {
             }
             validate_vectors(state, incoming_tangent);
             const auto& offsets = m_sparsity->row_offsets();
-            const auto& columns = m_sparsity->column_indices();
-            for (int row = 0; row < m_sparsity->rows(); ++row) {
-                double value = 0.0;
-                for (int index = offsets[row]; index < offsets[row + 1];
-                     ++index) {
-                    value += value_tangent(index) * state(columns[index]);
+            m_sparsity->column_indices().visit([&](const auto& columns) {
+                for (int row = 0; row < m_sparsity->rows(); ++row) {
+                    double value = 0.0;
+                    for (int index = offsets[row]; index < offsets[row + 1];
+                         ++index) {
+                        value += value_tangent(index) * state(columns[index]);
+                    }
+                    incoming_tangent(row) = value;
                 }
-                incoming_tangent(row) = value;
-            }
+            });
         }
 
         template <int NSTOKES>
@@ -258,18 +381,19 @@ namespace sasktran2::successive_orders {
             }
             incoming_tangent.setZero();
             const auto& offsets = m_sparsity->row_offsets();
-            const auto& columns = m_sparsity->column_indices();
-            for (int row = 0; row < m_sparsity->rows(); ++row) {
-                for (int index = offsets[row]; index < offsets[row + 1];
-                     ++index) {
-                    const int column = columns[index];
-                    for (int stokes = 0; stokes < NSTOKES; ++stokes) {
-                        incoming_tangent(row * NSTOKES + stokes) +=
-                            value_tangent(index) *
-                            state(column * NSTOKES + stokes);
+            m_sparsity->column_indices().visit([&](const auto& columns) {
+                for (int row = 0; row < m_sparsity->rows(); ++row) {
+                    for (int index = offsets[row]; index < offsets[row + 1];
+                         ++index) {
+                        const int column = columns[index];
+                        for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+                            incoming_tangent(row * NSTOKES + stokes) +=
+                                value_tangent(index) *
+                                state(column * NSTOKES + stokes);
+                        }
                     }
                 }
-            }
+            });
         }
 
         template <int NSTOKES>
@@ -291,20 +415,21 @@ namespace sasktran2::successive_orders {
             }
             incoming_tangent.setZero();
             const auto& offsets = m_sparsity->row_offsets();
-            const auto& columns = m_sparsity->column_indices();
-            for (int row = 0; row < m_sparsity->rows(); ++row) {
-                for (int index = offsets[row]; index < offsets[row + 1];
-                     ++index) {
-                    const int column = columns[index];
-                    for (int stokes = 0; stokes < NSTOKES; ++stokes) {
-                        incoming_tangent(row * NSTOKES + stokes) +=
-                            m_values(index) *
-                                state_tangent(column * NSTOKES + stokes) +
-                            value_tangent(index) *
-                                state(column * NSTOKES + stokes);
+            m_sparsity->column_indices().visit([&](const auto& columns) {
+                for (int row = 0; row < m_sparsity->rows(); ++row) {
+                    for (int index = offsets[row]; index < offsets[row + 1];
+                         ++index) {
+                        const int column = columns[index];
+                        for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+                            incoming_tangent(row * NSTOKES + stokes) +=
+                                m_values(index) *
+                                    state_tangent(column * NSTOKES + stokes) +
+                                value_tangent(index) *
+                                    state(column * NSTOKES + stokes);
+                        }
                     }
                 }
-            }
+            });
         }
 
         void apply_vjp(Eigen::Ref<const Eigen::VectorXd> state,
@@ -321,16 +446,18 @@ namespace sasktran2::successive_orders {
             state_cotangent.setZero();
             value_gradient.setZero();
             const auto& offsets = m_sparsity->row_offsets();
-            const auto& columns = m_sparsity->column_indices();
-            for (int row = 0; row < m_sparsity->rows(); ++row) {
-                const double row_cotangent = incoming_cotangent(row);
-                for (int index = offsets[row]; index < offsets[row + 1];
-                     ++index) {
-                    const int column = columns[index];
-                    state_cotangent(column) += m_values(index) * row_cotangent;
-                    value_gradient(index) = state(column) * row_cotangent;
+            m_sparsity->column_indices().visit([&](const auto& columns) {
+                for (int row = 0; row < m_sparsity->rows(); ++row) {
+                    const double row_cotangent = incoming_cotangent(row);
+                    for (int index = offsets[row]; index < offsets[row + 1];
+                         ++index) {
+                        const int column = columns[index];
+                        state_cotangent(column) +=
+                            m_values(index) * row_cotangent;
+                        value_gradient(index) = state(column) * row_cotangent;
+                    }
                 }
-            }
+            });
         }
 
         template <int NSTOKES>
@@ -353,21 +480,22 @@ namespace sasktran2::successive_orders {
             state_cotangent.setZero();
             value_gradient.setZero();
             const auto& offsets = m_sparsity->row_offsets();
-            const auto& columns = m_sparsity->column_indices();
-            for (int row = 0; row < m_sparsity->rows(); ++row) {
-                for (int index = offsets[row]; index < offsets[row + 1];
-                     ++index) {
-                    const int column = columns[index];
-                    for (int stokes = 0; stokes < NSTOKES; ++stokes) {
-                        const double cotangent =
-                            incoming_cotangent(row * NSTOKES + stokes);
-                        state_cotangent(column * NSTOKES + stokes) +=
-                            m_values(index) * cotangent;
-                        value_gradient(index) +=
-                            state(column * NSTOKES + stokes) * cotangent;
+            m_sparsity->column_indices().visit([&](const auto& columns) {
+                for (int row = 0; row < m_sparsity->rows(); ++row) {
+                    for (int index = offsets[row]; index < offsets[row + 1];
+                         ++index) {
+                        const int column = columns[index];
+                        for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+                            const double cotangent =
+                                incoming_cotangent(row * NSTOKES + stokes);
+                            state_cotangent(column * NSTOKES + stokes) +=
+                                m_values(index) * cotangent;
+                            value_gradient(index) +=
+                                state(column * NSTOKES + stokes) * cotangent;
+                        }
                     }
                 }
-            }
+            });
         }
 
       private:

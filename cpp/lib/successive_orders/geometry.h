@@ -173,18 +173,18 @@ namespace sasktran2::successive_orders {
         const std::vector<int>& transport_row_offsets() const {
             return m_transport_sparsity.row_offsets();
         }
-        const std::vector<int>& transport_column_indices() const {
+        TransportColumnView transport_column_indices() const {
             return m_transport_sparsity.column_indices();
         }
-        InterpolationView<int>
+        TransportColumnView
         transport_columns_for_ray(std::size_t ray_index) const {
             if (ray_index >= m_incoming_interpolation.size()) {
                 throw std::out_of_range(
                     "Successive-orders transport ray is out of range");
             }
             const auto& ray = m_incoming_interpolation[ray_index];
-            return {m_transport_sparsity.column_indices(),
-                    ray.transport_value_offset, ray.transport_row_nnz};
+            return m_transport_sparsity.column_indices().subview(
+                ray.transport_value_offset, ray.transport_row_nnz);
         }
         const TransportSparsity& los_transport_sparsity() const {
             return m_los_transport_sparsity;
@@ -192,18 +192,18 @@ namespace sasktran2::successive_orders {
         const std::vector<int>& los_transport_row_offsets() const {
             return m_los_transport_sparsity.row_offsets();
         }
-        const std::vector<int>& los_transport_column_indices() const {
+        TransportColumnView los_transport_column_indices() const {
             return m_los_transport_sparsity.column_indices();
         }
-        InterpolationView<int>
+        TransportColumnView
         los_transport_columns_for_ray(std::size_t ray_index) const {
             if (ray_index >= m_los_interpolation.size()) {
                 throw std::out_of_range(
                     "Successive-orders LOS ray is out of range");
             }
             const auto& ray = m_los_interpolation[ray_index];
-            return {m_los_transport_sparsity.column_indices(),
-                    ray.transport_value_offset, ray.transport_row_nnz};
+            return m_los_transport_sparsity.column_indices().subview(
+                ray.transport_value_offset, ray.transport_row_nnz);
         }
 
       private:

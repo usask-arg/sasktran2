@@ -96,7 +96,9 @@ namespace {
     void require_compiled_topology(
         const std::vector<sasktran2::successive_orders::RayInterpolation>& rays,
         const std::vector<int>& row_offsets,
-        const std::vector<int>& column_indices, int num_source_columns) {
+        sasktran2::successive_orders::TransportColumnView packed_columns,
+        int num_source_columns) {
+        const auto column_indices = packed_columns.to_vector();
         REQUIRE(row_offsets.size() == rays.size() + 1);
         REQUIRE(row_offsets.front() == 0);
         REQUIRE(row_offsets.back() == static_cast<int>(column_indices.size()));

@@ -334,7 +334,7 @@ TEST_CASE("Successive-orders ray transport retains its shared CSR generation",
     RayTransportFixture fixture;
     std::unique_ptr<RayTransportMap> map;
     const int* shared_offsets = nullptr;
-    const int* shared_columns = nullptr;
+    const void* shared_columns = nullptr;
     {
         TransportSparsity generation(num_source_columns, fixture.row_offsets,
                                      fixture.column_indices);

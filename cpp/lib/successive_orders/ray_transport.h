@@ -36,6 +36,12 @@ namespace sasktran2::successive_orders {
                         int num_source_columns,
                         const std::vector<int>& row_offsets,
                         const std::vector<int>& column_indices);
+        RayTransportMap(const std::vector<RayInterpolation>& rays,
+                        int num_source_columns,
+                        const std::vector<int>& row_offsets,
+                        TransportColumnView column_indices)
+            : RayTransportMap(rays, num_source_columns, row_offsets,
+                              column_indices.to_vector()) {}
         /** Share a validated immutable topology generation from geometry. */
         RayTransportMap(const std::vector<RayInterpolation>& rays,
                         const TransportSparsity& sparsity);

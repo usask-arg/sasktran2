@@ -1,15 +1,22 @@
 #include "sasktran2/geometry.h"
 #include <sasktran2/solartransmission.h>
+#include <type_traits>
 
 namespace sasktran2::solartransmission {
 
     void SolarTableInterpolation::clear() {
         std::vector<std::uint32_t>().swap(m_outer);
         std::vector<std::uint32_t>().swap(m_inner);
+        std::vector<std::uint8_t>().swap(m_row_counts);
+        std::vector<std::uint16_t>().swap(m_relative_inner);
+        std::vector<std::uint32_t>().swap(m_row_bases);
         std::vector<double>().swap(m_values);
         m_rows = 0;
         m_cols = 0;
         m_next_row = 0;
+        m_compact_rows = false;
+        m_relative_indices = false;
+        m_finalized = false;
     }
 
     void SolarTableInterpolation::initialize(Eigen::Index rows,
@@ -24,6 +31,12 @@ namespace sasktran2::solartransmission {
         m_rows = rows;
         m_cols = cols;
         m_next_row = 0;
+        m_compact_rows = false;
+        m_relative_indices = false;
+        m_finalized = false;
+        std::vector<std::uint8_t>().swap(m_row_counts);
+        std::vector<std::uint16_t>().swap(m_relative_inner);
+        std::vector<std::uint32_t>().swap(m_row_bases);
         m_outer.assign(static_cast<std::size_t>(rows) + 1, 0);
         m_inner.clear();
         m_values.clear();
@@ -58,6 +71,9 @@ namespace sasktran2::solartransmission {
     }
 
     void SolarTableInterpolation::finalize() {
+        if (m_finalized) {
+            return;
+        }
         if (m_next_row != m_rows) {
             throw std::logic_error(
                 "Compact solar interpolation has missing rows");
@@ -66,6 +82,103 @@ namespace sasktran2::solartransmission {
             static_cast<std::uint32_t>(m_values.size());
         m_inner.shrink_to_fit();
         m_values.shrink_to_fit();
+        const auto original_storage_bytes = storage_bytes();
+        std::uint32_t maximum_row_span = 0;
+        std::uint32_t maximum_row_nonzeros = 0;
+        std::size_t wide_span_rows = 0;
+        for (Eigen::Index row = 0; row < m_rows; ++row) {
+            const auto begin = m_outer[static_cast<std::size_t>(row)];
+            const auto end = m_outer[static_cast<std::size_t>(row) + 1];
+            maximum_row_nonzeros = std::max(maximum_row_nonzeros, end - begin);
+            if (begin == end) {
+                continue;
+            }
+            std::uint32_t minimum = m_inner[begin];
+            std::uint32_t maximum = minimum;
+            for (std::uint32_t entry = begin + 1; entry < end; ++entry) {
+                minimum = std::min(minimum, m_inner[entry]);
+                maximum = std::max(maximum, m_inner[entry]);
+            }
+            const auto span = maximum - minimum;
+            maximum_row_span = std::max(maximum_row_span, span);
+            wide_span_rows += span > std::numeric_limits<std::uint16_t>::max();
+        }
+        // Every relative row must fit. Keep the wide format when the added
+        // bases would outweigh the saved column-index bytes.
+        m_relative_indices =
+            wide_span_rows == 0 &&
+            m_inner.size() * sizeof(std::uint16_t) >
+                static_cast<std::size_t>(m_rows) * sizeof(std::uint32_t);
+        if (m_relative_indices) {
+            m_row_bases.resize(static_cast<std::size_t>(m_rows));
+            m_relative_inner.resize(m_inner.size());
+            for (Eigen::Index row = 0; row < m_rows; ++row) {
+                const auto begin = m_outer[static_cast<std::size_t>(row)];
+                const auto end = m_outer[static_cast<std::size_t>(row) + 1];
+                const auto base =
+                    begin == end ? 0
+                                 : *std::min_element(m_inner.begin() + begin,
+                                                     m_inner.begin() + end);
+                m_row_bases[static_cast<std::size_t>(row)] = base;
+                for (std::uint32_t entry = begin; entry < end; ++entry) {
+                    m_relative_inner[entry] =
+                        static_cast<std::uint16_t>(m_inner[entry] - base);
+                }
+            }
+            std::vector<std::uint32_t>().swap(m_inner);
+        }
+        // Products consume complete rows in their original sequence; no
+        // random row lookup needs the prefix array after construction.
+        m_compact_rows =
+            maximum_row_nonzeros <= std::numeric_limits<std::uint8_t>::max();
+        if (m_compact_rows) {
+            m_row_counts.resize(static_cast<std::size_t>(m_rows));
+            for (Eigen::Index row = 0; row < m_rows; ++row) {
+                m_row_counts[static_cast<std::size_t>(row)] =
+                    static_cast<std::uint8_t>(
+                        m_outer[static_cast<std::size_t>(row) + 1] -
+                        m_outer[static_cast<std::size_t>(row)]);
+            }
+            std::vector<std::uint32_t>().swap(m_outer);
+        }
+        m_finalized = true;
+        if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
+            std::fprintf(
+                stderr,
+                "SASKTRAN2_MEMORY "
+                "{\"kind\":\"solar_table_interpolation_memory\","
+                "\"owner\":\"%p\",\"rows\":%lld,\"columns\":%lld,"
+                "\"nonzeros\":%zu,\"maximum_row_span\":%u,"
+                "\"wide_span_rows\":%zu,\"maximum_row_nonzeros\":%u,"
+                "\"relative_column_indices\":%s,\"compact_row_counts\":%s,"
+                "\"outer_size\":%zu,\"outer_capacity\":%zu,"
+                "\"inner_size\":%zu,\"inner_capacity\":%zu,"
+                "\"relative_inner_size\":%zu,\"relative_inner_capacity\":%zu,"
+                "\"row_bases_size\":%zu,\"row_bases_capacity\":%zu,"
+                "\"row_counts_size\":%zu,\"row_counts_capacity\":%zu,"
+                "\"value_size\":%zu,\"value_capacity\":%zu,"
+                "\"original_allocated_bytes\":%zu,\"allocated_bytes\":%zu,"
+                "\"column_index_bytes_saved\":%zu,\"row_offset_bytes_saved\":%"
+                "zu}\n",
+                static_cast<const void*>(this), static_cast<long long>(m_rows),
+                static_cast<long long>(m_cols), m_values.size(),
+                maximum_row_span, wide_span_rows, maximum_row_nonzeros,
+                m_relative_indices ? "true" : "false",
+                m_compact_rows ? "true" : "false", m_outer.size(),
+                m_outer.capacity(), m_inner.size(), m_inner.capacity(),
+                m_relative_inner.size(), m_relative_inner.capacity(),
+                m_row_bases.size(), m_row_bases.capacity(), m_row_counts.size(),
+                m_row_counts.capacity(), m_values.size(), m_values.capacity(),
+                original_storage_bytes, storage_bytes(),
+                m_relative_indices
+                    ? m_values.size() * sizeof(std::uint16_t) -
+                          m_row_bases.size() * sizeof(std::uint32_t)
+                    : 0,
+                m_compact_rows ? (static_cast<std::size_t>(m_rows) + 1) *
+                                         sizeof(std::uint32_t) -
+                                     m_row_counts.size() * sizeof(std::uint8_t)
+                               : 0);
+        }
     }
 
     void SolarTableInterpolation::apply(
@@ -75,14 +188,47 @@ namespace sasktran2::solartransmission {
             throw std::invalid_argument(
                 "Invalid compact solar interpolation product dimensions");
         }
-        for (Eigen::Index row = 0; row < m_rows; ++row) {
-            double result = 0.0;
-            const auto begin = m_outer[static_cast<std::size_t>(row)];
-            const auto end = m_outer[static_cast<std::size_t>(row) + 1];
-            for (std::uint32_t entry = begin; entry < end; ++entry) {
-                result += m_values[entry] * table_values(m_inner[entry]);
+        const auto apply_rows = [&](const auto& indices, const auto& rows,
+                                    auto relative) {
+            constexpr bool compact_rows = std::is_same_v<
+                typename std::decay_t<decltype(rows)>::value_type,
+                std::uint8_t>;
+            std::uint32_t position = 0;
+            for (Eigen::Index row = 0; row < m_rows; ++row) {
+                std::uint32_t begin;
+                std::uint32_t end;
+                if constexpr (compact_rows) {
+                    begin = position;
+                    end = begin + rows[static_cast<std::size_t>(row)];
+                    position = end;
+                } else {
+                    begin = rows[static_cast<std::size_t>(row)];
+                    end = rows[static_cast<std::size_t>(row) + 1];
+                }
+                const double* row_values = table_values.data();
+                if constexpr (decltype(relative)::value) {
+                    if (begin != end) {
+                        row_values +=
+                            m_row_bases[static_cast<std::size_t>(row)];
+                    }
+                }
+                double result = 0.0;
+                for (std::uint32_t entry = begin; entry < end; ++entry) {
+                    result += m_values[entry] * row_values[indices[entry]];
+                }
+                endpoint_values(row) = result;
             }
-            endpoint_values(row) = result;
+        };
+        if (m_relative_indices) {
+            if (m_compact_rows) {
+                apply_rows(m_relative_inner, m_row_counts, std::true_type{});
+            } else {
+                apply_rows(m_relative_inner, m_outer, std::true_type{});
+            }
+        } else if (m_compact_rows) {
+            apply_rows(m_inner, m_row_counts, std::false_type{});
+        } else {
+            apply_rows(m_inner, m_outer, std::false_type{});
         }
     }
 
@@ -94,19 +240,55 @@ namespace sasktran2::solartransmission {
                 "Invalid compact solar interpolation transpose dimensions");
         }
         table_values.setZero();
-        for (Eigen::Index row = 0; row < m_rows; ++row) {
-            const double value = endpoint_values(row);
-            const auto begin = m_outer[static_cast<std::size_t>(row)];
-            const auto end = m_outer[static_cast<std::size_t>(row) + 1];
-            for (std::uint32_t entry = begin; entry < end; ++entry) {
-                table_values(m_inner[entry]) += m_values[entry] * value;
+        const auto apply_rows = [&](const auto& indices, const auto& rows,
+                                    auto relative) {
+            constexpr bool compact_rows = std::is_same_v<
+                typename std::decay_t<decltype(rows)>::value_type,
+                std::uint8_t>;
+            std::uint32_t position = 0;
+            for (Eigen::Index row = 0; row < m_rows; ++row) {
+                std::uint32_t begin;
+                std::uint32_t end;
+                if constexpr (compact_rows) {
+                    begin = position;
+                    end = begin + rows[static_cast<std::size_t>(row)];
+                    position = end;
+                } else {
+                    begin = rows[static_cast<std::size_t>(row)];
+                    end = rows[static_cast<std::size_t>(row) + 1];
+                }
+                double* row_values = table_values.data();
+                if constexpr (decltype(relative)::value) {
+                    if (begin != end) {
+                        row_values +=
+                            m_row_bases[static_cast<std::size_t>(row)];
+                    }
+                }
+                const double value = endpoint_values(row);
+                for (std::uint32_t entry = begin; entry < end; ++entry) {
+                    row_values[indices[entry]] += m_values[entry] * value;
+                }
             }
+        };
+        if (m_relative_indices) {
+            if (m_compact_rows) {
+                apply_rows(m_relative_inner, m_row_counts, std::true_type{});
+            } else {
+                apply_rows(m_relative_inner, m_outer, std::true_type{});
+            }
+        } else if (m_compact_rows) {
+            apply_rows(m_inner, m_row_counts, std::false_type{});
+        } else {
+            apply_rows(m_inner, m_outer, std::false_type{});
         }
     }
 
     std::size_t SolarTableInterpolation::storage_bytes() const {
         return m_outer.capacity() * sizeof(std::uint32_t) +
                m_inner.capacity() * sizeof(std::uint32_t) +
+               m_row_counts.capacity() * sizeof(std::uint8_t) +
+               m_relative_inner.capacity() * sizeof(std::uint16_t) +
+               m_row_bases.capacity() * sizeof(std::uint32_t) +
                m_values.capacity() * sizeof(double);
     }
 

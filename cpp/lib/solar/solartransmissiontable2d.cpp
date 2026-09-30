@@ -6,8 +6,12 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
+#include <type_traits>
 
 #ifdef SKTRAN_RUST_SUPPORT
 namespace sasktran2::solartransmission {
@@ -100,6 +104,95 @@ namespace sasktran2::solartransmission {
         // (azimuth, impact, altitude, side), where side 0 is the first
         // sun-inward crossing and side 1 is the crossing after the tangent.
         std::vector<std::int32_t> m_node_lookup;
+
+        void finalize_characteristic_storage() {
+            const auto offsets_before = m_ray_segment_offsets.capacity();
+            const auto counts_before = m_segment_weight_counts.capacity();
+            const auto indices16_before = m_segment_indices16.capacity();
+            const auto indices32_before = m_segment_indices32.capacity();
+            const auto weights_before = m_segment_weights.capacity();
+            const auto nodes_before = m_segment_nodes.capacity();
+            // Construction reserves an upper estimate of characteristic
+            // segments. The completed table is immutable and has no views
+            // into these vectors, so release the unused reservation once.
+            m_ray_segment_offsets.shrink_to_fit();
+            m_segment_weight_counts.shrink_to_fit();
+            m_segment_indices16.shrink_to_fit();
+            m_segment_indices32.shrink_to_fit();
+            m_segment_weights.shrink_to_fit();
+            m_segment_nodes.shrink_to_fit();
+            if (std::getenv("SASKTRAN2_PROFILE_MEMORY") == nullptr) {
+                return;
+            }
+            std::size_t payload_bytes = 0;
+            std::size_t allocated_before = 0;
+            std::size_t allocated_after = 0;
+            std::ostringstream output;
+            output
+                << "SASKTRAN2_MEMORY {\"kind\":\"solar_characteristic_memory\","
+                << "\"owner\":\"" << static_cast<const void*>(this) << "\","
+                << "\"geometry\":\"" << static_cast<const void*>(&m_geometry)
+                << "\",\"atmosphere_locations\":" << m_geometry.size()
+                << ",\"horizontal_locations\":"
+                << m_geometry.num_horizontal_locations()
+                << ",\"altitudes\":" << m_radii.size()
+                << ",\"azimuths\":" << m_num_azimuths
+                << ",\"impacts\":" << m_num_impacts
+                << ",\"nodes\":" << m_num_nodes << ",\"compact_indices\":"
+                << (m_compact_indices ? "true" : "false");
+            const auto record = [&](const char* name, const auto& values,
+                                    std::size_t capacity_before) {
+                using Element =
+                    typename std::decay_t<decltype(values)>::value_type;
+                payload_bytes += values.size() * sizeof(Element);
+                allocated_before += capacity_before * sizeof(Element);
+                allocated_after += values.capacity() * sizeof(Element);
+                output << ",\"" << name << "_size\":" << values.size() << ",\""
+                       << name << "_capacity_before\":" << capacity_before
+                       << ",\"" << name
+                       << "_capacity_after\":" << values.capacity() << ",\""
+                       << name << "_element_bytes\":" << sizeof(Element);
+            };
+            record("radii", m_radii, m_radii.capacity());
+            record("impact_parameters", m_impact_parameters,
+                   m_impact_parameters.capacity());
+            record("ray_segment_offsets", m_ray_segment_offsets,
+                   offsets_before);
+            record("segment_weight_counts", m_segment_weight_counts,
+                   counts_before);
+            record("segment_indices16", m_segment_indices16, indices16_before);
+            record("segment_indices32", m_segment_indices32, indices32_before);
+            record("segment_weights", m_segment_weights, weights_before);
+            record("segment_nodes", m_segment_nodes, nodes_before);
+            record("node_lookup", m_node_lookup, m_node_lookup.capacity());
+            std::size_t slice_size = 0;
+            std::size_t slice_capacity = 0;
+            for (const auto& values : m_altitude_slices) {
+                slice_size += values.size();
+                slice_capacity += values.capacity();
+            }
+            const auto slice_header_bytes =
+                m_altitude_slices.capacity() * sizeof(std::vector<SliceEntry>) +
+                m_azimuth_altitude_slices.capacity() *
+                    sizeof(std::vector<SliceEntry>);
+            payload_bytes +=
+                slice_size * sizeof(SliceEntry) +
+                m_altitude_slices.size() * sizeof(std::vector<SliceEntry>);
+            allocated_before +=
+                slice_capacity * sizeof(SliceEntry) + slice_header_bytes;
+            allocated_after +=
+                slice_capacity * sizeof(SliceEntry) + slice_header_bytes;
+            output << ",\"altitude_slice_entries\":" << slice_size
+                   << ",\"altitude_slice_entry_capacity\":" << slice_capacity
+                   << ",\"slice_entry_bytes\":" << sizeof(SliceEntry)
+                   << ",\"slice_header_bytes\":" << slice_header_bytes
+                   << ",\"payload_bytes\":" << payload_bytes
+                   << ",\"allocated_bytes_before\":" << allocated_before
+                   << ",\"allocated_bytes_after\":" << allocated_after
+                   << ",\"released_capacity_bytes\":"
+                   << allocated_before - allocated_after << "}\n";
+            std::fputs(output.str().c_str(), stderr);
+        }
 
         std::size_t ray_index(int azimuth, int impact) const {
             return static_cast<std::size_t>(azimuth) * m_num_impacts + impact;
@@ -771,6 +864,7 @@ namespace sasktran2::solartransmission {
             }
             finalize_slices();
             const int completed_nodes = complete_azimuth_topology();
+            finalize_characteristic_storage();
             m_initialized = true;
 
             spdlog::debug(

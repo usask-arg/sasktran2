@@ -79,6 +79,22 @@ phase derivatives and a spatial Lambertian surface, VJP assembly omits unused
 scattering parameter gradients while retaining the full configured angular
 width for the forcing cotangent and the same adjoint iterations.
 
+Uniform-phase values are stored only for wavelengths whose phase functions are
+spatially uniform. Native phase derivative scratch is allocated only when phase
+mappings are present; ozone-only native products omit those unused phase sums.
+Changes in atmosphere volume and mapping presence refresh these buffers before
+reuse.
+
+Finalized endpoint stencils retain the original four double-precision weights
+and one verified 2D cell base, with implicit corner indices and offsets. Generic
+stencils keep their original explicit representation. Shared transport CSR
+columns use 16 bits when the complete source grid fits. Solar interpolation uses
+one-byte row counts when each row has at most 255 entries, and row-relative
+16-bit column indices when every span fits and the representation saves memory.
+Wider rows and indices retain their original forms. Each product selects its
+storage format before its accumulation loop, preserving the original entry
+order. Finalization also releases unused construction capacity.
+
 Geometry and ray transport maps share immutable CSR generations rather than
 copying their index arrays. A geometry refresh creates a new generation;
 existing handles keep the old generation alive until their users release it.

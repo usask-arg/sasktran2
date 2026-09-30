@@ -1037,6 +1037,9 @@ namespace sasktran2::successive_orders {
             maximum_row_nonzeros =
                 std::max(maximum_row_nonzeros, ray.transport_row_nnz);
         }
+        const auto transport_nonzeros = column_indices.size();
+        TransportSparsity topology(total_num_outgoing(), std::move(row_offsets),
+                                   std::move(column_indices));
         if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
             std::fprintf(
                 stderr,
@@ -1052,7 +1055,10 @@ namespace sasktran2::successive_orders {
                 "\"source_12byte_count\":%zu,\"maximum_row_nonzeros\":%u,"
                 "\"ray_descriptor_bytes\":%zu,"
                 "\"transport_nonzeros\":%zu,"
-                "\"transport_topology_bytes\":%zu}\n",
+                "\"transport_topology_bytes\":%zu,"
+                "\"transport_column_index_element_bytes\":%zu,"
+                "\"transport_column_index_bytes\":%zu,"
+                "\"transport_column_index_narrowing_bytes_saved\":%zu}\n",
                 interpolation.size(), released_capacity_bytes,
                 interpolation_weight_count,
                 interpolation_weight_count * sizeof(InterpolationWeight),
@@ -1063,12 +1069,13 @@ namespace sasktran2::successive_orders {
                 source_width_counts[0], source_width_counts[1],
                 source_width_counts[2], maximum_row_nonzeros,
                 interpolation.size() * sizeof(RayInterpolation),
-                column_indices.size(),
-                (row_offsets.capacity() + column_indices.capacity()) *
-                    sizeof(int));
+                transport_nonzeros, topology.storage_bytes(),
+                topology.column_indices().element_bytes(),
+                topology.column_index_bytes(),
+                transport_nonzeros *
+                    (sizeof(int) - topology.column_indices().element_bytes()));
         }
-        return TransportSparsity(total_num_outgoing(), std::move(row_offsets),
-                                 std::move(column_indices));
+        return topology;
     }
 
     void SourceGeometry1D::release_incoming_traced_rays() {
