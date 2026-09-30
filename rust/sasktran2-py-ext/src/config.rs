@@ -561,65 +561,6 @@ impl PyConfig {
     }
 
     #[getter]
-    fn successive_orders_transport_cache_wavelengths(&self) -> PyResult<usize> {
-        self.config
-            .successive_orders_transport_cache_wavelengths()
-            .into_pyresult()
-    }
-
-    #[setter]
-    fn set_successive_orders_transport_cache_wavelengths(&mut self, count: usize) -> PyResult<()> {
-        self.config
-            .with_successive_orders_transport_cache_wavelengths(count)
-            .into_pyresult()?;
-        Ok(())
-    }
-
-    #[getter]
-    fn successive_orders_incoming_directions_by_altitude(&self) -> PyResult<Option<Vec<i32>>> {
-        let counts = self
-            .config
-            .successive_orders_incoming_directions_by_altitude()
-            .into_pyresult()?;
-        Ok((!counts.is_empty()).then_some(counts))
-    }
-
-    #[setter]
-    fn set_successive_orders_incoming_directions_by_altitude(
-        &mut self,
-        counts: Option<Vec<i32>>,
-    ) -> PyResult<()> {
-        self.config
-            .with_successive_orders_incoming_directions_by_altitude(
-                counts.as_deref().unwrap_or_default(),
-            )
-            .into_pyresult()?;
-        Ok(())
-    }
-
-    #[getter]
-    fn successive_orders_outgoing_directions_by_altitude(&self) -> PyResult<Option<Vec<i32>>> {
-        let counts = self
-            .config
-            .successive_orders_outgoing_directions_by_altitude()
-            .into_pyresult()?;
-        Ok((!counts.is_empty()).then_some(counts))
-    }
-
-    #[setter]
-    fn set_successive_orders_outgoing_directions_by_altitude(
-        &mut self,
-        counts: Option<Vec<i32>>,
-    ) -> PyResult<()> {
-        self.config
-            .with_successive_orders_outgoing_directions_by_altitude(
-                counts.as_deref().unwrap_or_default(),
-            )
-            .into_pyresult()?;
-        Ok(())
-    }
-
-    #[getter]
     fn successive_orders_altitude_grid_m(&self) -> PyResult<Option<Vec<f64>>> {
         let altitude_grid_m = self
             .config

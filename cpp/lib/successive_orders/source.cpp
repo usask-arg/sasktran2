@@ -11,7 +11,6 @@
 
 #include <spdlog/spdlog.h>
 
-#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -240,11 +239,6 @@ namespace sasktran2::successive_orders {
         using Assembler = typename Adapter::Assembler;
         using Atmosphere = sasktran2::atmosphere::Atmosphere<NSTOKES>;
 
-        struct ScalarTransportCache {
-            Eigen::VectorXd values;
-            bool current = false;
-        };
-
         struct WorkerState {
             WorkerState(const RayTransportMap& transport_map,
                         const RayTransportMap& los_map,
@@ -284,14 +278,6 @@ namespace sasktran2::successive_orders {
             Eigen::VectorXd los_transport_tangent;
             Eigen::VectorXd adjoint;
             Eigen::MatrixXd jacobian;
-            // A slot is empty while its values are owned by this worker's
-            // transport operator. Slots never access another worker's data.
-            std::vector<ScalarTransportCache> transport_cache;
-            int transport_cache_active_wavelength = -1;
-            bool transport_cache_current = false;
-            bool transport_products_ready = true;
-            std::uint64_t transport_cache_hits = 0;
-            std::uint64_t transport_cache_misses = 0;
             int active_wavelength = -1;
             int profiled_parameter_vjp_case = -1;
             bool transport_state_projected = false;
@@ -326,21 +312,10 @@ namespace sasktran2::successive_orders {
 #endif
 
         void initialize_config(const sasktran2::Config& config) {
-            if (config.successive_orders_transport_cache_wavelengths() < 0) {
-                throw std::invalid_argument(
-                    "Successive-orders transport cache count must be "
-                    "nonnegative");
-            }
             invalidate_geometry();
             m_config = &config;
-            m_transport_cache_wavelengths =
-                config.successive_orders_transport_cache_wavelengths();
             m_geometry_settings.num_incoming = config.num_hr_incoming();
             m_geometry_settings.num_outgoing = config.num_hr_outgoing();
-            m_geometry_settings.incoming_directions_by_altitude =
-                config.successive_orders_incoming_directions_by_altitude();
-            m_geometry_settings.outgoing_directions_by_altitude =
-                config.successive_orders_outgoing_directions_by_altitude();
             m_geometry_settings.num_sza = config.num_do_sza();
             m_geometry_settings.num_threads = config.num_threads();
             m_geometry_settings.include_refraction =
@@ -460,28 +435,6 @@ namespace sasktran2::successive_orders {
                 for (auto& cache : m_scalar_primal_cache) {
                     cache.current = false;
                 }
-                const int cache_count =
-                    m_first_order.uses_compact_scalar_kernel()
-                        ? std::min(m_transport_cache_wavelengths,
-                                   atmosphere.num_wavel())
-                        : 0;
-                for (auto& state : m_worker_state) {
-                    if (static_cast<int>(state->transport_cache.size()) !=
-                        cache_count) {
-                        state->transport_cache.clear();
-                        state->transport_cache.resize(cache_count);
-                        state->transport_cache_active_wavelength = -1;
-                    }
-                    for (auto& cache : state->transport_cache) {
-                        cache.current = false;
-                    }
-                    // Keep the active slot's ownership across invalidation:
-                    // its empty inactive slot receives this buffer on the
-                    // next switch, even though its physical values are stale.
-                    state->transport_cache_current = false;
-                    state->transport_cache_hits = 0;
-                    state->transport_cache_misses = 0;
-                }
             } else {
                 if (static_cast<int>(m_vector_state_cache.size()) !=
                     atmosphere.num_wavel()) {
@@ -534,7 +487,6 @@ namespace sasktran2::successive_orders {
                 warn_if_implicit_derivative_is_unchecked(m_solver_settings,
                                                          block.start, "JVP");
                 if (compact_scalar) {
-                    ensure_transport_products(block.start, threadidx, work);
                     work.direct_transport_tangent.resize(work.forcing.size());
                     if (!work.transport_state_projected) {
                         m_first_order.project_transport_state(
@@ -762,95 +714,6 @@ namespace sasktran2::successive_orders {
                                                     work.scattering);
         }
 
-        bool restore_cached_transport(int wavelength, WorkerState& work,
-                                      bool reuse_primal_and_forcing) {
-            if (work.transport_cache.empty()) {
-                return false;
-            }
-            auto& values = work.transport.values();
-            if (work.transport_cache_active_wavelength >= 0) {
-                auto& old = work.transport_cache
-                                [work.transport_cache_active_wavelength];
-                if (old.values.size() != 0) {
-                    throw std::logic_error(
-                        "Active successive-orders transport cache slot is "
-                        "not empty");
-                }
-                old.values.swap(values);
-                old.current = work.transport_cache_current;
-                work.transport_cache_active_wavelength = -1;
-            }
-            work.transport_cache_current = false;
-            const int nonzeros = work.transport.sparsity().nonzeros();
-            if (wavelength >= static_cast<int>(work.transport_cache.size())) {
-                values.resize(nonzeros);
-                return false;
-            }
-            auto& cache = work.transport_cache[wavelength];
-            const bool hit = reuse_primal_and_forcing && cache.current &&
-                             cache.values.size() == nonzeros;
-            cache.current = false;
-            if (cache.values.size() != 0) {
-                // An unpinned active wavelength can leave a spare buffer.
-                // Release it before taking exclusive ownership of the pinned
-                // buffer; never keep a duplicate of an active cache entry.
-                values.resize(0);
-                cache.values.swap(values);
-            }
-            values.resize(nonzeros);
-            work.transport_cache_active_wavelength = wavelength;
-            return hit;
-        }
-
-        void ensure_transport_products(int wavelength, int threadidx,
-                                       WorkerState& work) {
-            if (!work.transport_products_ready) {
-                m_first_order.prepare_transport_products(wavelength, threadidx);
-                work.transport_products_ready = true;
-            }
-        }
-
-        void profile_transport_cache(int wavelength, int threadidx,
-                                     WorkerState& work, bool hit) const {
-            if (work.transport_cache.empty()) {
-                return;
-            }
-            if (hit) {
-                ++work.transport_cache_hits;
-            } else {
-                ++work.transport_cache_misses;
-            }
-            if (std::getenv("SASKTRAN2_PROFILE_MEMORY") == nullptr) {
-                return;
-            }
-            std::size_t inactive_bytes = 0;
-            std::size_t inactive_vectors = 0;
-            for (const auto& cache : work.transport_cache) {
-                inactive_bytes +=
-                    static_cast<std::size_t>(cache.values.size()) *
-                    sizeof(double);
-                inactive_vectors += cache.values.size() != 0;
-            }
-            const std::size_t active_bytes =
-                static_cast<std::size_t>(work.transport.values().size()) *
-                sizeof(double);
-            std::fprintf(
-                stderr,
-                "SASKTRAN2_MEMORY {\"kind\":\"scalar_transport_cache\","
-                "\"engine\":\"%p\",\"thread\":%d,\"wavelength\":%d,"
-                "\"revision\":%llu,\"cache_wavelengths\":%zu,"
-                "\"hit\":%s,\"hits\":%llu,\"misses\":%llu,"
-                "\"inactive_bytes\":%zu,\"active_bytes\":%zu,"
-                "\"retained_bytes\":%zu,\"retained_vectors\":%zu}\n",
-                static_cast<const void*>(this), threadidx, wavelength,
-                static_cast<unsigned long long>(m_atmosphere_revision),
-                work.transport_cache.size(), hit ? "true" : "false",
-                static_cast<unsigned long long>(work.transport_cache_hits),
-                static_cast<unsigned long long>(work.transport_cache_misses),
-                inactive_bytes, active_bytes, inactive_bytes + active_bytes,
-                inactive_vectors + (work.transport.values().size() != 0));
-        }
-
         WorkerState& prepare_primal(int wavelength, int threadidx) {
             validate_calculation(wavelength, threadidx);
             auto& work = worker_state(threadidx);
@@ -870,28 +733,18 @@ namespace sasktran2::successive_orders {
                                 cache.forcing.size() == work.forcing.size() &&
                                 m_first_order.uses_compact_scalar_kernel();
             }
-            const bool reuse_transport = restore_cached_transport(
-                wavelength, work, reuse_primal && reuse_forcing);
-            work.transport_products_ready = false;
             assemble_values(wavelength, work);
             if (m_first_order.uses_compact_scalar_kernel()) {
-                if (reuse_transport) {
-                    if constexpr (NSTOKES == 1) {
-                        work.forcing =
-                            m_scalar_primal_cache[wavelength].forcing;
-                    }
-                } else if (reuse_forcing) {
+                if (reuse_forcing) {
                     if constexpr (NSTOKES == 1) {
                         work.forcing =
                             m_scalar_primal_cache[wavelength].forcing;
                     }
                     m_first_order.calculate_transport_only(
                         wavelength, threadidx, work.transport);
-                    work.transport_products_ready = true;
                 } else {
                     m_first_order.calculate_with_transport(
                         wavelength, threadidx, work.transport, work.forcing);
-                    work.transport_products_ready = true;
                 }
             } else {
                 m_first_order.calculate(wavelength, threadidx, work.forcing);
@@ -961,11 +814,6 @@ namespace sasktran2::successive_orders {
             work.los_tangent.setZero();
             work.jacobian.resize(0, 0);
             work.active_wavelength = wavelength;
-            if (work.transport_cache_active_wavelength >= 0) {
-                work.transport_cache_current = true;
-            }
-            profile_transport_cache(wavelength, threadidx, work,
-                                    reuse_transport);
             return work;
         }
 
@@ -1030,7 +878,6 @@ namespace sasktran2::successive_orders {
                                         native_gradient);
             }
             if (m_first_order.uses_compact_scalar_kernel()) {
-                ensure_transport_products(wavelength, threadidx, work);
                 if (work.transport_state_projected) {
                     m_first_order.accumulate_vjp_with_projected_transport(
                         wavelength, threadidx, work.layer_state_projection,
@@ -1095,7 +942,6 @@ namespace sasktran2::successive_orders {
         std::unique_ptr<Assembler> m_scattering_assembler;
         std::vector<std::unique_ptr<WorkerState>> m_worker_state;
         std::vector<ScalarPrimalCache> m_scalar_primal_cache;
-        int m_transport_cache_wavelengths = 0;
         std::vector<Eigen::VectorXd> m_vector_state_cache;
         mutable std::vector<Eigen::VectorXd> m_thread_los_cotangent;
         bool m_geometry_initialized = false;

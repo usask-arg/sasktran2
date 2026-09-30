@@ -518,38 +518,6 @@ namespace sasktran2 {
             m_successive_orders_reduced_horizon_quadrature = enabled;
         }
 
-        /** Scalar compact transport wavelengths retained per worker. Zero
-         * keeps only the active worker values; a positive count pins the first
-         * N wavelengths without changing calculation or accumulation order. */
-        int successive_orders_transport_cache_wavelengths() const {
-            return m_successive_orders_transport_cache_wavelengths;
-        }
-        void set_successive_orders_transport_cache_wavelengths(int count) {
-            m_successive_orders_transport_cache_wavelengths = count;
-        }
-
-        /** Optional direction counts at successive-orders source altitudes.
-         * Empty selects the uniform counts; ground points remain uniform. */
-        const std::vector<int>&
-        successive_orders_incoming_directions_by_altitude() const {
-            return m_successive_orders_incoming_directions_by_altitude;
-        }
-        void set_successive_orders_incoming_directions_by_altitude(
-            std::vector<int> counts) {
-            m_successive_orders_incoming_directions_by_altitude =
-                std::move(counts);
-        }
-
-        const std::vector<int>&
-        successive_orders_outgoing_directions_by_altitude() const {
-            return m_successive_orders_outgoing_directions_by_altitude;
-        }
-        void set_successive_orders_outgoing_directions_by_altitude(
-            std::vector<int> counts) {
-            m_successive_orders_outgoing_directions_by_altitude =
-                std::move(counts);
-        }
-
         /** Explicit source altitude grid in metres. An empty grid selects the
          * source's default atmosphere-derived grid. */
         const std::vector<double>& successive_orders_altitude_grid_m() const {
@@ -859,9 +827,6 @@ namespace sasktran2 {
         int m_successive_orders_anderson_depth = 3;
         double m_successive_orders_damping = 1.0;
         bool m_successive_orders_reduced_horizon_quadrature = true;
-        int m_successive_orders_transport_cache_wavelengths = 0;
-        std::vector<int> m_successive_orders_incoming_directions_by_altitude;
-        std::vector<int> m_successive_orders_outgoing_directions_by_altitude;
         std::vector<double> m_successive_orders_altitude_grid_m;
         std::vector<double> m_successive_orders_horizontal_angle_grid_radians;
 

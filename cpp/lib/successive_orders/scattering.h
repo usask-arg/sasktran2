@@ -103,8 +103,6 @@ namespace sasktran2::successive_orders {
         Eigen::MatrixXd m_point_input_result;
         Eigen::MatrixXd m_point_output_result;
         Eigen::MatrixXd m_point_coefficient_gradient;
-        Eigen::VectorXd m_ragged_input_result;
-        Eigen::VectorXd m_ragged_output_result;
     };
 
     /** Scalar scattering with coefficient-space atmospheric blocks.
@@ -213,7 +211,6 @@ namespace sasktran2::successive_orders {
         std::shared_ptr<const ScalarAngularBasis> m_basis;
         std::vector<std::shared_ptr<const ScalarAngularBasis>> m_point_bases;
         bool m_point_bases_share_synthesis = false;
-        bool m_ragged_atmospheric_blocks = false;
         Eigen::MatrixXd m_atmospheric_coefficients;
         std::vector<int> m_ground_value_offsets;
         Eigen::VectorXd m_ground_values;
@@ -235,8 +232,6 @@ namespace sasktran2::successive_orders {
         Eigen::MatrixXd m_auxiliary_output;
         VectorAngularWorkspace m_angular;
         VectorAngularWorkspace m_point_angular;
-        Eigen::VectorXd m_ragged_input_result;
-        Eigen::VectorXd m_ragged_output_result;
     };
 
     /** Coefficient-space I/Q/U atmospheric scattering with dense boundaries. */
@@ -325,7 +320,6 @@ namespace sasktran2::successive_orders {
         std::shared_ptr<const VectorAngularBasis> m_basis;
         std::vector<std::shared_ptr<const VectorAngularBasis>> m_point_bases;
         bool m_point_bases_share_synthesis = false;
-        bool m_ragged_atmospheric_blocks = false;
         std::vector<int> m_ground_value_offsets;
         Eigen::MatrixXd m_atmospheric_coefficients;
         Eigen::VectorXd m_ground_values;

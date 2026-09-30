@@ -9,11 +9,8 @@
 #include <cstdlib>
 #include <exception>
 #include <limits>
-#include <map>
-#include <sstream>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 #include <utility>
 
 #ifdef SKTRAN_OPENMP_SUPPORT
@@ -631,15 +628,6 @@ namespace sasktran2::successive_orders {
             throw std::invalid_argument(
                 "Successive-orders geometry requires at least one thread");
         }
-        for (const auto* counts : {&incoming_directions_by_altitude,
-                                   &outgoing_directions_by_altitude}) {
-            if (std::any_of(counts->begin(), counts->end(),
-                            [](int count) { return count <= 0; })) {
-                throw std::invalid_argument(
-                    "Successive-orders altitude direction counts must be "
-                    "positive");
-            }
-        }
         for (std::size_t index = 0;
              index < horizontal_angle_grid_radians.size(); ++index) {
             const double angle = horizontal_angle_grid_radians[index];
@@ -712,16 +700,6 @@ namespace sasktran2::successive_orders {
 
         m_source_altitudes_m.assign(altitudes.data(),
                                     altitudes.data() + altitudes.size());
-        for (const auto* counts :
-             {&m_settings.incoming_directions_by_altitude,
-              &m_settings.outgoing_directions_by_altitude}) {
-            if (!counts->empty() &&
-                counts->size() != m_source_altitudes_m.size()) {
-                throw std::invalid_argument(
-                    "Successive-orders altitude direction profiles must "
-                    "match the resolved source-altitude grid");
-            }
-        }
         return sasktran2::grids::AltitudeGrid(
             std::move(altitudes), spacing,
             sasktran2::grids::outofbounds::extend,
@@ -806,10 +784,7 @@ namespace sasktran2::successive_orders {
             static_cast<std::size_t>(m_num_ground_points) +
             (m_settings.use_reduced_horizon_quadrature
                  ? static_cast<std::size_t>(m_num_interior_points)
-                 : (m_settings.incoming_directions_by_altitude.empty() &&
-                            m_settings.outgoing_directions_by_altitude.empty()
-                        ? 1
-                        : m_source_altitudes_m.size())));
+                 : 1));
         std::shared_ptr<const sasktran2::math::UnitSphere> volume_outgoing;
         if (m_settings.use_reduced_horizon_quadrature) {
             volume_outgoing = std::make_shared<const PoleAvoidingLebedevSphere>(
@@ -819,46 +794,6 @@ namespace sasktran2::successive_orders {
                 std::make_shared<const sasktran2::math::LebedevSphere>(
                     m_settings.num_outgoing);
         }
-        std::unordered_map<int,
-                           std::shared_ptr<const sasktran2::math::UnitSphere>>
-            outgoing_by_count;
-        outgoing_by_count.emplace(m_settings.num_outgoing, volume_outgoing);
-        const auto outgoing_for_count = [&](int count) {
-            const auto found = outgoing_by_count.find(count);
-            if (found != outgoing_by_count.end()) {
-                // Explicit profiles must request the actual rule size, even
-                // when the legacy uniform request would round upward.
-                if (!m_settings.outgoing_directions_by_altitude.empty() &&
-                    found->second->num_points() != count) {
-                    throw std::invalid_argument(
-                        "Unsupported successive-orders outgoing Lebedev "
-                        "direction count");
-                }
-                return found->second;
-            }
-            std::shared_ptr<const sasktran2::math::UnitSphere> sphere;
-            if (m_settings.use_reduced_horizon_quadrature) {
-                sphere =
-                    std::make_shared<const PoleAvoidingLebedevSphere>(count);
-            } else {
-                sphere = std::make_shared<const sasktran2::math::LebedevSphere>(
-                    count);
-            }
-            if (sphere->num_points() != count) {
-                throw std::invalid_argument(
-                    "Unsupported successive-orders outgoing Lebedev "
-                    "direction count");
-            }
-            outgoing_by_count.emplace(count, sphere);
-            return sphere;
-        };
-        const auto count_for_point = [&](const std::vector<int>& counts,
-                                         int point_index, int uniform) {
-            return counts.empty()
-                       ? uniform
-                       : counts[static_cast<std::size_t>(point_index) %
-                                m_source_altitudes_m.size()];
-        };
         double surface_radius = 0.0;
         if (m_settings.use_reduced_horizon_quadrature) {
             const auto& altitude_grid =
@@ -870,20 +805,10 @@ namespace sasktran2::successive_orders {
             for (int point_index = 0; point_index < m_num_interior_points;
                  ++point_index) {
                 auto grid = std::make_unique<AngularGridPair>();
-                const int incoming_count =
-                    count_for_point(m_settings.incoming_directions_by_altitude,
-                                    point_index, m_settings.num_incoming);
-                if (incoming_count < 6) {
-                    throw std::invalid_argument(
-                        "Reduced-horizon altitude quadrature requires at "
-                        "least 6 incoming directions");
-                }
                 grid->incoming = std::make_shared<ReducedHorizonSphere>(
                     m_source_points[point_index].location().position,
-                    surface_radius, incoming_count, m_geometry);
-                grid->outgoing = outgoing_for_count(
-                    count_for_point(m_settings.outgoing_directions_by_altitude,
-                                    point_index, m_settings.num_outgoing));
+                    surface_radius, m_settings.num_incoming, m_geometry);
+                grid->outgoing = volume_outgoing;
                 m_source_points[point_index].m_incoming_sphere =
                     grid->incoming.get();
                 m_source_points[point_index].m_outgoing_sphere =
@@ -891,48 +816,19 @@ namespace sasktran2::successive_orders {
                 m_angular_grids.push_back(std::move(grid));
             }
         } else {
-            std::unordered_map<
-                int, std::shared_ptr<const sasktran2::math::UnitSphere>>
-                incoming_by_count;
-            std::map<std::pair<int, int>, AngularGridPair*> grids_by_count;
+            auto grid = std::make_unique<AngularGridPair>();
+            grid->incoming =
+                std::make_shared<const sasktran2::math::LebedevSphere>(
+                    m_settings.num_incoming);
+            grid->outgoing = volume_outgoing;
             for (int point_index = 0; point_index < m_num_interior_points;
                  ++point_index) {
-                const int count =
-                    count_for_point(m_settings.incoming_directions_by_altitude,
-                                    point_index, m_settings.num_incoming);
-                auto found = incoming_by_count.find(count);
-                if (found == incoming_by_count.end()) {
-                    auto sphere =
-                        std::make_shared<const sasktran2::math::LebedevSphere>(
-                            count);
-                    if (!m_settings.incoming_directions_by_altitude.empty() &&
-                        sphere->num_points() != count) {
-                        throw std::invalid_argument(
-                            "Unsupported successive-orders incoming Lebedev "
-                            "direction count");
-                    }
-                    found = incoming_by_count.emplace(count, std::move(sphere))
-                                .first;
-                }
-                const int outgoing_count =
-                    count_for_point(m_settings.outgoing_directions_by_altitude,
-                                    point_index, m_settings.num_outgoing);
-                auto cached = grids_by_count.find({count, outgoing_count});
-                if (cached == grids_by_count.end()) {
-                    auto grid = std::make_unique<AngularGridPair>();
-                    grid->incoming = found->second;
-                    grid->outgoing = outgoing_for_count(outgoing_count);
-                    cached = grids_by_count
-                                 .emplace(std::make_pair(count, outgoing_count),
-                                          grid.get())
-                                 .first;
-                    m_angular_grids.push_back(std::move(grid));
-                }
                 m_source_points[point_index].m_incoming_sphere =
-                    cached->second->incoming.get();
+                    grid->incoming.get();
                 m_source_points[point_index].m_outgoing_sphere =
-                    cached->second->outgoing.get();
+                    grid->outgoing.get();
             }
+            m_angular_grids.push_back(std::move(grid));
         }
 
         for (int ground_index = 0; ground_index < m_num_ground_points;
@@ -984,44 +880,6 @@ namespace sasktran2::successive_orders {
             m_geometry.assign_interpolation_weights(point.location(),
                                                     atmosphere_weights);
             point.m_atmosphere_weights = sorted_weights(atmosphere_weights);
-        }
-        if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
-            std::ostringstream message;
-            message.precision(std::numeric_limits<double>::max_digits10);
-            message << "SASKTRAN2_MEMORY {\"kind\":\"source_angular_grid\","
-                       "\"source_horizontal_columns\":"
-                    << m_num_ground_points << ",\"num_source_altitudes\":"
-                    << m_source_altitudes_m.size() << ",\"altitude_grid_m\":[";
-            for (std::size_t altitude = 0;
-                 altitude < m_source_altitudes_m.size(); ++altitude) {
-                if (altitude != 0)
-                    message << ',';
-                message << m_source_altitudes_m[altitude];
-            }
-            const auto append_counts = [&](const char* name, bool incoming,
-                                           bool ground) {
-                message << "],\"" << name << "\":[";
-                const int count =
-                    ground ? m_num_ground_points
-                           : static_cast<int>(m_source_altitudes_m.size());
-                for (int index = 0; index < count; ++index) {
-                    if (index != 0)
-                        message << ',';
-                    const auto& point =
-                        m_source_points[(ground ? m_num_interior_points : 0) +
-                                        index];
-                    message << (incoming ? point.num_incoming()
-                                         : point.num_outgoing());
-                }
-            };
-            append_counts("incoming_directions_by_altitude", true, false);
-            append_counts("outgoing_directions_by_altitude", false, false);
-            append_counts("ground_incoming_counts", true, true);
-            append_counts("ground_outgoing_counts", false, true);
-            message << "],\"ground_point_count\":" << m_num_ground_points
-                    << ",\"total_incoming\":" << total_num_incoming()
-                    << ",\"total_outgoing\":" << total_num_outgoing() << "}\n";
-            std::fprintf(stderr, "%s", message.str().c_str());
         }
     }
 

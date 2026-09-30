@@ -67,18 +67,6 @@ wavelength's physical values. Surface-only updates also recompute volume
 transport and first-order forcing instead of retaining duplicate volume
 buffers.
 
-The optional
-{py:attr}`sasktran2.Config.successive_orders_transport_cache_wavelengths`
-setting pins transport values for the first N wavelength indices on each scalar
-compact worker. Its default, zero, keeps the current active-only policy. Cached
-and active vectors exchange ownership, so retaining all N wavelengths adds
-N-1 transport vectors per worker. Partial caches can additionally retain an
-active wavelength outside the pinned set. Counts are clamped to the available
-wavelengths; increasing them trades resident memory for less transport assembly.
-Cache entries are invalidated on atmosphere and geometry updates. Calculation
-order, warm starts and gradient accumulation order are unchanged. Polarized and
-noncompact paths retain their existing storage policy.
-
 Finalized source interpolation uses byte or 16-bit CSR slots when the row fits,
 with a 32-bit fallback for larger rows. Verified structured 2D ray cells reconstruct
 their original corner indices from a compact descriptor, retaining every original
@@ -117,24 +105,6 @@ atmosphere grid:
   vertical source locations. When it is not set, atmosphere-layer midpoints are
   used.
 
-Optional
-{py:attr}`sasktran2.Config.successive_orders_incoming_directions_by_altitude`
-and
-{py:attr}`sasktran2.Config.successive_orders_outgoing_directions_by_altitude`
-arrays select a direction count for each resolved source altitude. Empty arrays
-or `None` retain the uniform counts. Every horizontal column uses the same
-altitude profile, and ground points keep the uniform settings and existing
-hemisphere rules.
-Horizon-fitted incoming rules require at least six directions. Explicit outgoing
-counts must match supported quadrature rules. Profile lengths are checked when
-the source altitude grid is resolved.
-
-An explicit uniform profile follows the existing uniform numerical path. A
-nonuniform profile changes angular discretization and requires a convergence
-study against a uniform reference. Keep the profile fixed throughout retrieval
-so native JVP/VJP products differentiate the same discrete model after atmosphere
-updates. Shared outgoing transforms are retained for identical quadrature rules.
-
 The incoming direct beam is obtained from a solar-characteristic table
 parameterized by altitude, solar zenith angle, and off-plane azimuth. Setting
 {py:attr}`sasktran2.Config.solar_refraction` bends these solar characteristics
@@ -163,9 +133,6 @@ Geometry2D.
   sasktran2.Config.successive_orders_anderson_depth
   sasktran2.Config.successive_orders_damping
   sasktran2.Config.successive_orders_altitude_grid_m
-  sasktran2.Config.successive_orders_transport_cache_wavelengths
-  sasktran2.Config.successive_orders_incoming_directions_by_altitude
-  sasktran2.Config.successive_orders_outgoing_directions_by_altitude
   sasktran2.Config.successive_orders_horizontal_angle_grid_radians
   sasktran2.Config.num_stokes
 

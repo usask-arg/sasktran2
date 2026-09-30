@@ -372,9 +372,7 @@ namespace sasktran2::successive_orders {
                    m_auxiliary_input.size() + m_moments.size() +
                    m_auxiliary_moments.size() + m_point_input_result.size() +
                    m_point_output_result.size() +
-                   m_point_coefficient_gradient.size() +
-                   m_ragged_input_result.size() +
-                   m_ragged_output_result.size()) *
+                   m_point_coefficient_gradient.size()) *
                sizeof(double);
     }
 
@@ -451,13 +449,6 @@ namespace sasktran2::successive_orders {
                 throw std::invalid_argument(
                     "scalar successive-orders atmospheric block does not "
                     "match its point angular basis");
-            }
-            m_ragged_atmospheric_blocks =
-                m_ragged_atmospheric_blocks ||
-                basis->input_size() != m_basis->input_size() ||
-                basis->output_size() != m_basis->output_size();
-            if (basis->output_size() != m_basis->output_size()) {
-                m_point_bases_share_synthesis = false;
             }
         }
         m_atmospheric_coefficients.setZero();
@@ -541,14 +532,6 @@ namespace sasktran2::successive_orders {
 
     void ScatteringOperator<1>::prepare_workspace(
         ScatteringWorkspace<1>& workspace) const {
-        if (m_ragged_atmospheric_blocks) {
-            workspace.m_atmospheric_input.resize(0, 0);
-            workspace.m_atmospheric_output.resize(
-                m_point_bases_share_synthesis ? m_layout.atmospheric_blocks()
-                                              : 0,
-                m_point_bases_share_synthesis ? m_basis->output_size() : 0);
-            return;
-        }
         workspace.prepare(m_layout.atmospheric_blocks(), m_basis->input_size(),
                           m_basis->output_size());
     }
@@ -604,53 +587,6 @@ namespace sasktran2::successive_orders {
                                  ScatteringWorkspace<1>& workspace) const {
         validate_input_output(incoming.size(), outgoing.size());
         prepare_workspace(workspace);
-        if (m_ragged_atmospheric_blocks) {
-            workspace.m_ragged_output_result.resize(output_size());
-            if (m_point_bases_share_synthesis) {
-                workspace.m_moments.resize(m_layout.atmospheric_blocks(),
-                                           m_active_coefficients *
-                                               m_active_coefficients);
-                for (int point = 0; point < m_layout.atmospheric_blocks();
-                     ++point) {
-                    const Eigen::Map<const Eigen::MatrixXd> point_input(
-                        incoming.data() + m_layout.input_offsets()[point], 1,
-                        m_layout.input_block_size(point));
-                    m_point_bases[point]->analyze_active(
-                        point_input,
-                        m_atmospheric_coefficients.middleRows(point, 1),
-                        m_active_coefficients, workspace.m_auxiliary_moments);
-                    workspace.m_moments.row(point) =
-                        workspace.m_auxiliary_moments.row(0);
-                }
-                m_basis->synthesize_active(workspace.m_moments,
-                                           m_active_coefficients,
-                                           workspace.m_atmospheric_output);
-                unpack_atmospheric_blocks(m_layout,
-                                          workspace.m_atmospheric_output,
-                                          workspace.m_ragged_output_result);
-            } else {
-                for (int point = 0; point < m_layout.atmospheric_blocks();
-                     ++point) {
-                    const Eigen::Map<const Eigen::MatrixXd> point_input(
-                        incoming.data() + m_layout.input_offsets()[point], 1,
-                        m_layout.input_block_size(point));
-                    Eigen::Map<Eigen::MatrixXd> point_output(
-                        workspace.m_ragged_output_result.data() +
-                            m_layout.output_offsets()[point],
-                        1, m_layout.output_block_size(point));
-                    m_point_bases[point]->apply_active(
-                        point_input,
-                        m_atmospheric_coefficients.middleRows(point, 1),
-                        m_active_coefficients, point_output,
-                        workspace.m_auxiliary_moments);
-                }
-            }
-            apply_dense_blocks(m_layout, m_layout.atmospheric_blocks(),
-                               m_ground_value_offsets, m_ground_values,
-                               incoming, workspace.m_ragged_output_result);
-            outgoing = workspace.m_ragged_output_result;
-            return;
-        }
         if (m_layout.atmospheric_blocks() != 0) {
             if (m_point_bases.empty()) {
                 pack_atmospheric_blocks(m_layout, incoming,
@@ -707,28 +643,6 @@ namespace sasktran2::successive_orders {
         ScatteringWorkspace<1>& workspace) const {
         validate_input_output(incoming.size(), outgoing.size());
         prepare_workspace(workspace);
-        if (m_ragged_atmospheric_blocks) {
-            workspace.m_ragged_input_result.resize(input_size());
-            for (int point = 0; point < m_layout.atmospheric_blocks();
-                 ++point) {
-                const Eigen::Map<const Eigen::MatrixXd> point_output(
-                    outgoing.data() + m_layout.output_offsets()[point], 1,
-                    m_layout.output_block_size(point));
-                Eigen::Map<Eigen::MatrixXd> point_input(
-                    workspace.m_ragged_input_result.data() +
-                        m_layout.input_offsets()[point],
-                    1, m_layout.input_block_size(point));
-                m_point_bases[point]->apply_transpose_active(
-                    point_output,
-                    m_atmospheric_coefficients.middleRows(point, 1),
-                    m_active_coefficients, point_input, workspace.m_moments);
-            }
-            apply_dense_blocks_transpose(
-                m_layout, m_layout.atmospheric_blocks(), m_ground_value_offsets,
-                m_ground_values, outgoing, workspace.m_ragged_input_result);
-            incoming = workspace.m_ragged_input_result;
-            return;
-        }
         if (m_layout.atmospheric_blocks() != 0) {
             if (m_point_bases.empty()) {
                 pack_atmospheric_output_blocks(m_layout, outgoing,
@@ -782,42 +696,6 @@ namespace sasktran2::successive_orders {
             return;
         }
         prepare_workspace(workspace);
-        if (m_ragged_atmospheric_blocks) {
-            int active_coefficients = m_active_coefficients;
-            for (int degree = m_basis->num_coefficients() - 1;
-                 degree >= m_active_coefficients; --degree) {
-                if (!coefficient_tangent.col(degree).isZero(0.0)) {
-                    active_coefficients = degree + 1;
-                    break;
-                }
-            }
-            workspace.m_ragged_output_result.resize(output_size());
-            for (int point = 0; point < m_layout.atmospheric_blocks();
-                 ++point) {
-                const Eigen::Map<const Eigen::MatrixXd> point_input(
-                    incoming.data() + m_layout.input_offsets()[point], 1,
-                    m_layout.input_block_size(point));
-                const Eigen::Map<const Eigen::MatrixXd> point_tangent(
-                    incoming_tangent.data() + m_layout.input_offsets()[point],
-                    1, m_layout.input_block_size(point));
-                Eigen::Map<Eigen::MatrixXd> point_output(
-                    workspace.m_ragged_output_result.data() +
-                        m_layout.output_offsets()[point],
-                    1, m_layout.output_block_size(point));
-                m_point_bases[point]->apply_jvp_active(
-                    point_input, point_tangent,
-                    m_atmospheric_coefficients.middleRows(point, 1),
-                    coefficient_tangent.middleRows(point, 1),
-                    active_coefficients, point_output, workspace.m_moments,
-                    workspace.m_auxiliary_moments);
-            }
-            apply_dense_blocks_jvp(
-                m_layout, m_layout.atmospheric_blocks(), m_ground_value_offsets,
-                m_ground_values, ground_value_tangent, incoming,
-                incoming_tangent, workspace.m_ragged_output_result);
-            outgoing_tangent = workspace.m_ragged_output_result;
-            return;
-        }
         if (m_layout.atmospheric_blocks() != 0) {
             int active_coefficients = m_active_coefficients;
             for (int degree = m_basis->num_coefficients() - 1;
@@ -886,41 +764,6 @@ namespace sasktran2::successive_orders {
                 "invalid scalar successive-orders scattering VJP sizes");
         }
         prepare_workspace(workspace);
-        if (m_ragged_atmospheric_blocks) {
-            workspace.m_ragged_input_result.resize(input_size());
-            coefficient_gradient.setZero();
-            ground_value_gradient.setZero();
-            workspace.m_point_coefficient_gradient.resize(
-                1, m_basis->num_coefficients());
-            for (int point = 0; point < m_layout.atmospheric_blocks();
-                 ++point) {
-                const Eigen::Map<const Eigen::MatrixXd> point_input(
-                    incoming.data() + m_layout.input_offsets()[point], 1,
-                    m_layout.input_block_size(point));
-                const Eigen::Map<const Eigen::MatrixXd> point_cotangent(
-                    outgoing_cotangent.data() +
-                        m_layout.output_offsets()[point],
-                    1, m_layout.output_block_size(point));
-                Eigen::Map<Eigen::MatrixXd> point_result(
-                    workspace.m_ragged_input_result.data() +
-                        m_layout.input_offsets()[point],
-                    1, m_layout.input_block_size(point));
-                m_point_bases[point]->apply_vjp(
-                    point_input,
-                    m_atmospheric_coefficients.middleRows(point, 1),
-                    point_cotangent, point_result,
-                    workspace.m_point_coefficient_gradient, workspace.m_moments,
-                    workspace.m_auxiliary_moments);
-                coefficient_gradient.row(point) =
-                    workspace.m_point_coefficient_gradient.row(0);
-            }
-            apply_dense_blocks_vjp(
-                m_layout, m_layout.atmospheric_blocks(), m_ground_value_offsets,
-                m_ground_values, incoming, outgoing_cotangent,
-                workspace.m_ragged_input_result, ground_value_gradient);
-            incoming_cotangent = workspace.m_ragged_input_result;
-            return;
-        }
         incoming_cotangent.setZero();
         coefficient_gradient.setZero();
         ground_value_gradient.setZero();
@@ -978,31 +821,6 @@ namespace sasktran2::successive_orders {
         validate_input_output(incoming_cotangent.size(),
                               outgoing_cotangent.size());
         prepare_workspace(workspace);
-        if (m_ragged_atmospheric_blocks) {
-            workspace.m_ragged_input_result.resize(input_size());
-            for (int point = 0; point < m_layout.atmospheric_blocks();
-                 ++point) {
-                const Eigen::Map<const Eigen::MatrixXd> point_cotangent(
-                    outgoing_cotangent.data() +
-                        m_layout.output_offsets()[point],
-                    1, m_layout.output_block_size(point));
-                Eigen::Map<Eigen::MatrixXd> point_result(
-                    workspace.m_ragged_input_result.data() +
-                        m_layout.input_offsets()[point],
-                    1, m_layout.input_block_size(point));
-                // Native VJP retains every configured angular mode.
-                m_point_bases[point]->apply_transpose(
-                    point_cotangent,
-                    m_atmospheric_coefficients.middleRows(point, 1),
-                    point_result, workspace.m_auxiliary_moments);
-            }
-            apply_dense_blocks_transpose(
-                m_layout, m_layout.atmospheric_blocks(), m_ground_value_offsets,
-                m_ground_values, outgoing_cotangent,
-                workspace.m_ragged_input_result);
-            incoming_cotangent = workspace.m_ragged_input_result;
-            return;
-        }
         incoming_cotangent.setZero();
         if (m_layout.atmospheric_blocks() != 0) {
             // Retain the full VJP's result buffers and configured mode count.
@@ -1052,9 +870,7 @@ namespace sasktran2::successive_orders {
     std::size_t ScatteringWorkspace<3>::storage_bytes() const {
         return static_cast<std::size_t>(
                    m_atmospheric_input.size() + m_atmospheric_output.size() +
-                   m_auxiliary_input.size() + m_auxiliary_output.size() +
-                   m_ragged_input_result.size() +
-                   m_ragged_output_result.size()) *
+                   m_auxiliary_input.size() + m_auxiliary_output.size()) *
                    sizeof(double) +
                m_angular.storage_bytes() + m_point_angular.storage_bytes();
     }
@@ -1126,13 +942,6 @@ namespace sasktran2::successive_orders {
                 throw std::invalid_argument(
                     "vector successive-orders atmospheric block does not "
                     "match its point angular basis");
-            }
-            m_ragged_atmospheric_blocks =
-                m_ragged_atmospheric_blocks ||
-                basis->input_size() != m_basis->input_size() ||
-                basis->output_size() != m_basis->output_size();
-            if (basis->output_size() != m_basis->output_size()) {
-                m_point_bases_share_synthesis = false;
             }
         }
         m_atmospheric_coefficients.setZero();
@@ -1245,16 +1054,6 @@ namespace sasktran2::successive_orders {
 
     void ScatteringOperator<3>::prepare_workspace(
         ScatteringWorkspace<3>& workspace) const {
-        if (m_ragged_atmospheric_blocks) {
-            workspace.m_atmospheric_input.resize(0, 0);
-            workspace.m_auxiliary_input.resize(0, 0);
-            workspace.m_auxiliary_output.resize(0, 0);
-            workspace.m_atmospheric_output.resize(
-                m_point_bases_share_synthesis ? m_layout.atmospheric_blocks()
-                                              : 0,
-                m_point_bases_share_synthesis ? m_basis->output_size() : 0);
-            return;
-        }
         workspace.prepare(m_layout.atmospheric_blocks(),
                           m_basis->input_directions(),
                           m_basis->output_directions());
@@ -1272,70 +1071,6 @@ namespace sasktran2::successive_orders {
                                  ScatteringWorkspace<3>& workspace) const {
         validate_input_output(incoming.size(), outgoing.size());
         prepare_workspace(workspace);
-        if (m_ragged_atmospheric_blocks) {
-            workspace.m_ragged_output_result.resize(output_size());
-            if (m_point_bases_share_synthesis) {
-                const int active_modes =
-                    m_active_coefficients * m_active_coefficients;
-                for (auto& moments : workspace.m_angular.moments) {
-                    moments.resize(m_layout.atmospheric_blocks(), active_modes);
-                }
-                for (int point = 0; point < m_layout.atmospheric_blocks();
-                     ++point) {
-                    const Eigen::Map<const Eigen::MatrixXd> point_input(
-                        incoming.data() + m_layout.input_offsets()[point], 1,
-                        m_layout.input_block_size(point));
-                    m_point_bases[point]->analyze_active(
-                        point_input, m_active_coefficients,
-                        workspace.m_point_angular);
-                    for (int moment = 0; moment < 6; ++moment) {
-                        workspace.m_angular.moments[moment].row(point) =
-                            workspace.m_point_angular.moments[moment].row(0);
-                    }
-                }
-                m_basis->multiply_coefficients_active(
-                    m_atmospheric_coefficients, m_active_coefficients,
-                    workspace.m_angular);
-                m_basis->synthesize_active(workspace.m_atmospheric_output,
-                                           m_active_coefficients,
-                                           workspace.m_angular);
-                for (int point = 0; point < m_layout.atmospheric_blocks();
-                     ++point) {
-                    const Eigen::Map<const Eigen::MatrixXd> point_input(
-                        incoming.data() + m_layout.input_offsets()[point], 1,
-                        m_layout.input_block_size(point));
-                    m_point_bases[point]->add_frame_corrections_active(
-                        point_input,
-                        m_atmospheric_coefficients.middleRows(point, 1),
-                        m_active_coefficients,
-                        workspace.m_atmospheric_output.middleRows(point, 1));
-                }
-                unpack_atmospheric_blocks(m_layout,
-                                          workspace.m_atmospheric_output,
-                                          workspace.m_ragged_output_result);
-            } else {
-                for (int point = 0; point < m_layout.atmospheric_blocks();
-                     ++point) {
-                    const Eigen::Map<const Eigen::MatrixXd> point_input(
-                        incoming.data() + m_layout.input_offsets()[point], 1,
-                        m_layout.input_block_size(point));
-                    Eigen::Map<Eigen::MatrixXd> point_output(
-                        workspace.m_ragged_output_result.data() +
-                            m_layout.output_offsets()[point],
-                        1, m_layout.output_block_size(point));
-                    m_point_bases[point]->apply_active(
-                        point_input,
-                        m_atmospheric_coefficients.middleRows(point, 1),
-                        m_active_coefficients, point_output,
-                        workspace.m_point_angular);
-                }
-            }
-            apply_dense_blocks(m_layout, m_layout.atmospheric_blocks(),
-                               m_ground_value_offsets, m_ground_values,
-                               incoming, workspace.m_ragged_output_result);
-            outgoing = workspace.m_ragged_output_result;
-            return;
-        }
         if (m_layout.atmospheric_blocks() != 0) {
             pack_atmospheric_blocks(m_layout, incoming,
                                     workspace.m_atmospheric_input);
@@ -1399,28 +1134,6 @@ namespace sasktran2::successive_orders {
         ScatteringWorkspace<3>& workspace) const {
         validate_input_output(incoming.size(), outgoing.size());
         prepare_workspace(workspace);
-        if (m_ragged_atmospheric_blocks) {
-            workspace.m_ragged_input_result.resize(input_size());
-            for (int point = 0; point < m_layout.atmospheric_blocks();
-                 ++point) {
-                const Eigen::Map<const Eigen::MatrixXd> point_output(
-                    outgoing.data() + m_layout.output_offsets()[point], 1,
-                    m_layout.output_block_size(point));
-                Eigen::Map<Eigen::MatrixXd> point_input(
-                    workspace.m_ragged_input_result.data() +
-                        m_layout.input_offsets()[point],
-                    1, m_layout.input_block_size(point));
-                m_point_bases[point]->apply_transpose_active(
-                    point_output,
-                    m_atmospheric_coefficients.middleRows(point, 1),
-                    m_active_coefficients, point_input, workspace.m_angular);
-            }
-            apply_dense_blocks_transpose(
-                m_layout, m_layout.atmospheric_blocks(), m_ground_value_offsets,
-                m_ground_values, outgoing, workspace.m_ragged_input_result);
-            incoming = workspace.m_ragged_input_result;
-            return;
-        }
         if (m_layout.atmospheric_blocks() != 0) {
             pack_atmospheric_output_blocks(m_layout, outgoing,
                                            workspace.m_atmospheric_output);
@@ -1464,50 +1177,6 @@ namespace sasktran2::successive_orders {
         }
         validate_dense_tangent(m_ground_values, ground_value_tangent);
         prepare_workspace(workspace);
-        if (m_ragged_atmospheric_blocks) {
-            int active_coefficients = m_active_coefficients;
-            for (int degree = m_basis->num_coefficients() - 1;
-                 degree >= m_active_coefficients; --degree) {
-                if (!coefficient_tangent.middleCols(4 * degree, 4)
-                         .isZero(0.0)) {
-                    active_coefficients = degree + 1;
-                    break;
-                }
-            }
-            workspace.m_ragged_output_result.resize(output_size());
-            for (int point = 0; point < m_layout.atmospheric_blocks();
-                 ++point) {
-                const Eigen::Map<const Eigen::MatrixXd> point_tangent(
-                    incoming_tangent.data() + m_layout.input_offsets()[point],
-                    1, m_layout.input_block_size(point));
-                Eigen::Map<Eigen::MatrixXd> point_output(
-                    workspace.m_ragged_output_result.data() +
-                        m_layout.output_offsets()[point],
-                    1, m_layout.output_block_size(point));
-                m_point_bases[point]->apply_active(
-                    point_tangent,
-                    m_atmospheric_coefficients.middleRows(point, 1),
-                    m_active_coefficients, point_output, workspace.m_angular);
-                if (!coefficient_tangent.isZero(0.0)) {
-                    const Eigen::Map<const Eigen::MatrixXd> point_input(
-                        incoming.data() + m_layout.input_offsets()[point], 1,
-                        m_layout.input_block_size(point));
-                    workspace.m_auxiliary_output.resize(
-                        1, m_layout.output_block_size(point));
-                    m_point_bases[point]->apply_active(
-                        point_input, coefficient_tangent.middleRows(point, 1),
-                        active_coefficients, workspace.m_auxiliary_output,
-                        workspace.m_angular);
-                    point_output += workspace.m_auxiliary_output;
-                }
-            }
-            apply_dense_blocks_jvp(
-                m_layout, m_layout.atmospheric_blocks(), m_ground_value_offsets,
-                m_ground_values, ground_value_tangent, incoming,
-                incoming_tangent, workspace.m_ragged_output_result);
-            outgoing_tangent = workspace.m_ragged_output_result;
-            return;
-        }
         if (m_layout.atmospheric_blocks() != 0) {
             pack_atmospheric_blocks(m_layout, incoming_tangent,
                                     workspace.m_auxiliary_input);
@@ -1582,40 +1251,6 @@ namespace sasktran2::successive_orders {
             ground_value_gradient.size() != m_ground_values.size()) {
             throw std::invalid_argument(
                 "invalid vector successive-orders scattering VJP sizes");
-        }
-        if (m_ragged_atmospheric_blocks) {
-            prepare_workspace(workspace);
-            workspace.m_ragged_input_result.resize(input_size());
-            coefficient_gradient.setZero();
-            ground_value_gradient.setZero();
-            for (int point = 0; point < m_layout.atmospheric_blocks();
-                 ++point) {
-                const Eigen::Map<const Eigen::MatrixXd> point_input(
-                    incoming.data() + m_layout.input_offsets()[point], 1,
-                    m_layout.input_block_size(point));
-                const Eigen::Map<const Eigen::MatrixXd> point_cotangent(
-                    outgoing_cotangent.data() +
-                        m_layout.output_offsets()[point],
-                    1, m_layout.output_block_size(point));
-                Eigen::Map<Eigen::MatrixXd> point_result(
-                    workspace.m_ragged_input_result.data() +
-                        m_layout.input_offsets()[point],
-                    1, m_layout.input_block_size(point));
-                m_point_bases[point]->apply_transpose_active(
-                    point_cotangent,
-                    m_atmospheric_coefficients.middleRows(point, 1),
-                    m_active_coefficients, point_result, workspace.m_angular);
-                m_point_bases[point]->accumulate_coefficient_vjp(
-                    point_input, point_cotangent,
-                    coefficient_gradient.middleRows(point, 1),
-                    workspace.m_angular);
-            }
-            apply_dense_blocks_vjp(
-                m_layout, m_layout.atmospheric_blocks(), m_ground_value_offsets,
-                m_ground_values, incoming, outgoing_cotangent,
-                workspace.m_ragged_input_result, ground_value_gradient);
-            incoming_cotangent = workspace.m_ragged_input_result;
-            return;
         }
         incoming_cotangent.setZero();
         coefficient_gradient.setZero();
