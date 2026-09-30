@@ -42,6 +42,13 @@ namespace sasktran2::successive_orders {
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
             bool volume_changed = true);
 
+        /** Select the bounded spectral cache owned by this wavelength worker.
+         *
+         * Call before returning a cached primal or requesting native products.
+         * Simultaneous workers must evaluate distinct wavelengths.
+         */
+        void prepare_wavelength(int wavelength, int wavelength_thread);
+
         int size() const { return m_num_rays * NSTOKES; }
 
         /** Calculates the first-order incoming radiance. */
@@ -102,6 +109,7 @@ namespace sasktran2::successive_orders {
             sasktran2::solartransmission::SolarTransmissionExact, NSTOKES>;
         void validate_ready(int wavelength, int wavelength_thread) const;
         int ray_thread_index(int wavelength_thread) const;
+        int scalar_cache_index(int wavelength) const;
         const Eigen::VectorXd& ensure_solar_transmission(int wavelength,
                                                          int wavelength_thread);
         void ensure_endpoint_medium(int wavelength);
@@ -142,8 +150,8 @@ namespace sasktran2::successive_orders {
         };
 
         struct ScalarVolumeCache {
-            Eigen::VectorXd forcing;
-            Eigen::VectorXd transport_values;
+            // Retain only the exact layer sweep's transmission to the ground
+            // for reverse products; transport and forcing live in the worker.
             Eigen::VectorXd ground_prefix;
             bool active = false;
         };
@@ -338,6 +346,11 @@ namespace sasktran2::successive_orders {
         std::vector<ScalarLayerCache> m_scalar_layer_cache;
         std::vector<ScalarEndpointMediumCache> m_endpoint_medium_cache;
         std::vector<ScalarVolumeCache> m_scalar_volume_cache;
+        // Spectral values live in one reusable slot per wavelength worker.
+        // Each active wavelength installs its own mapping before use; stale
+        // mappings are deliberately left untouched by other workers.
+        std::vector<int> m_scalar_cache_wavelength;
+        std::vector<int> m_scalar_cache_index;
         mutable std::vector<ScalarVjpScratch> m_scalar_vjp_scratch;
     };
 

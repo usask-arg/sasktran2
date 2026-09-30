@@ -2031,6 +2031,7 @@ def test_surface_only_update_preserves_group_volume_state():
     geometry = orbital_geometry()
     viewing = limb_viewing(geometry, np.array([-0.1, 0.1]))
     config = sk.Config()
+    config.num_threads = 1
     config.single_scatter_source = sk.SingleScatterSource.Exact
     config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
     config.num_sza = 2
@@ -2041,16 +2042,20 @@ def test_surface_only_update_preserves_group_volume_state():
     config.successive_orders_relative_tolerance = 1.0e-11
     config.successive_orders_absolute_tolerance = 1.0e-13
 
+    wavelengths_nm = np.array([410.0, 530.0, 690.0])
     atmosphere = sk.Atmosphere(
         geometry,
         config,
-        wavelengths_nm=np.array([600.0]),
+        wavelengths_nm=wavelengths_nm,
         legendre_derivative=False,
     )
-    extinction = np.full((*geometry.shape, 1), 1.0e-5)
-    ssa = np.full_like(extinction, 0.9)
+    extinction = np.full((*geometry.shape, 3), 1.0e-5) * np.array([0.8, 1.1, 1.5])
+    ssa = np.full_like(extinction, 0.9) - np.array([0.0, 0.03, 0.07])
     legendre = np.zeros((atmosphere.storage.leg_coeff.shape[0], *extinction.shape))
     legendre[0] = 1.0
+    legendre[2] = np.linspace(0.15, 0.3, geometry.shape[0])[
+        :, np.newaxis, np.newaxis
+    ] + np.array([0.0, 0.05, 0.1])
     optics = sk.constituent.Manual(extinction, ssa, legendre)
     atmosphere["optics"] = optics
     surface = sk.constituent.LambertianSurface2D(
@@ -2065,7 +2070,60 @@ def test_surface_only_update_preserves_group_volume_state():
         sun_vectors_ecef=np.array([[0.0, 0.0, 1.0]]),
     )
 
+    def check_products_against_fresh(linearization):
+        # Every group processes three wavelengths on one worker. A surface
+        # update must refresh boundary physics without invalidating volume
+        # state, even after both derivative sweeps evict spectral caches.
+        tangent = linearization.tangent_template[["surface_albedo"]]
+        tangent.surface_albedo.values[:] = np.linspace(
+            -0.02, 0.03, tangent.surface_albedo.size
+        )
+        cotangent = xr.ones_like(linearization.value)
+        cotangent.values[:] = np.linspace(0.35, 1.1, cotangent.size).reshape(
+            cotangent.shape
+        )
+        gradient = linearization.vjp(cotangent, parameters=("surface_albedo",))
+        jvp = linearization.jvp(tangent)
+        xr.testing.assert_allclose(
+            linearization.vjp(cotangent, parameters=("surface_albedo",)),
+            gradient,
+            rtol=2.0e-12,
+            atol=2.0e-13,
+        )
+        xr.testing.assert_allclose(
+            linearization.jvp(tangent), jvp, rtol=2.0e-12, atol=2.0e-14
+        )
+        fresh_engine = sk.OrbitalPlaneEngine(
+            config,
+            geometry,
+            viewing,
+            time_group_duration_s=60,
+            sun_vectors_ecef=np.array([[0.0, 0.0, 1.0]]),
+        )
+        reference = fresh_engine.linearize(
+            atmosphere, prepare_parameters=("surface_albedo",)
+        )
+        xr.testing.assert_allclose(
+            linearization.value, reference.value, rtol=2.0e-11, atol=2.0e-13
+        )
+        xr.testing.assert_allclose(
+            gradient,
+            reference.vjp(cotangent, parameters=("surface_albedo",)),
+            rtol=2.0e-10,
+            atol=2.0e-13,
+        )
+        xr.testing.assert_allclose(
+            jvp, reference.jvp(tangent), rtol=2.0e-10, atol=2.0e-13
+        )
+        np.testing.assert_allclose(
+            float((jvp * cotangent).sum()),
+            float((tangent.surface_albedo * gradient.surface_albedo).sum()),
+            rtol=3.0e-8,
+            atol=3.0e-11,
+        )
+
     first = engine.linearize(atmosphere, prepare_parameters=("surface_albedo",))
+    check_products_against_fresh(first)
     first_diagnostics = engine.group_diagnostics
     assert all(item["volume_update_count"] == 1 for item in first_diagnostics)
     assert all(item["surface_only_update_count"] == 0 for item in first_diagnostics)
@@ -2080,6 +2138,7 @@ def test_surface_only_update_preserves_group_volume_state():
         item["surface_only_update_count"] + 1 for item in first_diagnostics
     ]
     assert not np.array_equal(first.value.values, second.value.values)
+    check_products_against_fresh(second)
 
     optics.extinction[...] *= 1.2
     third = engine.linearize(atmosphere, prepare_parameters=("surface_albedo",))
@@ -2091,18 +2150,7 @@ def test_surface_only_update_preserves_group_volume_state():
         item["surface_only_update_count"] for item in second_diagnostics
     ]
     assert not np.array_equal(second.value.values, third.value.values)
-
-    fresh_engine = sk.OrbitalPlaneEngine(
-        config,
-        geometry,
-        viewing,
-        time_group_duration_s=60,
-        sun_vectors_ecef=np.array([[0.0, 0.0, 1.0]]),
-    )
-    fresh_third = fresh_engine.linearize(
-        atmosphere, prepare_parameters=("surface_albedo",)
-    )
-    xr.testing.assert_allclose(third.value, fresh_third.value, rtol=2.0e-11)
+    check_products_against_fresh(third)
 
 
 def test_parallel_group_construction_and_scheduler_match_serial_products_repeatedly():

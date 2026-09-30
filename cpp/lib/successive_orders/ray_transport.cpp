@@ -12,7 +12,7 @@ namespace sasktran2::successive_orders {
                            int wavelength) {
             double result = 0.0;
             for (const auto& weight : weights) {
-                result += weight.weight * values(weight.index, wavelength);
+                result += weight.weight() * values(weight.index, wavelength);
             }
             return result;
         }
@@ -23,7 +23,7 @@ namespace sasktran2::successive_orders {
             double result = 0.0;
             for (const auto& weight : weights) {
                 result +=
-                    weight.weight * tangent(tangent_offset + weight.index);
+                    weight.weight() * tangent(tangent_offset + weight.index);
             }
             return result;
         }
@@ -125,6 +125,10 @@ namespace sasktran2::successive_orders {
         }
         for (std::size_t row = 0; row < rays.size(); ++row) {
             const auto& ray = rays[row];
+            if (!ray.transport_compiled) {
+                throw std::invalid_argument(
+                    "Successive-orders source row has not been compiled");
+            }
             const bool owns_optical_depth =
                 !ray.optical_depth_indices.empty() ||
                 !ray.optical_depth_weights.empty();
@@ -147,10 +151,8 @@ namespace sasktran2::successive_orders {
             }
             const auto validate_weights = [&](const auto& weights) {
                 for (const auto& weight : weights) {
-                    if (weight.row_inner_index >=
-                            static_cast<std::uint32_t>(row_nnz) ||
-                        column_indices[row_start + weight.row_inner_index] !=
-                            weight.source_index) {
+                    if (weight.row_inner_index() >=
+                        static_cast<std::uint32_t>(row_nnz)) {
                         throw std::invalid_argument(
                             "successive-orders source interpolation does not "
                             "match its CSR row");
@@ -219,8 +221,8 @@ namespace sasktran2::successive_orders {
                 const double factor =
                     transmission_before * albedo * source_fraction;
                 for (const auto& source : source_weights) {
-                    values(offsets[row] + source.row_inner_index) +=
-                        source.weight * factor;
+                    values(offsets[row] + source.row_inner_index()) +=
+                        source.weight() * factor;
                 }
                 transmission_before *= layer_transmission;
             }
@@ -229,8 +231,8 @@ namespace sasktran2::successive_orders {
                 const double ground_albedo = ground_transport_albedo(
                     atmosphere, wavelength, interpolation);
                 for (const auto& source : interpolation.ground()) {
-                    values(offsets[row] + source.row_inner_index) +=
-                        source.weight * transmission_before * ground_albedo;
+                    values(offsets[row] + source.row_inner_index()) +=
+                        source.weight() * transmission_before * ground_albedo;
                 }
             }
         }
@@ -283,8 +285,8 @@ namespace sasktran2::successive_orders {
                      albedo * layer_transmission * layer_tangent -
                      albedo * source_fraction * cumulative_tangent);
                 for (const auto& source : source_weights) {
-                    value_tangent(offsets[row] + source.row_inner_index) +=
-                        source.weight * factor_tangent;
+                    value_tangent(offsets[row] + source.row_inner_index()) +=
+                        source.weight() * factor_tangent;
                 }
                 transmission_before *= layer_transmission;
                 cumulative_tangent += layer_tangent;
@@ -300,8 +302,8 @@ namespace sasktran2::successive_orders {
                     transmission_before * (ground_albedo_tangent -
                                            ground_albedo * cumulative_tangent);
                 for (const auto& source : interpolation.ground()) {
-                    value_tangent(offsets[row] + source.row_inner_index) +=
-                        source.weight * factor_tangent;
+                    value_tangent(offsets[row] + source.row_inner_index()) +=
+                        source.weight() * factor_tangent;
                 }
             }
         }
@@ -351,8 +353,8 @@ namespace sasktran2::successive_orders {
                 double factor_cotangent = 0.0;
                 for (const auto& source : source_weights) {
                     factor_cotangent +=
-                        source.weight *
-                        value_gradient(offsets[row] + source.row_inner_index);
+                        source.weight() *
+                        value_gradient(offsets[row] + source.row_inner_index());
                 }
                 workspace.factor_cotangent(layer_index) = factor_cotangent;
                 transmission_before *= layer_transmission;
@@ -365,8 +367,8 @@ namespace sasktran2::successive_orders {
                 double ground_cotangent = 0.0;
                 for (const auto& source : interpolation.ground()) {
                     ground_cotangent +=
-                        source.weight *
-                        value_gradient(offsets[row] + source.row_inner_index);
+                        source.weight() *
+                        value_gradient(offsets[row] + source.row_inner_index());
                 }
                 cumulative_cotangent =
                     -transmission_before * ground_albedo * ground_cotangent;
@@ -410,7 +412,7 @@ namespace sasktran2::successive_orders {
                 for (const auto& weight : atmosphere_weights) {
                     native_gradient(atmosphere.ssa_deriv_start_index() +
                                     weight.index) +=
-                        weight.weight * albedo_cotangent;
+                        weight.weight() * albedo_cotangent;
                 }
 
                 cumulative_cotangent -= factor_cotangent * transmission_before *

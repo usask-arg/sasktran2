@@ -26,21 +26,27 @@ namespace {
             interpolation[0].atmosphere_weights = {
                 {0, 0.25}, {1, 0.75}, {1, 0.4}, {2, 0.6}};
             interpolation[0].source_weights = {
-                {0, 0.25, 0}, {2, 0.75, 2}, {1, 0.6, 1}, {2, 0.4, 2}};
+                {0, 0.25}, {2, 0.75}, {1, 0.6}, {2, 0.4}};
             interpolation[0].optical_depth_indices = {0, 1, 1, 2};
             interpolation[0].optical_depth_weights = {0.7, 0.2, 0.4, 1.1};
-            interpolation[0].ground_weights = {{0, 0.2, 0}, {3, 0.8, 3}};
+            interpolation[0].ground_weights = {{0, 0.2}, {3, 0.8}};
             interpolation[0].ground_hit = true;
             interpolation[0].transport_value_offset = 0;
             interpolation[0].transport_row_nnz = 4;
 
             interpolation[1].layers = {{0, 2, 0, 2, 0, 2}};
             interpolation[1].atmosphere_weights = {{0, 0.5}, {2, 0.5}};
-            interpolation[1].source_weights = {{1, 0.7, 0}, {3, 0.3, 1}};
+            interpolation[1].source_weights = {{1, 0.7}, {3, 0.3}};
             interpolation[1].optical_depth_indices = {0, 2};
             interpolation[1].optical_depth_weights = {0.3, 0.5};
             interpolation[1].transport_value_offset = 4;
             interpolation[1].transport_row_nnz = 2;
+
+            std::vector<int> columns;
+            for (auto& ray : interpolation) {
+                sasktran2::successive_orders::compile_transport_row(ray,
+                                                                    columns);
+            }
         }
 
         RayTransportFixture(const RayTransportFixture&) = delete;

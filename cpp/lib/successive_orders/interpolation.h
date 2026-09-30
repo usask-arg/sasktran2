@@ -2,8 +2,11 @@
 
 #include <sasktran2/raytracing.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -65,29 +68,74 @@ namespace sasktran2::successive_orders {
         std::size_t m_size = 0;
     };
 
-    /** One geometry-only interpolation coefficient. */
+    /** One geometry-only interpolation coefficient.
+     *
+     * Store the double's complete representation in byte storage so the
+     * record has no alignment padding. memcpy gives aligned double values to
+     * callers and preserves their bits on platforms requiring aligned loads.
+     */
     struct InterpolationWeight {
         int index = 0;
-        double weight = 0.0;
+
+        InterpolationWeight() { set_weight(0.0); }
+        InterpolationWeight(int grid_index, double value) : index(grid_index) {
+            set_weight(value);
+        }
+
+        double weight() const {
+            double value;
+            std::memcpy(&value, m_weight.data(), sizeof(value));
+            return value;
+        }
+        void set_weight(double value) {
+            std::memcpy(m_weight.data(), &value, sizeof(value));
+        }
+        void add_weight(double value) { set_weight(weight() + value); }
+
+      private:
+        std::array<std::byte, sizeof(double)> m_weight;
     };
+
+    static_assert(sizeof(double) == 8,
+                  "Successive-orders interpolation requires 64-bit doubles");
+    static_assert(sizeof(InterpolationWeight) == 12,
+                  "Successive-orders interpolation weights must stay compact");
 
     /** Interpolation from the global outgoing-source vector.
      *
-     * `row_inner_index` is the position of `source_index` in the owning ray's
-     * sorted `transport_columns` array. It lets the atmosphere-dependent
-     * transport assembler accumulate directly into an existing CSR row.
+     * The index names a global outgoing source during construction. Once the
+     * owning ray's transport row is compiled, it names that source's local
+     * CSR slot instead. Global indices are then read from the shared columns.
+     * No second index or floating-point alignment padding is retained.
      */
     struct SourceInterpolationWeight {
-        double weight = 0.0;
-        int source_index = 0;
-        std::uint32_t row_inner_index = 0;
-
         SourceInterpolationWeight() = default;
-        SourceInterpolationWeight(int index, double interpolation_weight,
-                                  std::uint32_t inner_index = 0)
-            : weight(interpolation_weight), source_index(index),
-              row_inner_index(inner_index) {}
+        SourceInterpolationWeight(int index, double interpolation_weight)
+            : m_entry(index, interpolation_weight) {}
+
+        /** Valid only before the owning ray's transport row is compiled. */
+        int source_index() const { return m_entry.index; }
+        /** Valid only after the owning ray's transport row is compiled. */
+        std::uint32_t row_inner_index() const {
+            return static_cast<std::uint32_t>(m_entry.index);
+        }
+        void set_row_inner_index(std::uint32_t slot) {
+            if (slot >
+                static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
+                throw std::length_error(
+                    "Successive-orders source slot exceeds its index range");
+            }
+            m_entry.index = static_cast<int>(slot);
+        }
+        double weight() const { return m_entry.weight(); }
+        void add_weight(double value) { m_entry.add_weight(value); }
+
+      private:
+        InterpolationWeight m_entry;
     };
+
+    static_assert(sizeof(SourceInterpolationWeight) == 12,
+                  "Successive-orders source weights must stay compact");
 
     /** Geometry metadata required to integrate one traced layer. */
     struct LayerInterpolation {
@@ -114,6 +162,7 @@ namespace sasktran2::successive_orders {
         std::vector<SourceInterpolationWeight> ground_weights;
         std::vector<std::pair<int, double>> ground_horizontal_weights;
         bool ground_hit = false;
+        bool transport_compiled = false;
 
         /** Offset of this row in SourceGeometry1D::transport_column_indices. */
         std::size_t transport_value_offset = 0;
@@ -177,8 +226,20 @@ namespace sasktran2::successive_orders {
     void adopt_optical_depth_storage(sasktran2::raytracing::TracedRay& ray,
                                      RayInterpolation& interpolation);
 
-    /** Builds one sorted unique CSR row and assigns local slots to its source
-     * interpolation entries. */
+    /** Remove construction capacity from immutable interpolation buffers.
+     *
+     * Call only before views of these buffers escape geometry construction.
+     * Returns the number of bytes released without changing any coefficients,
+     * stencil order, or layer offsets.
+     */
+    std::size_t compact_ray_interpolation(RayInterpolation& interpolation);
+
+    /** Collect global columns without changing construction-time indices. */
+    void collect_transport_row(const RayInterpolation& interpolation,
+                               std::vector<int>& columns);
+
+    /** Builds one sorted unique CSR row and replaces global indices with
+     * local slots. This finalization is performed once per ray. */
     void compile_transport_row(RayInterpolation& interpolation,
                                std::vector<int>& columns);
 

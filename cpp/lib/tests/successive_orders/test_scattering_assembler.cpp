@@ -368,7 +368,7 @@ namespace {
             std::vector<std::pair<int, double>> weights;
             weights.reserve(point.atmosphere_weights().size());
             for (const auto& weight : point.atmosphere_weights()) {
-                weights.emplace_back(weight.index, weight.weight);
+                weights.emplace_back(weight.index, weight.weight());
             }
             Eigen::MatrixXd result(3 * point.num_outgoing(),
                                    3 * point.num_incoming());
@@ -415,8 +415,8 @@ TEST_CASE("Scalar scattering assembler maps atmosphere points and legacy "
                  fixture.source_geometry.source_point(point)
                      .atmosphere_weights()) {
                 expected +=
-                    weight.weight * fixture.atmosphere.storage().leg_coeff(
-                                        degree, weight.index, wavelength);
+                    weight.weight() * fixture.atmosphere.storage().leg_coeff(
+                                          degree, weight.index, wavelength);
             }
             REQUIRE(scattering.atmospheric_coefficients()(point, degree) ==
                     Catch::Approx(expected).epsilon(2.0e-14));
@@ -626,7 +626,7 @@ TEST_CASE("Scalar scattering assembler completes delta-M scaling",
                      .atmosphere_weights()) {
                 const double f = storage.f(weight.index, wavelength);
                 expected +=
-                    weight.weight *
+                    weight.weight() *
                     (storage.leg_coeff(degree, weight.index, wavelength) -
                      (2.0 * degree + 1.0) * f / (1.0 - f));
             }
@@ -782,7 +782,7 @@ TEST_CASE("Reduced-horizon vector scattering uses each point's angular grid",
             std::make_unique<CopiedUnitSphere>(point.outgoing_sphere()));
         std::vector<std::pair<int, double>> weights;
         for (const auto& weight : point.atmosphere_weights()) {
-            weights.emplace_back(weight.index, weight.weight);
+            weights.emplace_back(weight.index, weight.weight());
         }
         Eigen::MatrixXd expected(3 * point.num_outgoing(),
                                  3 * point.num_incoming());
@@ -896,7 +896,7 @@ TEST_CASE("Vector scattering assembler completes delta-M scaling",
                     subtract_delta_peak ? (2.0 * degree + 1.0) * f / (1.0 - f)
                                         : 0.0;
                 expected +=
-                    weight.weight *
+                    weight.weight() *
                     (storage.leg_coeff(coefficient, weight.index, wavelength) -
                      correction);
             }

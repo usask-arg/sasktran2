@@ -98,6 +98,7 @@ namespace {
         REQUIRE(row_offsets.back() == static_cast<int>(column_indices.size()));
         for (std::size_t row = 0; row < rays.size(); ++row) {
             const auto& ray = rays[row];
+            REQUIRE(ray.transport_compiled);
             REQUIRE((ray.traced_ray != nullptr || ray.layers.empty() ||
                      !ray.optical_depth_weights.empty()));
             REQUIRE(ray.transport_value_offset ==
@@ -119,21 +120,22 @@ namespace {
                 }
                 const auto source = ray.source_for_layer(layer);
                 for (const auto& weight : source) {
-                    REQUIRE(weight.source_index >= 0);
-                    REQUIRE(weight.source_index < num_source_columns);
-                    REQUIRE(row_offsets[row] + weight.row_inner_index <
+                    REQUIRE(row_offsets[row] + weight.row_inner_index() <
                             row_offsets[row + 1]);
-                    REQUIRE(column_indices[row_offsets[row] +
-                                           weight.row_inner_index] ==
-                            weight.source_index);
+                    const int source_index =
+                        column_indices[row_offsets[row] +
+                                       weight.row_inner_index()];
+                    REQUIRE(source_index >= 0);
+                    REQUIRE(source_index < num_source_columns);
                 }
             }
             for (const auto& weight : ray.ground()) {
-                REQUIRE(weight.source_index >= 0);
-                REQUIRE(weight.source_index < num_source_columns);
-                REQUIRE(
-                    column_indices[row_offsets[row] + weight.row_inner_index] ==
-                    weight.source_index);
+                REQUIRE(row_offsets[row] + weight.row_inner_index() <
+                        row_offsets[row + 1]);
+                const int source_index =
+                    column_indices[row_offsets[row] + weight.row_inner_index()];
+                REQUIRE(source_index >= 0);
+                REQUIRE(source_index < num_source_columns);
             }
         }
     }
@@ -143,25 +145,26 @@ namespace {
         std::size_t ray_index, const Eigen::Vector3d& expected_direction) {
         const auto weights =
             geometry.los_interpolation()[ray_index].source_for_layer(0);
+        const auto columns = geometry.los_transport_columns_for_ray(ray_index);
         REQUIRE(!weights.empty());
 
         double weight_sum = 0.0;
         for (const auto& weight : weights) {
-            REQUIRE(std::isfinite(weight.weight));
-            weight_sum += weight.weight;
+            REQUIRE(std::isfinite(weight.weight()));
+            weight_sum += weight.weight();
+            const int source_index = columns[weight.row_inner_index()];
 
             const sasktran2::successive_orders::SourcePoint* owner = nullptr;
             for (const auto& point : geometry.source_points()) {
-                if (weight.source_index >= point.outgoing_offset() &&
-                    weight.source_index <
+                if (source_index >= point.outgoing_offset() &&
+                    source_index <
                         point.outgoing_offset() + point.num_outgoing()) {
                     owner = &point;
                     break;
                 }
             }
             REQUIRE(owner != nullptr);
-            const int local_direction =
-                weight.source_index - owner->outgoing_offset();
+            const int local_direction = source_index - owner->outgoing_offset();
             const Eigen::Vector3d compiled_direction =
                 owner->outgoing_sphere().get_quad_position(local_direction);
             REQUIRE(compiled_direction.dot(expected_direction) ==
@@ -560,7 +563,7 @@ TEST_CASE("Successive-orders 2D geometry uses an independent horizontal "
 
             std::vector<double> atmosphere_weights(geometry.size(), 0.0);
             for (const auto& weight : point.atmosphere_weights()) {
-                atmosphere_weights[weight.index] += weight.weight;
+                atmosphere_weights[weight.index] += weight.weight();
             }
             REQUIRE(std::accumulate(atmosphere_weights.begin(),
                                     atmosphere_weights.end(),
@@ -574,7 +577,7 @@ TEST_CASE("Successive-orders 2D geometry uses an independent horizontal "
     std::vector<double> midpoint_weights(geometry.size(), 0.0);
     for (const auto& weight :
          source_geometry.source_point(2).atmosphere_weights()) {
-        midpoint_weights[weight.index] += weight.weight;
+        midpoint_weights[weight.index] += weight.weight();
     }
     REQUIRE(midpoint_weights[geometry.location_index(0, 0)] ==
             Catch::Approx(0.25).margin(1.0e-13));
@@ -820,22 +823,23 @@ TEST_CASE("Successive-orders default source grid preserves nonuniform midpoint "
     REQUIRE(source_geometry.source_altitudes_m() ==
             std::vector<double>{500.0, 2000.0, 4500.0});
     std::vector<double> location_weights(3, 0.0);
+    const auto columns = source_geometry.los_transport_columns_for_ray(0);
     for (const auto& weight :
          source_geometry.los_interpolation().front().source_for_layer(0)) {
+        const int source_index = columns[weight.row_inner_index()];
         int owner = -1;
         for (int point_index = 0;
              point_index < source_geometry.num_interior_points();
              ++point_index) {
             const auto& point = source_geometry.source_point(point_index);
-            if (weight.source_index >= point.outgoing_offset() &&
-                weight.source_index <
-                    point.outgoing_offset() + point.num_outgoing()) {
+            if (source_index >= point.outgoing_offset() &&
+                source_index < point.outgoing_offset() + point.num_outgoing()) {
                 owner = point_index;
                 break;
             }
         }
         REQUIRE(owner >= 0);
-        location_weights[owner] += weight.weight;
+        location_weights[owner] += weight.weight();
     }
 
     REQUIRE(location_weights[0] == Catch::Approx(0.0).margin(1.0e-14));

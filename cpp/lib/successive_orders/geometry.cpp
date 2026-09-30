@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <limits>
 #include <stdexcept>
@@ -590,7 +592,7 @@ namespace sasktran2::successive_orders {
             std::size_t write = 0;
             for (const auto& value : result) {
                 if (write != 0 && result[write - 1].index == value.index) {
-                    result[write - 1].weight += value.weight;
+                    result[write - 1].add_weight(value.weight());
                 } else {
                     result[write++] = value;
                 }
@@ -598,7 +600,7 @@ namespace sasktran2::successive_orders {
             result.resize(write);
             result.erase(std::remove_if(result.begin(), result.end(),
                                         [](const auto& value) {
-                                            return value.weight == 0.0;
+                                            return value.weight() == 0.0;
                                         }),
                          result.end());
             return result;
@@ -993,7 +995,7 @@ namespace sasktran2::successive_orders {
         for (std::size_t ray_index = 0; ray_index < interpolation.size();
              ++ray_index) {
             auto& ray = interpolation[ray_index];
-            compile_transport_row(ray, columns);
+            collect_transport_row(ray, columns);
             ray.transport_value_offset = num_columns;
             num_columns += columns.size();
             if (num_columns >
@@ -1007,10 +1009,37 @@ namespace sasktran2::successive_orders {
 
         column_indices.clear();
         column_indices.reserve(num_columns);
+        std::size_t released_capacity_bytes = 0;
+        std::size_t interpolation_weight_count = 0;
+        std::size_t source_weight_count = 0;
         for (auto& ray : interpolation) {
             compile_transport_row(ray, columns);
             column_indices.insert(column_indices.end(), columns.begin(),
                                   columns.end());
+            // A multi-column layer can double a ray's source-weight capacity
+            // even when most other layers use the smaller boundary stencil.
+            // The completed topology is immutable, so retain only its data.
+            released_capacity_bytes += compact_ray_interpolation(ray);
+            interpolation_weight_count += ray.atmosphere_weights.size();
+            source_weight_count +=
+                ray.source_weights.size() + ray.ground_weights.size();
+        }
+        if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
+            std::fprintf(
+                stderr,
+                "SASKTRAN2_MEMORY {\"kind\":\"interpolation_compaction\","
+                "\"rays\":%zu,\"released_capacity_bytes\":%zu,"
+                "\"interpolation_weight_count\":%zu,"
+                "\"interpolation_weight_bytes\":%zu,"
+                "\"alignment_padding_bytes_saved\":%zu,"
+                "\"source_weight_count\":%zu,\"source_weight_bytes\":%zu,"
+                "\"duplicate_index_bytes_saved\":%zu}\n",
+                interpolation.size(), released_capacity_bytes,
+                interpolation_weight_count,
+                interpolation_weight_count * sizeof(InterpolationWeight),
+                interpolation_weight_count * 4, source_weight_count,
+                source_weight_count * sizeof(SourceInterpolationWeight),
+                source_weight_count * 4);
         }
     }
 
@@ -1020,10 +1049,20 @@ namespace sasktran2::successive_orders {
             throw std::logic_error(
                 "Successive-orders incoming geometry is inconsistent");
         }
+        std::size_t released_capacity_bytes = 0;
         for (std::size_t ray = 0; ray < m_incoming_viewing.traced_rays.size();
              ++ray) {
             adopt_optical_depth_storage(m_incoming_viewing.traced_rays[ray],
                                         m_incoming_interpolation[ray]);
+            released_capacity_bytes +=
+                compact_ray_interpolation(m_incoming_interpolation[ray]);
+        }
+        if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
+            std::fprintf(stderr,
+                         "SASKTRAN2_MEMORY {\"kind\":\"od_compaction\","
+                         "\"rays\":%zu,\"released_capacity_bytes\":%zu}\n",
+                         m_incoming_interpolation.size(),
+                         released_capacity_bytes);
         }
         m_incoming_viewing.traced_rays.clear();
         m_incoming_viewing.traced_rays.shrink_to_fit();

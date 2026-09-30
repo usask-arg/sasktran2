@@ -42,6 +42,28 @@ The explicit {py:attr}`sasktran2.Config.successive_orders_altitude_grid_m`
 option decouples the source grid from the atmosphere altitude grid. When it is
 not set, the source uses the midpoints of the atmosphere layers.
 
+## Memory Use
+
+Scalar calculations keep transport values and solver workspace per wavelength
+worker. The compact scalar first-order caches also use one reusable slot per
+worker, so their storage scales with active wavelength concurrency. Geometry
+and transport topology are shared across wavelengths. Derivative-only buffers
+are allocated when needed. Completed geometry arrays release unused capacity,
+and compact interpolation weight records omit alignment padding while
+preserving all 64 bits of each double.
+
+Each wavelength retains its forward diffuse solution. Native JVP/VJP products
+reuse that solution, and tolerance-controlled solves can use it as a warm start
+after atmosphere updates. Fixed-iteration solves continue to start from zero
+after updates.
+
+Reusing a worker for another wavelength recomputes the wavelength-dependent
+transport and first-order quantities. This trades repeated assembly for lower
+resident memory while preserving the angular and spatial grids and each
+wavelength's physical values. Surface-only updates also recompute volume
+transport and first-order forcing instead of retaining duplicate volume
+buffers.
+
 ## Structured 2D Geometry
 
 The successive-orders source supports horizontally varying atmospheres defined

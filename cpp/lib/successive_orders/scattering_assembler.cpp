@@ -361,7 +361,7 @@ namespace sasktran2::successive_orders {
                         storage.leg_coeff(degree, weight.index, wavelength) -
                         (2.0 * degree + 1.0) * delta_m_scale;
                     coefficients(point_index, degree) +=
-                        weight.weight * coefficient;
+                        weight.weight() * coefficient;
                 }
             }
         }
@@ -416,7 +416,7 @@ namespace sasktran2::successive_orders {
                                                 wavelength, group) -
                             (2.0 * degree + 1.0) * delta_m_scale;
                         atmospheric_coefficient_tangent(point_index, degree) +=
-                            weight.weight * direction * coefficient_tangent;
+                            weight.weight() * direction * coefficient_tangent;
                     }
                 }
             }
@@ -502,7 +502,7 @@ namespace sasktran2::successive_orders {
                             (2.0 * degree + 1.0) * delta_m_scale;
                         value += atmospheric_coefficient_gradient(point_index,
                                                                   degree) *
-                                 weight.weight * coefficient_derivative;
+                                 weight.weight() * coefficient_derivative;
                     }
                     native_gradient(atmosphere.scat_deriv_start_index() +
                                     group * locations + weight.index) += value;
@@ -767,7 +767,7 @@ namespace sasktran2::successive_orders {
                             ? (2.0 * degree + 1.0) * delta_m_scale
                             : 0.0;
                     coefficients(point_index, coefficient) +=
-                        weight.weight *
+                        weight.weight() *
                         (storage.leg_coeff(coefficient, weight.index,
                                            wavelength) -
                          delta_m_correction);
@@ -826,7 +826,7 @@ namespace sasktran2::successive_orders {
                                 : 0.0;
                         atmospheric_coefficient_tangent(point_index,
                                                         coefficient) +=
-                            weight.weight * direction *
+                            weight.weight() * direction *
                             (storage.d_leg_coeff(coefficient, weight.index,
                                                  wavelength, group) -
                              delta_m_correction);
@@ -915,7 +915,7 @@ namespace sasktran2::successive_orders {
                                 : 0.0;
                         value += atmospheric_coefficient_gradient(point_index,
                                                                   coefficient) *
-                                 weight.weight *
+                                 weight.weight() *
                                  (storage.d_leg_coeff(coefficient, weight.index,
                                                       wavelength, group) -
                                   delta_m_correction);

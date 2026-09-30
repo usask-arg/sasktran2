@@ -9,6 +9,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 
 namespace sasktran2::successive_orders {
     namespace {
@@ -41,7 +42,7 @@ namespace sasktran2::successive_orders {
             std::size_t write = 0;
             for (const auto& weight : output) {
                 if (write != 0 && output[write - 1].index == weight.index) {
-                    output[write - 1].weight += weight.weight;
+                    output[write - 1].add_weight(weight.weight());
                 } else {
                     output[write++] = weight;
                 }
@@ -49,7 +50,7 @@ namespace sasktran2::successive_orders {
             output.resize(write);
             output.erase(std::remove_if(output.begin(), output.end(),
                                         [](const auto& weight) {
-                                            return weight.weight == 0.0;
+                                            return weight.weight() == 0.0;
                                         }),
                          output.end());
         }
@@ -57,21 +58,23 @@ namespace sasktran2::successive_orders {
         void sort_and_combine(std::vector<SourceInterpolationWeight>& values) {
             std::stable_sort(values.begin(), values.end(),
                              [](const auto& left, const auto& right) {
-                                 return left.source_index < right.source_index;
+                                 return left.source_index() <
+                                        right.source_index();
                              });
 
             std::size_t write = 0;
             for (const auto& value : values) {
-                if (value.source_index < 0 || !std::isfinite(value.weight)) {
+                if (value.source_index() < 0 ||
+                    !std::isfinite(value.weight())) {
                     throw std::runtime_error(
                         "Invalid successive-orders source interpolation");
                 }
-                if (value.weight == 0.0) {
+                if (value.weight() == 0.0) {
                     continue;
                 }
                 if (write != 0 &&
-                    values[write - 1].source_index == value.source_index) {
-                    values[write - 1].weight += value.weight;
+                    values[write - 1].source_index() == value.source_index()) {
+                    values[write - 1].add_weight(value.weight());
                 } else {
                     values[write++] = value;
                 }
@@ -79,7 +82,7 @@ namespace sasktran2::successive_orders {
             values.resize(write);
             values.erase(std::remove_if(values.begin(), values.end(),
                                         [](const auto& value) {
-                                            return value.weight == 0.0;
+                                            return value.weight() == 0.0;
                                         }),
                          values.end());
         }
@@ -221,51 +224,63 @@ namespace sasktran2::successive_orders {
                     }
                     result.push_back(
                         {point.outgoing_offset() + direction_weight.first,
-                         location_weight.second * direction_weight.second, 0});
+                         location_weight.second * direction_weight.second});
                 }
             }
             sort_and_combine(result);
         }
 
-        void compile_column_map(RayInterpolation& result,
+        void collect_column_map(const RayInterpolation& result,
                                 std::vector<int>& columns) {
+            if (result.transport_compiled) {
+                throw std::logic_error(
+                    "Successive-orders source indices are already compiled");
+            }
             const std::size_t num_weights =
                 result.source_weights.size() + result.ground_weights.size();
             columns.clear();
             columns.reserve(num_weights);
             for (const auto& weight : result.source_weights) {
-                columns.push_back(weight.source_index);
+                columns.push_back(weight.source_index());
             }
             for (const auto& weight : result.ground_weights) {
-                columns.push_back(weight.source_index);
+                columns.push_back(weight.source_index());
             }
             std::sort(columns.begin(), columns.end());
             columns.erase(std::unique(columns.begin(), columns.end()),
                           columns.end());
 
-            if (columns.size() > std::numeric_limits<std::uint32_t>::max()) {
+            if (columns.size() >
+                    static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
+                (!columns.empty() && columns.front() < 0)) {
                 throw std::length_error(
                     "Successive-orders transport row exceeds its compact "
                     "index range");
             }
+        }
+
+        void compile_column_map(RayInterpolation& result,
+                                std::vector<int>& columns) {
+            collect_column_map(result, columns);
             const auto assign_inner_index = [&](auto& weights) {
                 for (auto& weight : weights) {
                     const auto iterator = std::lower_bound(
-                        columns.begin(), columns.end(), weight.source_index);
+                        columns.begin(), columns.end(), weight.source_index());
                     if (iterator == columns.end() ||
-                        *iterator != weight.source_index) {
+                        *iterator != weight.source_index()) {
                         throw std::logic_error(
                             "Successive-orders transport column map is "
                             "inconsistent");
                     }
-                    weight.row_inner_index =
-                        static_cast<std::uint32_t>(iterator - columns.begin());
+                    weight.set_row_inner_index(
+                        static_cast<std::uint32_t>(iterator - columns.begin()));
                 }
             };
             assign_inner_index(result.source_weights);
             assign_inner_index(result.ground_weights);
             result.transport_row_nnz =
                 checked_u32(columns.size(), "Transport row size");
+            result.transport_compiled = true;
         }
 
         const Eigen::Vector3d&
@@ -369,6 +384,32 @@ namespace sasktran2::successive_orders {
                 "Successive-orders OD stencil arrays have different sizes");
         }
         interpolation.traced_ray = nullptr;
+    }
+
+    std::size_t compact_ray_interpolation(RayInterpolation& interpolation) {
+        std::size_t released = 0;
+        const auto compact = [&](auto& values) {
+            const auto capacity = values.capacity();
+            if (capacity > values.size()) {
+                values.shrink_to_fit();
+                using Value =
+                    typename std::decay_t<decltype(values)>::value_type;
+                released += (capacity - values.capacity()) * sizeof(Value);
+            }
+        };
+        compact(interpolation.layers);
+        compact(interpolation.atmosphere_weights);
+        compact(interpolation.source_weights);
+        compact(interpolation.optical_depth_indices);
+        compact(interpolation.optical_depth_weights);
+        compact(interpolation.ground_weights);
+        compact(interpolation.ground_horizontal_weights);
+        return released;
+    }
+
+    void collect_transport_row(const RayInterpolation& interpolation,
+                               std::vector<int>& columns) {
+        collect_column_map(interpolation, columns);
     }
 
     void compile_transport_row(RayInterpolation& interpolation,
