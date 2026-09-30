@@ -52,17 +52,40 @@ are allocated when needed. Completed geometry arrays release unused capacity,
 and compact interpolation weight records omit alignment padding while
 preserving all 64 bits of each double.
 
-Each wavelength retains its forward diffuse solution. Native JVP/VJP products
-reuse that solution, and tolerance-controlled solves can use it as a warm start
+Each wavelength retains its forward diffuse solution and compact scalar direct
+forcing. Native JVP/VJP products reuse these values, and tolerance-controlled
+solves can use the diffuse solution as a warm start
 after atmosphere updates. Fixed-iteration solves continue to start from zero
 after updates.
 
 Reusing a worker for another wavelength recomputes the wavelength-dependent
-transport and first-order quantities. This trades repeated assembly for lower
+transport and first-order derivative quantities. Forcing is reused only while
+the atmosphere revision and geometry remain current. This trades repeated
+assembly for lower
 resident memory while preserving the angular and spatial grids and each
 wavelength's physical values. Surface-only updates also recompute volume
 transport and first-order forcing instead of retaining duplicate volume
 buffers.
+
+Finalized source interpolation uses byte or 16-bit CSR slots when the row fits,
+with a 32-bit fallback for larger rows. Verified structured 2D ray cells reconstruct
+their original corner indices from a compact descriptor, retaining every original
+double coefficient and its order. Other ray stencils keep explicit indices.
+
+Orbital native products preserve absent phase derivative mappings when copying
+requested parameters into local atmospheres. Changes in phase-mapping presence
+rebuild the local derivative storage. For scalar calculations with no native
+phase derivatives and a spatial Lambertian surface, VJP assembly omits unused
+scattering parameter gradients while retaining the full configured angular
+width for the forcing cotangent and the same adjoint iterations.
+
+Geometry and ray transport maps share immutable CSR generations rather than
+copying their index arrays. A geometry refresh creates a new generation;
+existing handles keep the old generation alive until their users release it.
+Point-specific scalar incoming transforms also share the outgoing transform
+when their outgoing sphere is the same object. Scattering reads contiguous
+point inputs directly, and angular routines size temporary moment arrays to
+the batch they actually use.
 
 ## Structured 2D Geometry
 

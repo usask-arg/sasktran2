@@ -2,6 +2,7 @@
 #include <sasktran2/test_helper.h>
 
 #include <cmath>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -89,6 +90,92 @@ namespace {
         mapping.native_mapping().d_ssa->setConstant(1.0e-2);
     }
 } // namespace
+
+TEST_CASE("Successive-orders saved forcing survives evictions and surface-only "
+          "revisions",
+          "[successive_orders][engine][linearization][cache]") {
+    auto config = successive_orders_config();
+    config.set_num_threads(1);
+    config.set_num_hr_spherical_iterations(2);
+    config.set_successive_orders_relative_tolerance(0.0);
+    config.set_successive_orders_absolute_tolerance(0.0);
+    auto geometry = successive_orders_geometry();
+    const auto viewing = successive_orders_viewing();
+    Sasktran2<1> reused_engine(config, &geometry, viewing);
+    sasktran2::atmosphere::Atmosphere<1> atmosphere(NumWavelengths, geometry,
+                                                    config, true);
+    initialize_atmosphere(atmosphere, 0);
+    auto& retrieval_mapping =
+        atmosphere.storage().get_derivative_mapping("retrieval_state");
+    retrieval_mapping.allocate_legendre_derivatives();
+    retrieval_mapping.native_mapping().d_legendre->setZero();
+    // Coefficient derivatives consume the saved forcing in native VJP, so an
+    // incorrect restore is observable even when the primal state is cached.
+    retrieval_mapping.native_mapping().d_legendre->chip(2, 0).setConstant(0.03);
+    retrieval_mapping.native_mapping().scat_factor->setOnes();
+    atmosphere.storage().finalize_scattering_derivatives(0);
+    REQUIRE(atmosphere.num_scattering_deriv_groups() == 1);
+    atmosphere.mark_changed();
+    const Eigen::MatrixXd initial_extinction =
+        atmosphere.storage().total_extinction;
+    const Eigen::MatrixXd initial_ssa = atmosphere.storage().ssa;
+    const Eigen::MatrixXd initial_surface = atmosphere.surface().brdf_args();
+
+    const auto calculate = [&](Sasktran2<1>& engine) {
+        constexpr int outputs = NumWavelengths * NumLos;
+        Eigen::VectorXd radiance = Eigen::VectorXd::Zero(outputs);
+        const Eigen::VectorXd cotangent =
+            Eigen::VectorXd::LinSpaced(outputs, 0.4, 1.1);
+        Eigen::VectorXd gradient = Eigen::VectorXd::Zero(NumAltitudes);
+        Eigen::Map<Eigen::VectorXd> radiance_map(radiance.data(), outputs);
+        Eigen::Map<const Eigen::VectorXd> cotangent_map(cotangent.data(),
+                                                        outputs);
+        Eigen::Map<Eigen::VectorXd> gradient_map(gradient.data(),
+                                                 gradient.size());
+        sasktran2::OutputVJP<1> output(radiance_map, cotangent_map);
+        output.set_derivative_gradient_memory("retrieval_state", gradient_map);
+        engine.calculate_vjp(atmosphere, output);
+        output.finalize();
+        return std::make_pair(std::move(radiance), std::move(gradient));
+    };
+    const auto require_same_bits = [](const auto& actual,
+                                      const auto& expected) {
+        REQUIRE(actual.size() == expected.size());
+        REQUIRE(actual.allFinite());
+        REQUIRE(std::memcmp(actual.data(), expected.data(),
+                            actual.size() * sizeof(double)) == 0);
+    };
+
+    for (int evaluation = 0; evaluation < 4; ++evaluation) {
+        const auto previous_volume_revision = atmosphere.volume_revision();
+        if (evaluation == 1) {
+            atmosphere.surface().brdf_args().array() += 0.11;
+            atmosphere.mark_surface_changed();
+            REQUIRE(atmosphere.volume_revision() == previous_volume_revision);
+        } else if (evaluation == 2) {
+            atmosphere.storage().total_extinction *= 1.25;
+            atmosphere.storage().ssa.array() -= 0.04;
+            atmosphere.mark_changed();
+            REQUIRE(atmosphere.volume_revision() > previous_volume_revision);
+        } else if (evaluation == 3) {
+            atmosphere.storage().total_extinction = initial_extinction;
+            atmosphere.storage().ssa = initial_ssa;
+            atmosphere.surface().brdf_args() = initial_surface;
+            atmosphere.mark_changed();
+        }
+
+        const auto full = calculate(reused_engine);
+        // Two wavelengths share one worker. A second pass must restore the
+        // saved forcing after eviction and rebuild only transport values.
+        const auto repeated = calculate(reused_engine);
+        Sasktran2<1> fresh_engine(config, &geometry, viewing);
+        const auto fresh = calculate(fresh_engine);
+        require_same_bits(repeated.first, full.first);
+        require_same_bits(repeated.second, full.second);
+        require_same_bits(repeated.first, fresh.first);
+        require_same_bits(repeated.second, fresh.second);
+    }
+}
 
 TEST_CASE("Successive-orders revision-zero atmosphere remains directly "
           "mutable",

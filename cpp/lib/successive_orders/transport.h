@@ -4,64 +4,80 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <memory>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace sasktran2::successive_orders {
 
     /** Fixed CSR topology for ray transport.
      *
-     * Geometry construction owns the topology; only the values are rebuilt
-     * for a changing atmosphere. Rows are incoming angular radiances and
-     * columns are outgoing source samples.
+     * Geometry construction creates one immutable topology generation, shared
+     * by geometry and its transport maps. Only the values are rebuilt for a
+     * changing atmosphere. Rows are incoming angular radiances and columns are
+     * outgoing source samples. Copies keep the generation alive without
+     * copying either CSR array.
      */
     class TransportSparsity {
       public:
-        TransportSparsity() = default;
+        TransportSparsity() : TransportSparsity(0, {0}, {}) {}
         TransportSparsity(int columns, std::vector<int> row_offsets,
                           std::vector<int> column_indices)
-            : m_columns(columns), m_row_offsets(std::move(row_offsets)),
-              m_column_indices(std::move(column_indices)) {
+            : m_data(std::make_shared<const Data>(
+                  columns, std::move(row_offsets), std::move(column_indices))) {
             validate();
         }
 
         int rows() const {
-            return m_row_offsets.empty()
+            return m_data->row_offsets.empty()
                        ? 0
-                       : static_cast<int>(m_row_offsets.size()) - 1;
+                       : static_cast<int>(m_data->row_offsets.size()) - 1;
         }
-        int columns() const { return m_columns; }
+        int columns() const { return m_data->columns; }
         int nonzeros() const {
-            return static_cast<int>(m_column_indices.size());
+            return static_cast<int>(m_data->column_indices.size());
         }
-        const std::vector<int>& row_offsets() const { return m_row_offsets; }
+        const std::vector<int>& row_offsets() const {
+            return m_data->row_offsets;
+        }
         const std::vector<int>& column_indices() const {
-            return m_column_indices;
+            return m_data->column_indices;
         }
+        /** Payload size of this generation; shared handles do not add it. */
         std::size_t storage_bytes() const {
-            return m_row_offsets.capacity() * sizeof(int) +
-                   m_column_indices.capacity() * sizeof(int);
+            return m_data->row_offsets.capacity() * sizeof(int) +
+                   m_data->column_indices.capacity() * sizeof(int);
         }
 
       private:
+        struct Data {
+            Data(int num_columns, std::vector<int> offsets,
+                 std::vector<int> indices)
+                : columns(num_columns), row_offsets(std::move(offsets)),
+                  column_indices(std::move(indices)) {}
+
+            int columns;
+            std::vector<int> row_offsets;
+            std::vector<int> column_indices;
+        };
+
         void validate() const {
-            if (m_columns < 0 || m_row_offsets.empty() ||
-                m_row_offsets.front() != 0 ||
-                m_row_offsets.back() !=
-                    static_cast<int>(m_column_indices.size()) ||
-                !std::is_sorted(m_row_offsets.begin(), m_row_offsets.end())) {
+            const auto& offsets = row_offsets();
+            const auto& indices = column_indices();
+            if (columns() < 0 || offsets.empty() || offsets.front() != 0 ||
+                offsets.back() != static_cast<int>(indices.size()) ||
+                !std::is_sorted(offsets.begin(), offsets.end())) {
                 throw std::invalid_argument(
                     "invalid successive-orders transport CSR offsets");
             }
             for (int row = 0; row < rows(); ++row) {
-                const auto begin =
-                    m_column_indices.begin() + m_row_offsets[row];
-                const auto end =
-                    m_column_indices.begin() + m_row_offsets[row + 1];
+                const auto begin = indices.begin() + offsets[row];
+                const auto end = indices.begin() + offsets[row + 1];
                 if (!std::is_sorted(begin, end) ||
                     std::adjacent_find(begin, end) != end ||
                     std::any_of(begin, end, [&](int column) {
-                        return column < 0 || column >= m_columns;
+                        return column < 0 || column >= columns();
                     })) {
                     throw std::invalid_argument(
                         "invalid successive-orders transport CSR columns");
@@ -69,9 +85,7 @@ namespace sasktran2::successive_orders {
             }
         }
 
-        int m_columns = 0;
-        std::vector<int> m_row_offsets{0};
-        std::vector<int> m_column_indices;
+        std::shared_ptr<const Data> m_data;
     };
 
     class TransportOperator {

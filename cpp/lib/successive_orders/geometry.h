@@ -1,6 +1,7 @@
 #pragma once
 
 #include "interpolation.h"
+#include "transport.h"
 
 #include <sasktran2/geometry.h>
 #include <sasktran2/math/unitsphere.h>
@@ -166,11 +167,14 @@ namespace sasktran2::successive_orders {
         void release_incoming_traced_rays();
 
         /** CSR topology for outgoing-source transport to incoming rays. */
+        const TransportSparsity& transport_sparsity() const {
+            return m_transport_sparsity;
+        }
         const std::vector<int>& transport_row_offsets() const {
-            return m_transport_row_offsets;
+            return m_transport_sparsity.row_offsets();
         }
         const std::vector<int>& transport_column_indices() const {
-            return m_transport_column_indices;
+            return m_transport_sparsity.column_indices();
         }
         InterpolationView<int>
         transport_columns_for_ray(std::size_t ray_index) const {
@@ -179,14 +183,17 @@ namespace sasktran2::successive_orders {
                     "Successive-orders transport ray is out of range");
             }
             const auto& ray = m_incoming_interpolation[ray_index];
-            return {m_transport_column_indices, ray.transport_value_offset,
-                    ray.transport_row_nnz};
+            return {m_transport_sparsity.column_indices(),
+                    ray.transport_value_offset, ray.transport_row_nnz};
+        }
+        const TransportSparsity& los_transport_sparsity() const {
+            return m_los_transport_sparsity;
         }
         const std::vector<int>& los_transport_row_offsets() const {
-            return m_los_transport_row_offsets;
+            return m_los_transport_sparsity.row_offsets();
         }
         const std::vector<int>& los_transport_column_indices() const {
-            return m_los_transport_column_indices;
+            return m_los_transport_sparsity.column_indices();
         }
         InterpolationView<int>
         los_transport_columns_for_ray(std::size_t ray_index) const {
@@ -195,8 +202,8 @@ namespace sasktran2::successive_orders {
                     "Successive-orders LOS ray is out of range");
             }
             const auto& ray = m_los_interpolation[ray_index];
-            return {m_los_transport_column_indices, ray.transport_value_offset,
-                    ray.transport_row_nnz};
+            return {m_los_transport_sparsity.column_indices(),
+                    ray.transport_value_offset, ray.transport_row_nnz};
         }
 
       private:
@@ -214,10 +221,8 @@ namespace sasktran2::successive_orders {
         void compile_los_interpolation(
             const sasktran2::viewinggeometry::InternalViewingGeometry&
                 internal_viewing);
-        void
-        compile_transport_topology(std::vector<RayInterpolation>& interpolation,
-                                   std::vector<int>& row_offsets,
-                                   std::vector<int>& column_indices);
+        TransportSparsity compile_transport_topology(
+            std::vector<RayInterpolation>& interpolation);
         void
         trace_ray(const sasktran2::viewinggeometry::ViewingRay& viewing_ray,
                   sasktran2::raytracing::TracedRay& traced_ray) const;
@@ -248,10 +253,8 @@ namespace sasktran2::successive_orders {
         sasktran2::viewinggeometry::InternalViewingGeometry m_incoming_viewing;
         std::vector<RayInterpolation> m_incoming_interpolation;
         std::vector<RayInterpolation> m_los_interpolation;
-        std::vector<int> m_transport_row_offsets{0};
-        std::vector<int> m_transport_column_indices;
-        std::vector<int> m_los_transport_row_offsets{0};
-        std::vector<int> m_los_transport_column_indices;
+        TransportSparsity m_transport_sparsity;
+        TransportSparsity m_los_transport_sparsity;
     };
 
 } // namespace sasktran2::successive_orders

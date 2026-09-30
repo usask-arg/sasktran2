@@ -1,14 +1,62 @@
 #include "scattering.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
+#include <unordered_set>
 #include <utility>
 
 namespace sasktran2::successive_orders {
     namespace {
         using RowMajorMatrix = Eigen::Matrix<double, Eigen::Dynamic,
                                              Eigen::Dynamic, Eigen::RowMajor>;
+
+        void profile_active_degrees(const Eigen::MatrixXd& coefficients,
+                                    int active_coefficients,
+                                    const void* operator_id) {
+            if (std::getenv("SASKTRAN2_PROFILE_MEMORY") == nullptr) {
+                return;
+            }
+            std::vector<int> active_counts(coefficients.cols() + 1, 0);
+            std::vector<int> nonzero_counts(coefficients.cols(), 0);
+            for (int point = 0; point < coefficients.rows(); ++point) {
+                int active = 0;
+                for (int degree = 0; degree < coefficients.cols(); ++degree) {
+                    if (coefficients(point, degree) != 0.0) {
+                        active = degree + 1;
+                        ++nonzero_counts[degree];
+                    }
+                }
+                ++active_counts[active];
+            }
+            std::ostringstream message;
+            message << "SASKTRAN2_MEMORY {\"kind\":"
+                       "\"scalar_scattering_active_degrees\",\"operator\":\""
+                    << operator_id << "\",\"points\":" << coefficients.rows()
+                    << ",\"num_coefficients\":" << coefficients.cols()
+                    << ",\"active_coefficients\":" << active_coefficients
+                    << ",\"point_count_by_active_coefficients\":[";
+            for (std::size_t index = 0; index < active_counts.size(); ++index) {
+                if (index != 0) {
+                    message << ',';
+                }
+                message << active_counts[index];
+            }
+            message << "],\"nonzero_point_count_by_degree\":[";
+            for (std::size_t index = 0; index < nonzero_counts.size();
+                 ++index) {
+                if (index != 0) {
+                    message << ',';
+                }
+                message << nonzero_counts[index];
+            }
+            message << "]}\n";
+            // One stdio call keeps each diagnostic together across workers.
+            std::fprintf(stderr, "%s", message.str().c_str());
+        }
 
         int checked_product(int left, int right, const char* message) {
             const auto product = static_cast<long long>(left) * right;
@@ -309,19 +357,22 @@ namespace sasktran2::successive_orders {
 
     void ScatteringWorkspace<1>::prepare(int atmospheric_blocks,
                                          int input_directions,
-                                         int output_directions, int modes) {
+                                         int output_directions) {
         m_atmospheric_input.resize(atmospheric_blocks, input_directions);
         m_atmospheric_output.resize(atmospheric_blocks, output_directions);
-        m_auxiliary_input.resize(atmospheric_blocks, input_directions);
-        m_moments.resize(atmospheric_blocks, modes);
-        m_auxiliary_moments.resize(atmospheric_blocks, modes);
+        // Angular operations size their moment buffers to the actual batch:
+        // a common basis uses all points, while a point-specific basis uses
+        // one point. Eagerly sizing both here would grow and shrink the same
+        // scratch on every fixed-point iteration.
     }
 
     std::size_t ScatteringWorkspace<1>::storage_bytes() const {
         return static_cast<std::size_t>(
                    m_atmospheric_input.size() + m_atmospheric_output.size() +
                    m_auxiliary_input.size() + m_moments.size() +
-                   m_auxiliary_moments.size()) *
+                   m_auxiliary_moments.size() + m_point_input_result.size() +
+                   m_point_output_result.size() +
+                   m_point_coefficient_gradient.size()) *
                sizeof(double);
     }
 
@@ -412,6 +463,8 @@ namespace sasktran2::successive_orders {
                 "invalid active scalar scattering coefficient count");
         }
         m_active_coefficients = active_coefficients;
+        profile_active_degrees(m_atmospheric_coefficients,
+                               m_active_coefficients, this);
     }
 
     void ScatteringOperator<1>::set_atmospheric_coefficients(
@@ -430,7 +483,7 @@ namespace sasktran2::successive_orders {
                 break;
             }
         }
-        m_active_coefficients = active_coefficients;
+        set_active_coefficients(active_coefficients);
     }
 
     void ScatteringOperator<1>::set_ground_values(
@@ -480,8 +533,7 @@ namespace sasktran2::successive_orders {
     void ScatteringOperator<1>::prepare_workspace(
         ScatteringWorkspace<1>& workspace) const {
         workspace.prepare(m_layout.atmospheric_blocks(), m_basis->input_size(),
-                          m_basis->output_size(),
-                          m_active_coefficients * m_active_coefficients);
+                          m_basis->output_size());
     }
 
     ScatteringWorkspace<1> ScatteringOperator<1>::make_workspace() const {
@@ -498,8 +550,17 @@ namespace sasktran2::successive_orders {
         result.angular_basis_bytes = m_basis->storage_bytes();
         if (!m_point_bases.empty()) {
             result.angular_basis_bytes = 0;
+            std::unordered_set<const ScalarAngularBasis*> analyses;
+            std::unordered_set<const void*> syntheses;
             for (const auto& basis : m_point_bases) {
-                result.angular_basis_bytes += basis->storage_bytes();
+                if (analyses.insert(basis.get()).second) {
+                    result.angular_basis_bytes +=
+                        basis->analysis_storage_bytes();
+                }
+                if (syntheses.insert(basis->synthesis_storage_id()).second) {
+                    result.angular_basis_bytes +=
+                        basis->synthesis_storage_bytes();
+                }
             }
         }
         result.atmospheric_value_bytes =
@@ -527,9 +588,9 @@ namespace sasktran2::successive_orders {
         validate_input_output(incoming.size(), outgoing.size());
         prepare_workspace(workspace);
         if (m_layout.atmospheric_blocks() != 0) {
-            pack_atmospheric_blocks(m_layout, incoming,
-                                    workspace.m_atmospheric_input);
             if (m_point_bases.empty()) {
+                pack_atmospheric_blocks(m_layout, incoming,
+                                        workspace.m_atmospheric_input);
                 m_basis->apply_active(
                     workspace.m_atmospheric_input, m_atmospheric_coefficients,
                     m_active_coefficients, workspace.m_atmospheric_output,
@@ -541,8 +602,11 @@ namespace sasktran2::successive_orders {
                                            active_modes);
                 for (int point = 0; point < m_layout.atmospheric_blocks();
                      ++point) {
+                    const Eigen::Map<const Eigen::MatrixXd> point_input(
+                        incoming.data() + m_layout.input_offsets()[point], 1,
+                        m_layout.input_block_size(point));
                     m_point_bases[point]->analyze_active(
-                        workspace.m_atmospheric_input.middleRows(point, 1),
+                        point_input,
                         m_atmospheric_coefficients.middleRows(point, 1),
                         m_active_coefficients, workspace.m_auxiliary_moments);
                     workspace.m_moments.row(point) =
@@ -554,8 +618,11 @@ namespace sasktran2::successive_orders {
             } else {
                 for (int point = 0; point < m_layout.atmospheric_blocks();
                      ++point) {
+                    const Eigen::Map<const Eigen::MatrixXd> point_input(
+                        incoming.data() + m_layout.input_offsets()[point], 1,
+                        m_layout.input_block_size(point));
                     m_point_bases[point]->apply_active(
-                        workspace.m_atmospheric_input.middleRows(point, 1),
+                        point_input,
                         m_atmospheric_coefficients.middleRows(point, 1),
                         m_active_coefficients,
                         workspace.m_atmospheric_output.middleRows(point, 1),
@@ -577,22 +644,27 @@ namespace sasktran2::successive_orders {
         validate_input_output(incoming.size(), outgoing.size());
         prepare_workspace(workspace);
         if (m_layout.atmospheric_blocks() != 0) {
-            pack_atmospheric_output_blocks(m_layout, outgoing,
-                                           workspace.m_atmospheric_output);
             if (m_point_bases.empty()) {
+                pack_atmospheric_output_blocks(m_layout, outgoing,
+                                               workspace.m_atmospheric_output);
                 m_basis->apply_transpose_active(
                     workspace.m_atmospheric_output, m_atmospheric_coefficients,
                     m_active_coefficients, workspace.m_atmospheric_input,
                     workspace.m_moments);
             } else {
+                workspace.m_point_input_result.resize(1, m_basis->input_size());
                 for (int point = 0; point < m_layout.atmospheric_blocks();
                      ++point) {
+                    const Eigen::Map<const Eigen::MatrixXd> point_output(
+                        outgoing.data() + m_layout.output_offsets()[point], 1,
+                        m_layout.output_block_size(point));
                     m_point_bases[point]->apply_transpose_active(
-                        workspace.m_atmospheric_output.middleRows(point, 1),
+                        point_output,
                         m_atmospheric_coefficients.middleRows(point, 1),
-                        m_active_coefficients,
-                        workspace.m_atmospheric_input.middleRows(point, 1),
+                        m_active_coefficients, workspace.m_point_input_result,
                         workspace.m_moments);
+                    workspace.m_atmospheric_input.row(point) =
+                        workspace.m_point_input_result.row(0);
                 }
             }
             unpack_atmospheric_input_blocks(
@@ -625,10 +697,6 @@ namespace sasktran2::successive_orders {
         }
         prepare_workspace(workspace);
         if (m_layout.atmospheric_blocks() != 0) {
-            pack_atmospheric_blocks(m_layout, incoming,
-                                    workspace.m_atmospheric_input);
-            pack_atmospheric_blocks(m_layout, incoming_tangent,
-                                    workspace.m_auxiliary_input);
             int active_coefficients = m_active_coefficients;
             for (int degree = m_basis->num_coefficients() - 1;
                  degree >= m_active_coefficients; --degree) {
@@ -638,22 +706,37 @@ namespace sasktran2::successive_orders {
                 }
             }
             if (m_point_bases.empty()) {
+                workspace.m_auxiliary_input.resize(
+                    m_layout.atmospheric_blocks(), m_basis->input_size());
+                pack_atmospheric_blocks(m_layout, incoming,
+                                        workspace.m_atmospheric_input);
+                pack_atmospheric_blocks(m_layout, incoming_tangent,
+                                        workspace.m_auxiliary_input);
                 m_basis->apply_jvp_active(
                     workspace.m_atmospheric_input, workspace.m_auxiliary_input,
                     m_atmospheric_coefficients, coefficient_tangent,
                     active_coefficients, workspace.m_atmospheric_output,
                     workspace.m_moments, workspace.m_auxiliary_moments);
             } else {
+                workspace.m_point_output_result.resize(1,
+                                                       m_basis->output_size());
                 for (int point = 0; point < m_layout.atmospheric_blocks();
                      ++point) {
+                    const Eigen::Map<const Eigen::MatrixXd> point_input(
+                        incoming.data() + m_layout.input_offsets()[point], 1,
+                        m_layout.input_block_size(point));
+                    const Eigen::Map<const Eigen::MatrixXd> point_tangent(
+                        incoming_tangent.data() +
+                            m_layout.input_offsets()[point],
+                        1, m_layout.input_block_size(point));
                     m_point_bases[point]->apply_jvp_active(
-                        workspace.m_atmospheric_input.middleRows(point, 1),
-                        workspace.m_auxiliary_input.middleRows(point, 1),
+                        point_input, point_tangent,
                         m_atmospheric_coefficients.middleRows(point, 1),
                         coefficient_tangent.middleRows(point, 1),
-                        active_coefficients,
-                        workspace.m_atmospheric_output.middleRows(point, 1),
+                        active_coefficients, workspace.m_point_output_result,
                         workspace.m_moments, workspace.m_auxiliary_moments);
+                    workspace.m_atmospheric_output.row(point) =
+                        workspace.m_point_output_result.row(0);
                 }
             }
             unpack_atmospheric_blocks(m_layout, workspace.m_atmospheric_output,
@@ -685,26 +768,41 @@ namespace sasktran2::successive_orders {
         coefficient_gradient.setZero();
         ground_value_gradient.setZero();
         if (m_layout.atmospheric_blocks() != 0) {
-            pack_atmospheric_blocks(m_layout, incoming,
-                                    workspace.m_atmospheric_input);
-            pack_atmospheric_output_blocks(m_layout, outgoing_cotangent,
-                                           workspace.m_atmospheric_output);
+            workspace.m_auxiliary_input.resize(m_layout.atmospheric_blocks(),
+                                               m_basis->input_size());
             if (m_point_bases.empty()) {
+                pack_atmospheric_blocks(m_layout, incoming,
+                                        workspace.m_atmospheric_input);
+                pack_atmospheric_output_blocks(m_layout, outgoing_cotangent,
+                                               workspace.m_atmospheric_output);
                 m_basis->apply_vjp(
                     workspace.m_atmospheric_input, m_atmospheric_coefficients,
                     workspace.m_atmospheric_output, workspace.m_auxiliary_input,
                     coefficient_gradient, workspace.m_moments,
                     workspace.m_auxiliary_moments);
             } else {
+                workspace.m_point_input_result.resize(1, m_basis->input_size());
+                workspace.m_point_coefficient_gradient.resize(
+                    1, m_basis->num_coefficients());
                 for (int point = 0; point < m_layout.atmospheric_blocks();
                      ++point) {
+                    const Eigen::Map<const Eigen::MatrixXd> point_input(
+                        incoming.data() + m_layout.input_offsets()[point], 1,
+                        m_layout.input_block_size(point));
+                    const Eigen::Map<const Eigen::MatrixXd> point_cotangent(
+                        outgoing_cotangent.data() +
+                            m_layout.output_offsets()[point],
+                        1, m_layout.output_block_size(point));
                     m_point_bases[point]->apply_vjp(
-                        workspace.m_atmospheric_input.middleRows(point, 1),
+                        point_input,
                         m_atmospheric_coefficients.middleRows(point, 1),
-                        workspace.m_atmospheric_output.middleRows(point, 1),
-                        workspace.m_auxiliary_input.middleRows(point, 1),
-                        coefficient_gradient.middleRows(point, 1),
+                        point_cotangent, workspace.m_point_input_result,
+                        workspace.m_point_coefficient_gradient,
                         workspace.m_moments, workspace.m_auxiliary_moments);
+                    workspace.m_auxiliary_input.row(point) =
+                        workspace.m_point_input_result.row(0);
+                    coefficient_gradient.row(point) =
+                        workspace.m_point_coefficient_gradient.row(0);
                 }
             }
             unpack_atmospheric_input_blocks(
@@ -714,6 +812,50 @@ namespace sasktran2::successive_orders {
                                m_ground_value_offsets, m_ground_values,
                                incoming, outgoing_cotangent, incoming_cotangent,
                                ground_value_gradient);
+    }
+
+    void ScatteringOperator<1>::apply_input_vjp(
+        Eigen::Ref<const Eigen::VectorXd> outgoing_cotangent,
+        Eigen::Ref<Eigen::VectorXd> incoming_cotangent,
+        ScatteringWorkspace<1>& workspace) const {
+        validate_input_output(incoming_cotangent.size(),
+                              outgoing_cotangent.size());
+        prepare_workspace(workspace);
+        incoming_cotangent.setZero();
+        if (m_layout.atmospheric_blocks() != 0) {
+            // Retain the full VJP's result buffers and configured mode count.
+            // Only primal analysis and scattering parameter gradients vanish.
+            workspace.m_auxiliary_input.resize(m_layout.atmospheric_blocks(),
+                                               m_basis->input_size());
+            if (m_point_bases.empty()) {
+                pack_atmospheric_output_blocks(m_layout, outgoing_cotangent,
+                                               workspace.m_atmospheric_output);
+                m_basis->apply_transpose(
+                    workspace.m_atmospheric_output, m_atmospheric_coefficients,
+                    workspace.m_auxiliary_input, workspace.m_auxiliary_moments);
+            } else {
+                workspace.m_point_input_result.resize(1, m_basis->input_size());
+                for (int point = 0; point < m_layout.atmospheric_blocks();
+                     ++point) {
+                    const Eigen::Map<const Eigen::MatrixXd> point_cotangent(
+                        outgoing_cotangent.data() +
+                            m_layout.output_offsets()[point],
+                        1, m_layout.output_block_size(point));
+                    m_point_bases[point]->apply_transpose(
+                        point_cotangent,
+                        m_atmospheric_coefficients.middleRows(point, 1),
+                        workspace.m_point_input_result,
+                        workspace.m_auxiliary_moments);
+                    workspace.m_auxiliary_input.row(point) =
+                        workspace.m_point_input_result.row(0);
+                }
+            }
+            unpack_atmospheric_input_blocks(
+                m_layout, workspace.m_auxiliary_input, incoming_cotangent);
+        }
+        apply_dense_blocks_transpose(m_layout, m_layout.atmospheric_blocks(),
+                                     m_ground_value_offsets, m_ground_values,
+                                     outgoing_cotangent, incoming_cotangent);
     }
 
     void ScatteringWorkspace<3>::prepare(int atmospheric_blocks,

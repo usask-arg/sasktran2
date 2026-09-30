@@ -8,53 +8,10 @@
 #include <cmath>
 #include <complex>
 #include <stdexcept>
+#include <utility>
 
 namespace sasktran2::successive_orders {
     namespace {
-        void fill_basis(const sasktran2::math::UnitSphere& sphere,
-                        int num_coefficients, Eigen::MatrixXd& values,
-                        std::vector<int>& mode_degrees) {
-            const int num_modes = num_coefficients * num_coefficients;
-            values.setZero(sphere.num_points(), num_modes);
-            mode_degrees.assign(num_modes, 0);
-
-            Eigen::VectorXd degrees(num_coefficients);
-            for (int direction_index = 0; direction_index < sphere.num_points();
-                 ++direction_index) {
-                const Eigen::Vector3d direction =
-                    sphere.get_quad_position(direction_index).normalized();
-                const double theta =
-                    std::acos(std::clamp(direction.z(), -1.0, 1.0));
-                const double phi = std::atan2(direction.y(), direction.x());
-                for (int order = 0; order < num_coefficients; ++order) {
-                    sasktran2::math::WignerDCalculator calculator(order, 0);
-                    for (int degree = 0; degree < num_coefficients; ++degree) {
-                        degrees(degree) = calculator.d(theta, degree);
-                    }
-                    for (int degree = order; degree < num_coefficients;
-                         ++degree) {
-                        const int mode_start = degree * degree;
-                        mode_degrees[mode_start] = degree;
-                        if (order == 0) {
-                            values(direction_index, mode_start) =
-                                degrees(degree);
-                        } else {
-                            const double scale =
-                                std::sqrt(2.0) * degrees(degree);
-                            const int cosine_mode = mode_start + 2 * order - 1;
-                            const int sine_mode = mode_start + 2 * order;
-                            mode_degrees[cosine_mode] = degree;
-                            mode_degrees[sine_mode] = degree;
-                            values(direction_index, cosine_mode) =
-                                scale * std::cos(order * phi);
-                            values(direction_index, sine_mode) =
-                                scale * std::sin(order * phi);
-                        }
-                    }
-                }
-            }
-        }
-
         void fill_wigner_degrees(sasktran2::math::WignerDCalculator& calculator,
                                  double theta, int num_coefficients,
                                  std::vector<double>& values) {
@@ -64,12 +21,62 @@ namespace sasktran2::successive_orders {
             calculator.vec_d_emplace(theta, num_coefficients, values.data());
 #else
             // The legacy header-only fallback exposes an inclusive maximum
-            // degree instead. Avoid relying on that differing convention.
+            // degree instead. Keep the original scalar recurrence calls.
             for (int degree = 0; degree < num_coefficients; ++degree) {
                 values[degree] = calculator.d(theta, degree);
             }
 #endif
         }
+
+        void fill_basis(const sasktran2::math::UnitSphere& sphere,
+                        int num_coefficients, Eigen::MatrixXd& values,
+                        std::vector<int>& mode_degrees) {
+            const int num_modes = num_coefficients * num_coefficients;
+            values.setZero(sphere.num_points(), num_modes);
+            mode_degrees.assign(num_modes, 0);
+
+            std::vector<double> degrees(num_coefficients);
+            std::vector<sasktran2::math::WignerDCalculator> calculators;
+            calculators.reserve(num_coefficients);
+            for (int order = 0; order < num_coefficients; ++order) {
+                calculators.emplace_back(order, 0);
+            }
+            for (int direction_index = 0; direction_index < sphere.num_points();
+                 ++direction_index) {
+                const Eigen::Vector3d direction =
+                    sphere.get_quad_position(direction_index).normalized();
+                const double theta =
+                    std::acos(std::clamp(direction.z(), -1.0, 1.0));
+                const double phi = std::atan2(direction.y(), direction.x());
+                for (int order = 0; order < num_coefficients; ++order) {
+                    fill_wigner_degrees(calculators[order], theta,
+                                        num_coefficients, degrees);
+                    const double azimuth = order * phi;
+                    const double cosine = order == 0 ? 0.0 : std::cos(azimuth);
+                    const double sine = order == 0 ? 0.0 : std::sin(azimuth);
+                    for (int degree = order; degree < num_coefficients;
+                         ++degree) {
+                        const int mode_start = degree * degree;
+                        mode_degrees[mode_start] = degree;
+                        if (order == 0) {
+                            values(direction_index, mode_start) =
+                                degrees[degree];
+                        } else {
+                            const double scale =
+                                std::sqrt(2.0) * degrees[degree];
+                            const int cosine_mode = mode_start + 2 * order - 1;
+                            const int sine_mode = mode_start + 2 * order;
+                            mode_degrees[cosine_mode] = degree;
+                            mode_degrees[sine_mode] = degree;
+                            values(direction_index, cosine_mode) =
+                                scale * cosine;
+                            values(direction_index, sine_mode) = scale * sine;
+                        }
+                    }
+                }
+            }
+        }
+
     } // namespace
 
     ScalarAngularBasis::ScalarAngularBasis(
@@ -85,11 +92,14 @@ namespace sasktran2::successive_orders {
         Eigen::MatrixXd incoming_basis;
         fill_basis(incoming, num_coefficients, incoming_basis, m_mode_degrees);
         std::vector<int> outgoing_degrees;
-        fill_basis(outgoing, num_coefficients, m_synthesis, outgoing_degrees);
+        Eigen::MatrixXd synthesis;
+        fill_basis(outgoing, num_coefficients, synthesis, outgoing_degrees);
         if (outgoing_degrees != m_mode_degrees) {
             throw std::logic_error(
                 "inconsistent successive-orders angular basis ordering");
         }
+        m_synthesis =
+            std::make_shared<const Eigen::MatrixXd>(std::move(synthesis));
 
         m_analysis = incoming_basis.transpose();
         for (int direction = 0; direction < incoming.num_points();
@@ -98,11 +108,40 @@ namespace sasktran2::successive_orders {
         }
     }
 
+    ScalarAngularBasis::ScalarAngularBasis(
+        const sasktran2::math::UnitSphere& incoming,
+        const ScalarAngularBasis& shared_outgoing)
+        : m_num_coefficients(shared_outgoing.num_coefficients()),
+          m_synthesis(shared_outgoing.m_synthesis) {
+        if (incoming.num_points() < 1 || m_synthesis == nullptr) {
+            throw std::invalid_argument(
+                "invalid shared scalar successive-orders angular basis");
+        }
+        Eigen::MatrixXd incoming_basis;
+        fill_basis(incoming, m_num_coefficients, incoming_basis,
+                   m_mode_degrees);
+        if (m_mode_degrees != shared_outgoing.m_mode_degrees) {
+            throw std::logic_error(
+                "inconsistent shared successive-orders angular basis ordering");
+        }
+        m_analysis = incoming_basis.transpose();
+        for (int direction = 0; direction < incoming.num_points();
+             ++direction) {
+            m_analysis.col(direction) *= incoming.quadrature_weight(direction);
+        }
+    }
+
     std::size_t ScalarAngularBasis::storage_bytes() const {
-        return static_cast<std::size_t>(m_analysis.size() +
-                                        m_synthesis.size()) *
-                   sizeof(double) +
+        return analysis_storage_bytes() + synthesis_storage_bytes();
+    }
+
+    std::size_t ScalarAngularBasis::analysis_storage_bytes() const {
+        return static_cast<std::size_t>(m_analysis.size()) * sizeof(double) +
                m_mode_degrees.capacity() * sizeof(int);
+    }
+
+    std::size_t ScalarAngularBasis::synthesis_storage_bytes() const {
+        return static_cast<std::size_t>(m_synthesis->size()) * sizeof(double);
     }
 
     void ScalarAngularBasis::validate_blocks(
@@ -186,7 +225,7 @@ namespace sasktran2::successive_orders {
         }
         outgoing.noalias() =
             moments *
-            m_synthesis.leftCols(active_coefficients * active_coefficients)
+            m_synthesis->leftCols(active_coefficients * active_coefficients)
                 .transpose();
     }
 
@@ -213,7 +252,7 @@ namespace sasktran2::successive_orders {
         const int active_modes = active_coefficients * active_coefficients;
         moment_workspace.resize(outgoing.rows(), active_modes);
         moment_workspace.noalias() =
-            outgoing * m_synthesis.leftCols(active_modes);
+            outgoing * m_synthesis->leftCols(active_modes);
         for (int mode = 0; mode < active_modes; ++mode) {
             moment_workspace.col(mode).array() *=
                 coefficients.col(m_mode_degrees[mode]).array();
@@ -273,7 +312,7 @@ namespace sasktran2::successive_orders {
                     coefficient_tangent.col(degree).array();
         }
         outgoing_tangent.noalias() =
-            tangent_workspace * m_synthesis.leftCols(active_modes).transpose();
+            tangent_workspace * m_synthesis->leftCols(active_modes).transpose();
     }
 
     void ScalarAngularBasis::apply_vjp(
@@ -296,7 +335,8 @@ namespace sasktran2::successive_orders {
         analyzed_workspace.resize(incoming.rows(), num_modes());
         moment_cotangent_workspace.resize(incoming.rows(), num_modes());
         analyzed_workspace.noalias() = incoming * m_analysis.transpose();
-        moment_cotangent_workspace.noalias() = outgoing_cotangent * m_synthesis;
+        moment_cotangent_workspace.noalias() =
+            outgoing_cotangent * *m_synthesis;
 
         coefficient_gradient.setZero();
         for (int mode = 0; mode < num_modes(); ++mode) {

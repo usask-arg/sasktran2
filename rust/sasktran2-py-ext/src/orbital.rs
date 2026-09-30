@@ -1046,6 +1046,7 @@ struct AtmosphereSignature {
     num_location: usize,
     num_legendre_storage: usize,
     volume_mappings: Vec<String>,
+    scattering_mappings: Vec<String>,
     surface_mappings: Vec<String>,
     spatial_surface_rows: usize,
     spatial_surface_derivative: Option<String>,
@@ -1818,6 +1819,16 @@ fn mapping_signature(
     let mut volume_mappings = volume_mappings.to_vec();
     volume_mappings.sort_unstable();
     volume_mappings.dedup();
+    let mut scattering_mappings = Vec::new();
+    for name in &volume_mappings {
+        let mapping = master
+            .storage
+            .get_derivative_mapping(name)
+            .map_err(PyRuntimeError::new_err)?;
+        if mapping.is_scattering_derivative() {
+            scattering_mappings.push(name.clone());
+        }
+    }
     let mut surface_mappings = surface_mappings.to_vec();
     surface_mappings.sort_unstable();
     surface_mappings.dedup();
@@ -1830,6 +1841,7 @@ fn mapping_signature(
         num_location: master.num_location(),
         num_legendre_storage: master.storage.leg_coeff.dim().0,
         volume_mappings,
+        scattering_mappings,
         surface_mappings,
         spatial_surface_rows: lambertian_surface.map_or(0, |surface| surface.field.nrows()),
         spatial_surface_derivative,
@@ -1951,6 +1963,28 @@ fn update_group_atmosphere(
     {
         return Ok(());
     }
+    let profile_phase_before = if std::env::var_os("SASKTRAN2_PROFILE_MEMORY").is_some() {
+        let mut count = 0;
+        if let Some(local) = &group.atmosphere {
+            for name in local
+                .storage
+                .derivative_mapping_names()
+                .map_err(PyRuntimeError::new_err)?
+            {
+                if local
+                    .storage
+                    .get_derivative_mapping(&name)
+                    .map_err(PyRuntimeError::new_err)?
+                    .is_scattering_derivative()
+                {
+                    count += 1;
+                }
+            }
+        }
+        Some(count)
+    } else {
+        None
+    };
     let local_indices = &group.local_indices;
     if group.atmosphere_signature.as_ref() != Some(&signature) {
         let stokes = match master.num_stokes() {
@@ -2046,6 +2080,7 @@ fn update_group_atmosphere(
                 .storage
                 .get_derivative_mapping(name)
                 .map_err(PyRuntimeError::new_err)?;
+            let copy_scattering = source.is_scattering_derivative();
             for (local_index, &global_index) in local_indices.iter().enumerate() {
                 destination
                     .d_extinction()
@@ -2059,14 +2094,16 @@ fn update_group_atmosphere(
                     .d_emission()
                     .row_mut(local_index)
                     .assign(&source.d_emission().row(global_index));
-                destination
-                    .scat_factor()
-                    .row_mut(local_index)
-                    .assign(&source.scat_factor().row(global_index));
-                destination
-                    .d_leg_coeff()
-                    .slice_mut(s![.., local_index, ..])
-                    .assign(&source.d_leg_coeff().slice(s![.., global_index, ..]));
+                if copy_scattering {
+                    destination
+                        .scat_factor()
+                        .row_mut(local_index)
+                        .assign(&source.scat_factor().row(global_index));
+                    destination
+                        .d_leg_coeff()
+                        .slice_mut(s![.., local_index, ..])
+                        .assign(&source.d_leg_coeff().slice(s![.., global_index, ..]));
+                }
             }
             destination.set_assign_name(&source.get_assign_name());
             destination.set_interp_dim(&source.get_interp_dim());
@@ -2147,6 +2184,31 @@ fn update_group_atmosphere(
     }
     group.atmosphere_content_key = Some(content_key);
     group.atmosphere_update_count += 1;
+    if let Some(before) = profile_phase_before {
+        let mut after = 0;
+        for name in local
+            .storage
+            .derivative_mapping_names()
+            .map_err(PyRuntimeError::new_err)?
+        {
+            if local
+                .storage
+                .get_derivative_mapping(&name)
+                .map_err(PyRuntimeError::new_err)?
+                .is_scattering_derivative()
+            {
+                after += 1;
+            }
+        }
+        eprintln!(
+            "SASKTRAN2_MEMORY {{\"kind\":\"orbital_phase_mappings\",\"reference_time_ns\":{},\"requested_volume_mappings\":{},\"requested_phase_mappings\":{},\"local_phase_mappings_before\":{},\"local_phase_mappings_after\":{}}}",
+            group.layout.reference_time_ns,
+            signature.volume_mappings.len(),
+            signature.scattering_mappings.len(),
+            before,
+            after,
+        );
+    }
     Ok(())
 }
 
@@ -3616,6 +3678,13 @@ impl PyOrbitalPlaneEngine {
                         .atmosphere_signature
                         .as_ref()
                         .map_or_else(Vec::new, |signature| signature.volume_mappings.clone()),
+                )?;
+                dict.set_item(
+                    "resident_scattering_derivative_mappings",
+                    group
+                        .atmosphere_signature
+                        .as_ref()
+                        .map_or_else(Vec::new, |signature| signature.scattering_mappings.clone()),
                 )?;
                 dict.set_item(
                     "resident_surface_derivative_mappings",

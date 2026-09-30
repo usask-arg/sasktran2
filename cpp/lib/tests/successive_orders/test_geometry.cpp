@@ -6,9 +6,12 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <limits>
 #include <numeric>
 #include <stdexcept>
+#include <vector>
 
 namespace {
     Eigen::VectorXd altitude_grid() {
@@ -83,10 +86,11 @@ namespace {
     }
 
     template <typename Weights> void require_sorted(const Weights& weights) {
-        REQUIRE(std::is_sorted(weights.begin(), weights.end(),
-                               [](const auto& left, const auto& right) {
-                                   return left.index < right.index;
-                               }));
+        int previous = -1;
+        for (const auto& weight : weights) {
+            REQUIRE(previous <= weight.index);
+            previous = weight.index;
+        }
     }
 
     void require_compiled_topology(
@@ -1000,4 +1004,137 @@ TEST_CASE("Successive-orders spherical interpolation preserves exact axial "
     require_los_direction(source_geometry, 1, -Eigen::Vector3d::UnitZ());
     require_los_direction(source_geometry, 2, Eigen::Vector3d::UnitX());
     require_los_direction(source_geometry, 3, Eigen::Vector3d::UnitY());
+}
+
+TEST_CASE("Successive-orders structured layer storage preserves every weight "
+          "and stencil order",
+          "[successive_orders][geometry]") {
+    using namespace sasktran2::successive_orders;
+    const auto bits = [](double value) {
+        std::uint64_t result;
+        std::memcpy(&result, &value, sizeof(result));
+        return result;
+    };
+    sasktran2::raytracing::TracedRay traced;
+    traced.layers.resize(3);
+    const std::array<double, 4> endpoint = {0.0, 0.0, 0.0, 0.0};
+    const std::array<double, 4> od = {-0.0,
+                                      std::numeric_limits<double>::denorm_min(),
+                                      std::nextafter(0.3, 1.0), 0.75};
+    for (std::size_t layer = 0; layer < traced.layers.size(); ++layer) {
+        const int base = static_cast<int>(layer) * 11;
+        traced.set_layer_weights(
+            layer, std::array<int, 4>{base, base + 1, base + 10, base + 11},
+            endpoint, endpoint, od);
+    }
+
+    RayInterpolation compiled;
+    compiled.traced_ray = &traced;
+    compiled.structured_altitude_stride = 10;
+    compiled.layers = {
+        {0, 4, 0, 2, 0, 4}, {4, 2, 2, 0, 4, 4}, {6, 0, 2, 2, 8, 4}};
+    compiled.atmosphere_weights = {
+        {0, -0.0},
+        {1, 0.25},
+        {10, 0.5},
+        {11, std::nextafter(0.25, 1.0)},
+        {12, std::numeric_limits<double>::denorm_min()},
+        {22, 1.0}};
+    compiled.source_weights = {{0, 0.3}, {2, 0.7}, {1, 0.4}, {2, 0.6}};
+    std::vector<int> columns;
+    compile_transport_row(compiled, columns);
+    compact_ray_interpolation(compiled);
+
+    const auto original_layers = compiled.layers.wide_values();
+    const auto original_atmosphere = compiled.atmosphere_weights;
+    std::array<std::vector<std::pair<int, double>>, 3> original_od;
+    for (std::size_t layer = 0; layer < traced.layers.size(); ++layer) {
+        const auto weights = compiled.optical_depth_for_layer(layer);
+        for (std::size_t entry = 0; entry < weights.size(); ++entry) {
+            original_od[layer].push_back(weights[entry]);
+        }
+    }
+    adopt_optical_depth_storage(traced, compiled);
+
+    REQUIRE(compiled.layers.is_structured());
+    REQUIRE(compiled.layers.capacity_bytes() == 3 * 8);
+    REQUIRE(compiled.atmosphere_weights.capacity() == 0);
+    REQUIRE(compiled.optical_depth_indices.capacity() == 0);
+    REQUIRE(compiled.structured_atmosphere_weights.size() == 6);
+    REQUIRE(compiled.source_weights.element_bytes() == 9);
+    for (std::size_t layer = 0; layer < compiled.layers.size(); ++layer) {
+        const auto descriptor = compiled.layers[layer];
+        const auto& original = original_layers[layer];
+        REQUIRE(descriptor.atmosphere_offset == original.atmosphere_offset);
+        REQUIRE(descriptor.atmosphere_count == original.atmosphere_count);
+        REQUIRE(descriptor.source_offset == original.source_offset);
+        REQUIRE(descriptor.source_count == original.source_count);
+        REQUIRE(descriptor.optical_depth_offset ==
+                original.optical_depth_offset);
+        REQUIRE(descriptor.optical_depth_count == original.optical_depth_count);
+        const auto midpoint = compiled.atmosphere_for_layer(layer);
+        require_sorted(midpoint);
+        REQUIRE(midpoint.size() == original.atmosphere_count);
+        for (std::size_t entry = 0; entry < midpoint.size(); ++entry) {
+            const auto actual = midpoint[entry];
+            const auto& expected =
+                original_atmosphere[original.atmosphere_offset + entry];
+            REQUIRE(actual.index == expected.index);
+            REQUIRE(bits(actual.weight()) == bits(expected.weight()));
+        }
+        const auto weights = compiled.optical_depth_for_layer(layer);
+        REQUIRE(weights.size() == original_od[layer].size());
+        for (std::size_t entry = 0; entry < weights.size(); ++entry) {
+            REQUIRE(weights[entry].first == original_od[layer][entry].first);
+            REQUIRE(bits(weights[entry].second) ==
+                    bits(original_od[layer][entry].second));
+        }
+    }
+    REQUIRE(compiled.atmosphere_for_layer(2).empty());
+    REQUIRE(compiled.source_for_layer(1).empty());
+    // Iterators retain the immutable backing descriptor when their temporary
+    // view is destroyed, matching the original pointer-view lifetime.
+    auto midpoint_iterator = compiled.atmosphere_for_layer(1).begin();
+    REQUIRE((*midpoint_iterator).index == 12);
+    ++midpoint_iterator;
+    REQUIRE((*midpoint_iterator).index == 22);
+    ++midpoint_iterator;
+    REQUIRE(midpoint_iterator == compiled.atmosphere_for_layer(1).end());
+}
+
+TEST_CASE("Successive-orders structured layer storage retains generic rays "
+          "when a cell pattern or compact bound differs",
+          "[successive_orders][geometry]") {
+    using namespace sasktran2::successive_orders;
+    const auto check_fallback = [](int base, int midpoint,
+                                   std::size_t source_count,
+                                   std::uint8_t od_count) {
+        sasktran2::raytracing::TracedRay traced;
+        traced.layers.resize(1);
+        const std::vector<int> indices = {base, base + 1, base + 10, base + 11};
+        const std::vector<double> weights = {0.1, 0.2, 0.3, 0.4};
+        traced.set_layer_weights(0, indices.data(), weights.data(),
+                                 weights.data(), weights.data(), od_count);
+        RayInterpolation compiled;
+        compiled.traced_ray = &traced;
+        compiled.structured_altitude_stride = 10;
+        compiled.layers = {
+            {0, 1, 0, static_cast<std::uint32_t>(source_count), 0, od_count}};
+        compiled.atmosphere_weights = {{midpoint, 1.0}};
+        compiled.source_weights.wide_values().resize(source_count);
+        adopt_optical_depth_storage(traced, compiled);
+        REQUIRE(!compiled.layers.is_structured());
+        REQUIRE(compiled.atmosphere_weights.size() == 1);
+        REQUIRE(compiled.structured_atmosphere_weights.empty());
+        REQUIRE(compiled.optical_depth_indices.size() == od_count);
+        REQUIRE(compiled.atmosphere_for_layer(0)[0].index == midpoint);
+        auto iterator = compiled.atmosphere_for_layer(0).begin();
+        REQUIRE((*iterator).index == midpoint);
+        REQUIRE(compiled.optical_depth_for_layer(0)[0].first == base);
+    };
+    check_fallback(0, 5, 0, 4); // Midpoint belongs to another boundary cell.
+    check_fallback(65536, 65536, 0,
+                   4);              // Cell base does not fit the descriptor.
+    check_fallback(0, 0, 65537, 4); // Layer offset domain needs the wide form.
+    check_fallback(0, 0, 0, 3);     // Generic OD stencil has a different size.
 }

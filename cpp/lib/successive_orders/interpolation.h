@@ -1,14 +1,21 @@
 #pragma once
 
+#include "source_weight_storage.h"
+
 #include <sasktran2/raytracing.h>
 
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
+#include <iterator>
 #include <limits>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace sasktran2 {
@@ -137,6 +144,10 @@ namespace sasktran2::successive_orders {
     static_assert(sizeof(SourceInterpolationWeight) == 12,
                   "Successive-orders source weights must stay compact");
 
+    using SourceInterpolationStorage =
+        SourceWeightStorage<SourceInterpolationWeight>;
+    using SourceInterpolationView = SourceWeightView<SourceInterpolationWeight>;
+
     /** Geometry metadata required to integrate one traced layer. */
     struct LayerInterpolation {
         std::uint32_t atmosphere_offset = 0;
@@ -147,6 +158,248 @@ namespace sasktran2::successive_orders {
         std::uint32_t optical_depth_count = 0;
     };
 
+    /** A verified structured 2D cell, with double coefficients stored
+     * separately.
+     *
+     * OD corners are base, base+1, base+altitude_stride,
+     * base+altitude_stride+1. The midpoint mask selects an ordered subset of
+     * those corners. Source counts are derived from the following layer's
+     * offset or the array end.
+     */
+    struct StructuredLayerInterpolation {
+        std::uint16_t atmosphere_offset = 0;
+        std::uint16_t source_offset = 0;
+        std::uint16_t cell_base = 0;
+        std::uint8_t atmosphere_mask = 0;
+        std::uint8_t reserved = 0;
+    };
+
+    static_assert(sizeof(StructuredLayerInterpolation) == 8,
+                  "Structured layer descriptors must stay compact");
+
+    /** Construction uses wide descriptors; immutable reads decode either form.
+     */
+    class LayerInterpolationStorage {
+      public:
+        using value_type = LayerInterpolation;
+
+        LayerInterpolationStorage&
+        operator=(std::initializer_list<LayerInterpolation> values) {
+            m_values = std::vector<LayerInterpolation>(values);
+            return *this;
+        }
+        std::size_t size() const {
+            return std::visit([](const auto& values) { return values.size(); },
+                              m_values);
+        }
+        bool empty() const { return size() == 0; }
+        bool is_structured() const { return m_values.index() == 1; }
+        std::size_t capacity_bytes() const {
+            return std::visit(
+                [](const auto& values) {
+                    using Value =
+                        typename std::decay_t<decltype(values)>::value_type;
+                    return values.capacity() * sizeof(Value);
+                },
+                m_values);
+        }
+        void resize(std::size_t size) { wide_values().resize(size); }
+        void shrink_to_fit() {
+            std::visit([](auto& values) { values.shrink_to_fit(); }, m_values);
+        }
+        std::vector<LayerInterpolation>& wide_values() {
+            auto* values =
+                std::get_if<std::vector<LayerInterpolation>>(&m_values);
+            if (values == nullptr) {
+                throw std::logic_error(
+                    "Structured layer descriptors are immutable");
+            }
+            return *values;
+        }
+        const StructuredLayerInterpolation&
+        structured_layer(std::size_t index) const {
+            return std::get<std::vector<StructuredLayerInterpolation>>(
+                m_values)[index];
+        }
+        LayerInterpolation operator[](std::size_t index) const {
+            if (const auto* values =
+                    std::get_if<std::vector<LayerInterpolation>>(&m_values)) {
+                return (*values)[index];
+            }
+            const auto& values =
+                std::get<std::vector<StructuredLayerInterpolation>>(m_values);
+            const auto& layer = values[index];
+            const std::uint32_t source_end =
+                index + 1 == values.size() ? m_source_weight_count
+                                           : values[index + 1].source_offset;
+            constexpr std::array<std::uint8_t, 16> mask_counts = {
+                0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4};
+            return {layer.atmosphere_offset,
+                    mask_counts[layer.atmosphere_mask],
+                    layer.source_offset,
+                    source_end - layer.source_offset,
+                    static_cast<std::uint32_t>(index * 4),
+                    4};
+        }
+        void
+        assign_structured(std::vector<StructuredLayerInterpolation>&& values,
+                          std::uint32_t source_weight_count) {
+            m_values = std::move(values);
+            m_source_weight_count = source_weight_count;
+        }
+
+      private:
+        std::variant<std::vector<LayerInterpolation>,
+                     std::vector<StructuredLayerInterpolation>>
+            m_values;
+        std::uint32_t m_source_weight_count = 0;
+    };
+
+    /** Midpoint view preserving the generic coefficient and index interface. */
+    class AtmosphereInterpolationView {
+      public:
+        AtmosphereInterpolationView() = default;
+        AtmosphereInterpolationView(
+            const std::vector<InterpolationWeight>& values, std::size_t offset,
+            std::size_t size)
+            : m_generic(values, offset, size), m_size(size) {}
+        AtmosphereInterpolationView(const double* values, int cell_base,
+                                    int altitude_stride, std::uint8_t mask,
+                                    std::size_t size)
+            : m_values(values), m_base(cell_base), m_stride(altitude_stride),
+              m_mask(mask), m_size(size) {}
+
+        std::size_t size() const { return m_size; }
+        bool empty() const { return m_size == 0; }
+        InterpolationWeight operator[](std::size_t index) const {
+            if (index >= m_size) {
+                throw std::out_of_range(
+                    "Successive-orders midpoint index is out of range");
+            }
+            if (m_values == nullptr) {
+                return m_generic[index];
+            }
+            constexpr std::array<std::array<std::uint8_t, 4>, 16> corners = {
+                {{0, 0, 0, 0},
+                 {0, 0, 0, 0},
+                 {1, 0, 0, 0},
+                 {0, 1, 0, 0},
+                 {2, 0, 0, 0},
+                 {0, 2, 0, 0},
+                 {1, 2, 0, 0},
+                 {0, 1, 2, 0},
+                 {3, 0, 0, 0},
+                 {0, 3, 0, 0},
+                 {1, 3, 0, 0},
+                 {0, 1, 3, 0},
+                 {2, 3, 0, 0},
+                 {0, 2, 3, 0},
+                 {1, 2, 3, 0},
+                 {0, 1, 2, 3}}};
+            const int corner = corners[m_mask][index];
+            return {m_base + (corner & 1) + (corner >> 1) * m_stride,
+                    m_values[index]};
+        }
+
+        class Iterator {
+          public:
+            using iterator_category = std::input_iterator_tag;
+            using value_type = InterpolationWeight;
+            using difference_type = std::ptrdiff_t;
+            using reference = InterpolationWeight;
+            using pointer = void;
+            Iterator() = default;
+            Iterator(const AtmosphereInterpolationView* view, std::size_t index)
+                : m_data(view->m_values == nullptr
+                             ? static_cast<const void*>(view->m_generic.data())
+                             : static_cast<const void*>(view->m_values)),
+                  m_size(view->m_size), m_index(index), m_base(view->m_base),
+                  m_stride(view->m_stride), m_mask(view->m_mask),
+                  m_structured(view->m_values != nullptr) {}
+            InterpolationWeight operator*() const {
+                if (m_index >= m_size) {
+                    throw std::out_of_range(
+                        "Successive-orders midpoint iterator is out of range");
+                }
+                if (!m_structured) {
+                    return static_cast<const InterpolationWeight*>(
+                        m_data)[m_index];
+                }
+                return AtmosphereInterpolationView(
+                    static_cast<const double*>(m_data), m_base, m_stride,
+                    m_mask, m_size)[m_index];
+            }
+            Iterator& operator++() {
+                ++m_index;
+                return *this;
+            }
+            Iterator operator++(int) {
+                auto copy = *this;
+                ++*this;
+                return copy;
+            }
+            bool operator==(const Iterator& other) const {
+                return m_data == other.m_data && m_index == other.m_index &&
+                       m_base == other.m_base && m_stride == other.m_stride &&
+                       m_mask == other.m_mask &&
+                       m_structured == other.m_structured;
+            }
+            bool operator!=(const Iterator& other) const {
+                return !(*this == other);
+            }
+
+          private:
+            const void* m_data = nullptr;
+            std::size_t m_size = 0;
+            std::size_t m_index = 0;
+            int m_base = 0;
+            int m_stride = 0;
+            std::uint8_t m_mask = 0;
+            bool m_structured = false;
+        };
+        Iterator begin() const { return {this, 0}; }
+        Iterator end() const { return {this, m_size}; }
+
+      private:
+        InterpolationView<InterpolationWeight> m_generic;
+        const double* m_values = nullptr;
+        int m_base = 0;
+        int m_stride = 0;
+        std::uint8_t m_mask = 0;
+        std::size_t m_size = 0;
+    };
+
+    /** OD view over existing indices or four implicitly indexed cell corners.
+     */
+    class OpticalDepthInterpolationView {
+      public:
+        OpticalDepthInterpolationView(
+            sasktran2::raytracing::GridWeightStencilView generic = {})
+            : m_generic(generic) {}
+        OpticalDepthInterpolationView(const double* values, int cell_base,
+                                      int altitude_stride)
+            : m_values(values), m_base(cell_base), m_stride(altitude_stride) {}
+        std::size_t size() const {
+            return m_values == nullptr ? m_generic.size() : 4;
+        }
+        bool empty() const { return size() == 0; }
+        std::pair<int, double> operator[](std::size_t index) const {
+            if (m_values == nullptr) {
+                return m_generic[index];
+            }
+            assert(index < 4);
+            return {m_base + static_cast<int>(index & 1) +
+                        static_cast<int>(index >> 1) * m_stride,
+                    m_values[index]};
+        }
+
+      private:
+        sasktran2::raytracing::GridWeightStencilView m_generic;
+        const double* m_values = nullptr;
+        int m_base = 0;
+        int m_stride = 0;
+    };
+
     /** Compiled source interpolation for one traced ray.
      *
      * Optical-depth stencils are retained directly so transport calculations
@@ -154,12 +407,14 @@ namespace sasktran2::successive_orders {
      */
     struct RayInterpolation {
         const sasktran2::raytracing::TracedRay* traced_ray = nullptr;
-        std::vector<LayerInterpolation> layers;
+        LayerInterpolationStorage layers;
         std::vector<InterpolationWeight> atmosphere_weights;
-        std::vector<SourceInterpolationWeight> source_weights;
+        std::vector<double> structured_atmosphere_weights;
+        int structured_altitude_stride = 0;
+        SourceInterpolationStorage source_weights;
         std::vector<int> optical_depth_indices;
         std::vector<double> optical_depth_weights;
-        std::vector<SourceInterpolationWeight> ground_weights;
+        SourceInterpolationStorage ground_weights;
         std::vector<std::pair<int, double>> ground_horizontal_weights;
         bool ground_hit = false;
         bool transport_compiled = false;
@@ -168,33 +423,48 @@ namespace sasktran2::successive_orders {
         std::size_t transport_value_offset = 0;
         std::uint32_t transport_row_nnz = 0;
 
-        InterpolationView<InterpolationWeight>
+        AtmosphereInterpolationView
         atmosphere_for_layer(std::size_t layer_index) const {
-            const auto& layer = layers[layer_index];
+            const auto layer = layers[layer_index];
+            if (layers.is_structured()) {
+                const auto& structured = layers.structured_layer(layer_index);
+                return {layer.atmosphere_count == 0
+                            ? nullptr
+                            : structured_atmosphere_weights.data() +
+                                  layer.atmosphere_offset,
+                        structured.cell_base, structured_altitude_stride,
+                        structured.atmosphere_mask, layer.atmosphere_count};
+            }
             return {atmosphere_weights, layer.atmosphere_offset,
                     layer.atmosphere_count};
         }
-        InterpolationView<SourceInterpolationWeight>
+        SourceInterpolationView
         source_for_layer(std::size_t layer_index) const {
-            const auto& layer = layers[layer_index];
-            return {source_weights, layer.source_offset, layer.source_count};
+            const auto layer = layers[layer_index];
+            return source_weights.view(layer.source_offset, layer.source_count);
         }
-        sasktran2::raytracing::GridWeightStencilView
+        OpticalDepthInterpolationView
         optical_depth_for_layer(std::size_t layer_index) const {
-            const auto& layer = layers[layer_index];
+            const auto layer = layers[layer_index];
+            if (layers.is_structured()) {
+                return {optical_depth_weights.data() +
+                            layer.optical_depth_offset,
+                        layers.structured_layer(layer_index).cell_base,
+                        structured_altitude_stride};
+            }
             if (!optical_depth_indices.empty()) {
-                return {
+                return {sasktran2::raytracing::GridWeightStencilView{
                     optical_depth_indices.data() + layer.optical_depth_offset,
                     optical_depth_weights.data() + layer.optical_depth_offset,
-                    layer.optical_depth_count};
+                    layer.optical_depth_count}};
             }
             if (traced_ray != nullptr) {
                 return traced_ray->optical_depth_weights(layer_index);
             }
             return {};
         }
-        InterpolationView<SourceInterpolationWeight> ground() const {
-            return InterpolationView<SourceInterpolationWeight>(ground_weights);
+        SourceInterpolationView ground() const {
+            return ground_weights.view(0, ground_weights.size());
         }
 
         const std::vector<std::pair<int, double>>& ground_horizontal() const {

@@ -213,7 +213,8 @@ namespace sasktran2::successive_orders {
                   const FixedPointSettings& settings,
                   ProblemWorkspace<NSTOKES>& workspace,
                   Eigen::VectorXd& adjoint,
-                  bool materialize_transport_gradient = true) const {
+                  bool materialize_transport_gradient = true,
+                  bool skip_scattering_parameter_vjp = false) const {
             prepare_workspace(workspace);
             gradient.resize(*m_transport, *m_scattering,
                             materialize_transport_gradient);
@@ -236,11 +237,20 @@ namespace sasktran2::successive_orders {
                 },
                 settings, workspace.fixed_point);
 
-            m_transport->template apply_stokes<NSTOKES>(state,
-                                                        workspace.incoming);
-            workspace.incoming += forcing;
+            // Scalar callers may omit phase and ground parameter products
+            // only when their native mappings discard those sensitivities.
+            bool skip_parameters = false;
+            if constexpr (NSTOKES == 1) {
+                skip_parameters = skip_scattering_parameter_vjp;
+            }
+            if (!skip_parameters) {
+                m_transport->template apply_stokes<NSTOKES>(state,
+                                                            workspace.incoming);
+                workspace.incoming += forcing;
+            }
             scattering_vjp(workspace.incoming, adjoint,
-                           workspace.auxiliary_incoming, gradient, workspace);
+                           workspace.auxiliary_incoming, gradient, workspace,
+                           skip_parameters);
             if (materialize_transport_gradient) {
                 m_transport->template apply_vjp_stokes<NSTOKES>(
                     state, workspace.auxiliary_incoming,
@@ -281,7 +291,8 @@ namespace sasktran2::successive_orders {
                             Eigen::Ref<const Eigen::VectorXd> state_cotangent,
                             Eigen::Ref<Eigen::VectorXd> incoming_cotangent,
                             ProblemParameterData<NSTOKES>& gradient,
-                            ProblemWorkspace<NSTOKES>& workspace) const;
+                            ProblemWorkspace<NSTOKES>& workspace,
+                            bool skip_parameters) const;
 
         TransportOperator* m_transport;
         ScatteringOperator<NSTOKES>* m_scattering;
@@ -312,15 +323,15 @@ namespace sasktran2::successive_orders {
         Eigen::Ref<const Eigen::VectorXd> incoming,
         Eigen::Ref<const Eigen::VectorXd> state_cotangent,
         Eigen::Ref<Eigen::VectorXd> incoming_cotangent,
-        ProblemParameterData<1>& gradient,
-        ProblemWorkspace<1>& workspace) const;
+        ProblemParameterData<1>& gradient, ProblemWorkspace<1>& workspace,
+        bool skip_parameters) const;
     template <>
     void Problem<3>::scattering_vjp(
         Eigen::Ref<const Eigen::VectorXd> incoming,
         Eigen::Ref<const Eigen::VectorXd> state_cotangent,
         Eigen::Ref<Eigen::VectorXd> incoming_cotangent,
-        ProblemParameterData<3>& gradient,
-        ProblemWorkspace<3>& workspace) const;
+        ProblemParameterData<3>& gradient, ProblemWorkspace<3>& workspace,
+        bool skip_parameters) const;
 
     extern template class Problem<1>;
     extern template class Problem<3>;

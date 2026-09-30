@@ -276,11 +276,112 @@ namespace sasktran2::successive_orders {
                         static_cast<std::uint32_t>(iterator - columns.begin()));
                 }
             };
-            assign_inner_index(result.source_weights);
-            assign_inner_index(result.ground_weights);
+            assign_inner_index(result.source_weights.wide_values());
+            assign_inner_index(result.ground_weights.wide_values());
             result.transport_row_nnz =
                 checked_u32(columns.size(), "Transport row size");
             result.transport_compiled = true;
+        }
+
+        // This representation is selected for a whole ray only after checking
+        // every original index and offset. Generic geometry and wider rays
+        // retain their existing descriptors without changing any coefficients.
+        void compact_structured_layers(RayInterpolation& ray) {
+            constexpr auto narrow_max =
+                std::numeric_limits<std::uint16_t>::max();
+            if (ray.structured_altitude_stride <= 1 || ray.layers.empty() ||
+                ray.layers.is_structured() ||
+                ray.layers.size() >
+                    std::numeric_limits<std::uint32_t>::max() / 4 ||
+                ray.atmosphere_weights.size() >
+                    static_cast<std::size_t>(narrow_max) + 1 ||
+                ray.source_weights.size() >
+                    static_cast<std::size_t>(narrow_max) + 1 ||
+                ray.optical_depth_indices.size() != ray.layers.size() * 4 ||
+                ray.optical_depth_weights.size() !=
+                    ray.optical_depth_indices.size()) {
+                return;
+            }
+
+            std::vector<StructuredLayerInterpolation> layers;
+            layers.reserve(ray.layers.size());
+            std::size_t atmosphere_end = 0;
+            std::size_t source_end = 0;
+            for (std::size_t index = 0; index < ray.layers.size(); ++index) {
+                const auto layer = ray.layers[index];
+                if (layer.atmosphere_offset != atmosphere_end ||
+                    layer.source_offset != source_end ||
+                    layer.atmosphere_count > 4 ||
+                    layer.atmosphere_offset > narrow_max ||
+                    layer.source_offset > narrow_max ||
+                    layer.optical_depth_offset != index * 4 ||
+                    layer.optical_depth_count != 4 ||
+                    layer.atmosphere_count >
+                        ray.atmosphere_weights.size() - atmosphere_end ||
+                    layer.source_count >
+                        ray.source_weights.size() - source_end) {
+                    return;
+                }
+                const int base = ray.optical_depth_indices[index * 4];
+                if (base < 0 || base > narrow_max) {
+                    return;
+                }
+                std::array<int, 4> corners{};
+                for (int corner = 0; corner < 4; ++corner) {
+                    const auto expected =
+                        static_cast<std::int64_t>(base) + (corner & 1) +
+                        static_cast<std::int64_t>(corner >> 1) *
+                            ray.structured_altitude_stride;
+                    if (expected > std::numeric_limits<int>::max() ||
+                        ray.optical_depth_indices[index * 4 + corner] !=
+                            expected) {
+                        return;
+                    }
+                    corners[corner] = static_cast<int>(expected);
+                }
+
+                std::uint8_t mask = 0;
+                int previous_corner = -1;
+                for (std::size_t entry = 0; entry < layer.atmosphere_count;
+                     ++entry) {
+                    const int atmosphere_index =
+                        ray.atmosphere_weights[atmosphere_end + entry].index;
+                    const auto found = std::find(corners.begin(), corners.end(),
+                                                 atmosphere_index);
+                    if (found == corners.end()) {
+                        return;
+                    }
+                    const int corner =
+                        static_cast<int>(found - corners.begin());
+                    if (corner <= previous_corner) {
+                        return;
+                    }
+                    previous_corner = corner;
+                    mask |= static_cast<std::uint8_t>(1U << corner);
+                }
+                layers.push_back(
+                    {static_cast<std::uint16_t>(layer.atmosphere_offset),
+                     static_cast<std::uint16_t>(layer.source_offset),
+                     static_cast<std::uint16_t>(base), mask, 0});
+                atmosphere_end += layer.atmosphere_count;
+                source_end += layer.source_count;
+            }
+            if (atmosphere_end != ray.atmosphere_weights.size() ||
+                source_end != ray.source_weights.size()) {
+                return;
+            }
+
+            std::vector<double> atmosphere_values;
+            atmosphere_values.reserve(ray.atmosphere_weights.size());
+            for (const auto& entry : ray.atmosphere_weights) {
+                atmosphere_values.push_back(entry.weight());
+            }
+            ray.structured_atmosphere_weights = std::move(atmosphere_values);
+            ray.layers.assign_structured(
+                std::move(layers),
+                static_cast<std::uint32_t>(ray.source_weights.size()));
+            std::vector<InterpolationWeight>().swap(ray.atmosphere_weights);
+            std::vector<int>().swap(ray.optical_depth_indices);
         }
 
         const Eigen::Vector3d&
@@ -309,6 +410,10 @@ namespace sasktran2::successive_orders {
         result.traced_ray = &ray;
         result.ground_hit = ray.ground_is_hit;
         result.layers.resize(ray.layers.size());
+        if (const auto* geometry_2d =
+                dynamic_cast<const sasktran2::Geometry2D*>(&geometry)) {
+            result.structured_altitude_stride = geometry_2d->num_altitudes();
+        }
         result.atmosphere_weights.reserve(ray.layers.size() * 2);
         // The common one-SZA grid uses at most two altitude locations and
         // three Lebedev interpolation directions. Multi-SZA grids can grow
@@ -318,7 +423,7 @@ namespace sasktran2::successive_orders {
         for (std::size_t layer_index = 0; layer_index < ray.layers.size();
              ++layer_index) {
             const auto& traced_layer = ray.layers[layer_index];
-            auto& interpolation = result.layers[layer_index];
+            auto& interpolation = result.layers.wide_values()[layer_index];
 
             interpolation.optical_depth_offset =
                 traced_layer.grid_weight_offset;
@@ -346,9 +451,7 @@ namespace sasktran2::successive_orders {
                 result.source_weights.size(), "Source weight offset");
             interpolation.source_count = checked_u32(
                 scratch.compiled_source.size(), "Source weight count");
-            result.source_weights.insert(result.source_weights.end(),
-                                         scratch.compiled_source.begin(),
-                                         scratch.compiled_source.end());
+            result.source_weights.append(scratch.compiled_source);
         }
 
         if (ray.ground_is_hit && !ray.layers.empty()) {
@@ -364,7 +467,7 @@ namespace sasktran2::successive_orders {
             compile_source_weights(
                 -usable_layer_direction(ground_layer.average_look_away, ray),
                 ground_location, true, geometry, location_interpolator,
-                source_points, result.ground_weights, scratch);
+                source_points, result.ground_weights.wide_values(), scratch);
         }
     }
 
@@ -384,6 +487,7 @@ namespace sasktran2::successive_orders {
                 "Successive-orders OD stencil arrays have different sizes");
         }
         interpolation.traced_ray = nullptr;
+        compact_structured_layers(interpolation);
     }
 
     std::size_t compact_ray_interpolation(RayInterpolation& interpolation) {
@@ -397,12 +501,29 @@ namespace sasktran2::successive_orders {
                 released += (capacity - values.capacity()) * sizeof(Value);
             }
         };
-        compact(interpolation.layers);
+        const auto layer_capacity = interpolation.layers.capacity_bytes();
+        interpolation.layers.shrink_to_fit();
+        released += layer_capacity - interpolation.layers.capacity_bytes();
         compact(interpolation.atmosphere_weights);
-        compact(interpolation.source_weights);
+        compact(interpolation.structured_atmosphere_weights);
+        const auto compact_source = [&](SourceInterpolationStorage& values) {
+            const auto before = values.capacity_bytes();
+            const auto old_element_bytes = values.element_bytes();
+            if (interpolation.transport_compiled) {
+                values.narrow(interpolation.transport_row_nnz);
+            }
+            values.shrink_to_fit();
+            const auto payload_saved =
+                values.size() * (old_element_bytes - values.element_bytes());
+            const auto after = values.capacity_bytes() + payload_saved;
+            if (before > after) {
+                released += before - after;
+            }
+        };
+        compact_source(interpolation.source_weights);
         compact(interpolation.optical_depth_indices);
         compact(interpolation.optical_depth_weights);
-        compact(interpolation.ground_weights);
+        compact_source(interpolation.ground_weights);
         compact(interpolation.ground_horizontal_weights);
         return released;
     }

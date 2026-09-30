@@ -187,11 +187,14 @@ def test_2d_spectral_worker_cache_preserves_native_products_after_updates(
         for index in range(3)
     ]
 
-    for evaluation in range(2):
+    for evaluation in range(3):
         if evaluation:
             for current in [scene, *reference_scenes]:
-                current.storage.total_extinction[:] *= 1.12
-                current.storage.ssa[:] -= 0.015
+                if evaluation == 1:
+                    current.surface.albedo[:] *= 1.3
+                else:
+                    current.storage.total_extinction[:] *= 1.12
+                    current.storage.ssa[:] -= 0.015
                 current.mark_changed()
 
         linearization = engine.linearize(scene)
@@ -262,7 +265,7 @@ def test_2d_spectral_worker_cache_preserves_fixed_iteration_history(iterations):
     viewing = viewing_geometry()
     engine = sk.Engine(config, geometry, viewing)
     scene = _spectral_cache_atmosphere(
-        geometry, config, np.arange(3), calculate_derivatives=False
+        geometry, config, np.arange(3), calculate_derivatives=True
     )
 
     for evaluation in range(2):
@@ -271,12 +274,33 @@ def test_2d_spectral_worker_cache_preserves_fixed_iteration_history(iterations):
             scene.storage.ssa[:] -= 0.025
             scene.surface.albedo[:] *= 1.3
             scene.mark_changed()
-        result = engine.calculate_radiance(scene).radiance
-        xr.testing.assert_identical(engine.calculate_radiance(scene).radiance, result)
+        linearization = engine.linearize(scene)
+        result = linearization.value
+        xr.testing.assert_identical(engine.linearize(scene).value, result)
+        tangent = linearization.tangent_template[["extinction", "ssa"]]
+        tangent.extinction.values[:] = np.linspace(
+            -2.0e-7, 3.0e-7, tangent.extinction.size
+        ).reshape(tangent.extinction.shape)
+        tangent.ssa.values[:] = 0.012
+        cotangent = xr.ones_like(result)
+        cotangent.values[:] = np.linspace(0.35, 1.1, cotangent.size).reshape(
+            cotangent.shape
+        )
+        gradient = linearization.vjp(cotangent, parameters=("extinction", "ssa"))
+        jvp = linearization.jvp(tangent)
+        # Every native pass revisits wavelengths evicted by the previous pass.
+        # These comparisons exercise the saved forcing even at zero orders,
+        # where radiance alone does not constrain the implicit native product.
+        xr.testing.assert_identical(
+            linearization.vjp(cotangent, parameters=("extinction", "ssa")), gradient
+        )
+        xr.testing.assert_identical(linearization.jvp(tangent), jvp)
         reference_values = []
+        reference_jvps = []
+        reference_gradient = xr.zeros_like(gradient)
         for index in range(3):
             reference_scene = _spectral_cache_atmosphere(
-                geometry, config, np.array([index]), calculate_derivatives=False
+                geometry, config, np.array([index]), calculate_derivatives=True
             )
             reference_scene.storage.total_extinction[:] = (
                 scene.storage.total_extinction[:, [index]]
@@ -284,16 +308,27 @@ def test_2d_spectral_worker_cache_preserves_fixed_iteration_history(iterations):
             reference_scene.storage.ssa[:] = scene.storage.ssa[:, [index]]
             reference_scene.surface.albedo[:] = scene.surface.albedo[:, [index]]
             reference_scene.mark_changed()
-            reference_values.append(
-                sk.Engine(config, geometry, viewing)
-                .calculate_radiance(reference_scene)
-                .radiance
+            reference = sk.Engine(config, geometry, viewing).linearize(reference_scene)
+            reference_values.append(reference.value)
+            reference_jvps.append(reference.jvp(tangent))
+            reference_gradient += reference.vjp(
+                cotangent.isel(wavelength=[index]), parameters=("extinction", "ssa")
             )
         xr.testing.assert_allclose(
             result,
             xr.concat(reference_values, dim="wavelength"),
             rtol=2.0e-12,
             atol=2.0e-14,
+        )
+
+        xr.testing.assert_allclose(
+            jvp,
+            xr.concat(reference_jvps, dim="wavelength"),
+            rtol=2.0e-12,
+            atol=2.0e-14,
+        )
+        xr.testing.assert_allclose(
+            gradient, reference_gradient, rtol=2.0e-12, atol=2.0e-13
         )
 
 

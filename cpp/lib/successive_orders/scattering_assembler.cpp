@@ -5,6 +5,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <unordered_set>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -166,10 +169,42 @@ namespace sasktran2::successive_orders {
             for (int point_index = 1;
                  point_index < geometry.num_interior_points(); ++point_index) {
                 const auto& point = geometry.source_point(point_index);
-                m_point_angular_bases.push_back(
-                    std::make_shared<const ScalarAngularBasis>(
-                        point.incoming_sphere(), point.outgoing_sphere(),
-                        num_coefficients));
+                const auto& first_point = geometry.source_point(0);
+                if (&point.outgoing_sphere() ==
+                    &first_point.outgoing_sphere()) {
+                    m_point_angular_bases.push_back(
+                        std::make_shared<const ScalarAngularBasis>(
+                            point.incoming_sphere(), *m_angular_basis));
+                } else {
+                    m_point_angular_bases.push_back(
+                        std::make_shared<const ScalarAngularBasis>(
+                            point.incoming_sphere(), point.outgoing_sphere(),
+                            num_coefficients));
+                }
+            }
+            if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
+                std::size_t analysis_bytes = 0;
+                std::size_t logical_synthesis_bytes = 0;
+                std::size_t unique_synthesis_bytes = 0;
+                std::unordered_set<const void*> generations;
+                for (const auto& basis : m_point_angular_bases) {
+                    analysis_bytes += basis->analysis_storage_bytes();
+                    logical_synthesis_bytes += basis->synthesis_storage_bytes();
+                    if (generations.insert(basis->synthesis_storage_id())
+                            .second) {
+                        unique_synthesis_bytes +=
+                            basis->synthesis_storage_bytes();
+                    }
+                }
+                std::fprintf(
+                    stderr,
+                    "SASKTRAN2_MEMORY {\"kind\":\"angular_basis_sharing\","
+                    "\"points\":%zu,\"analysis_bytes\":%zu,"
+                    "\"synthesis_bytes\":%zu,"
+                    "\"duplicate_synthesis_bytes_avoided\":%zu}\n",
+                    m_point_angular_bases.size(), analysis_bytes,
+                    unique_synthesis_bytes,
+                    logical_synthesis_bytes - unique_synthesis_bytes);
             }
         }
         for (int point_index = 0; point_index < geometry.num_interior_points();
@@ -244,7 +279,14 @@ namespace sasktran2::successive_orders {
 
     ScatteringOperator<1> ScalarScatteringAssembler::create_operator() const {
         if (!m_point_angular_bases.empty()) {
-            return {m_layout, m_point_angular_bases, true};
+            const void* shared_synthesis =
+                m_point_angular_bases.front()->synthesis_storage_id();
+            const bool shares_synthesis = std::all_of(
+                m_point_angular_bases.begin(), m_point_angular_bases.end(),
+                [shared_synthesis](const auto& basis) {
+                    return basis->synthesis_storage_id() == shared_synthesis;
+                });
+            return {m_layout, m_point_angular_bases, shares_synthesis};
         }
         return {m_layout, m_angular_basis};
     }
@@ -547,8 +589,15 @@ namespace sasktran2::successive_orders {
         std::size_t angular_bytes = m_angular_basis->storage_bytes();
         if (!m_point_angular_bases.empty()) {
             angular_bytes = 0;
+            std::unordered_set<const ScalarAngularBasis*> analyses;
+            std::unordered_set<const void*> syntheses;
             for (const auto& basis : m_point_angular_bases) {
-                angular_bytes += basis->storage_bytes();
+                if (analyses.insert(basis.get()).second) {
+                    angular_bytes += basis->analysis_storage_bytes();
+                }
+                if (syntheses.insert(basis->synthesis_storage_id()).second) {
+                    angular_bytes += basis->synthesis_storage_bytes();
+                }
             }
         }
         std::size_t result =
