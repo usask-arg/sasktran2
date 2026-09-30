@@ -1310,7 +1310,8 @@ namespace sasktran2::successive_orders {
     }
 
     template <int NSTOKES>
-    template <bool WITH_TRANSPORT, bool LOWER_INTERPOLATION, bool WITH_FORCING>
+    template <bool WITH_TRANSPORT, bool LOWER_INTERPOLATION, bool WITH_FORCING,
+              bool CACHE_VOLUME>
     void FirstOrderProvider<NSTOKES>::calculate_scalar_impl(
         int wavelength, int wavelength_thread,
         Eigen::Ref<Eigen::VectorXd> forcing, TransportOperator* transport) {
@@ -1339,7 +1340,7 @@ namespace sasktran2::successive_orders {
         const double uniform_albedo_value =
             uniform_albedo ? m_uniform_albedo_values[wavelength] : 0.0;
         ScalarVolumeCache* volume_cache = nullptr;
-        if constexpr (WITH_TRANSPORT && !LOWER_INTERPOLATION) {
+        if constexpr (CACHE_VOLUME && !LOWER_INTERPOLATION) {
             if (!m_scalar_volume_cache.empty()) {
                 volume_cache = &m_scalar_volume_cache[cache_slot];
             }
@@ -2889,6 +2890,25 @@ namespace sasktran2::successive_orders {
         } else {
             calculate_scalar_impl<true, false, false>(
                 wavelength, wavelength_thread, unused_forcing, &transport);
+        }
+    }
+
+    template <int NSTOKES>
+    void FirstOrderProvider<NSTOKES>::prepare_transport_products(
+        int wavelength, int wavelength_thread) {
+        validate_ready(wavelength, wavelength_thread);
+        if (!m_use_compact_scalar) {
+            throw std::invalid_argument(
+                "Cached transport products require the compact scalar kernel");
+        }
+        prepare_wavelength(wavelength, wavelength_thread);
+        Eigen::VectorXd unused_forcing;
+        if (m_use_lower_interpolation) {
+            calculate_scalar_impl<false, true, false, true>(
+                wavelength, wavelength_thread, unused_forcing, nullptr);
+        } else {
+            calculate_scalar_impl<false, false, false, true>(
+                wavelength, wavelength_thread, unused_forcing, nullptr);
         }
     }
 

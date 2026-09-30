@@ -88,6 +88,23 @@ int sk_config_get_successive_orders_reduced_horizon_quadrature(Config* config,
                                                                int* enabled);
 int sk_config_set_successive_orders_reduced_horizon_quadrature(Config* config,
                                                                int enabled);
+int sk_config_get_successive_orders_transport_cache_wavelengths(Config* config,
+                                                                int* count);
+int sk_config_set_successive_orders_transport_cache_wavelengths(Config* config,
+                                                                int count);
+int sk_config_get_num_successive_orders_incoming_directions_by_altitude(
+    Config* config, int* count);
+int sk_config_get_successive_orders_incoming_directions_by_altitude(
+    Config* config, int* counts);
+int sk_config_set_successive_orders_incoming_directions_by_altitude(
+    Config* config, const int* counts, int count);
+int sk_config_get_num_successive_orders_outgoing_directions_by_altitude(
+    Config* config, int* count);
+int sk_config_get_successive_orders_outgoing_directions_by_altitude(
+    Config* config, int* counts);
+int sk_config_set_successive_orders_outgoing_directions_by_altitude(
+    Config* config, const int* counts, int count);
+
 int sk_config_get_num_successive_orders_altitudes(Config* config,
                                                   int* num_altitudes);
 int sk_config_get_successive_orders_altitude_grid_m(Config* config,

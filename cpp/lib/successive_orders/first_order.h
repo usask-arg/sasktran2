@@ -69,6 +69,10 @@ namespace sasktran2::successive_orders {
         void calculate_transport_only(int wavelength, int wavelength_thread,
                                       TransportOperator& transport);
 
+        /** Rebuilds the same physical layer caches for native products without
+         * replacing already cached transport values or forcing. */
+        void prepare_transport_products(int wavelength, int wavelength_thread);
+
         /** Calculates the first-order radiance and one native JVP. */
         void calculate_jvp(int wavelength, int wavelength_thread,
                            Eigen::Ref<const Eigen::VectorXd> native_tangent,
@@ -213,7 +217,7 @@ namespace sasktran2::successive_orders {
                               Eigen::Ref<Eigen::VectorXd> forcing,
                               TransportOperator* transport = nullptr);
         template <bool WITH_TRANSPORT, bool LOWER_INTERPOLATION,
-                  bool WITH_FORCING = true>
+                  bool WITH_FORCING = true, bool CACHE_VOLUME = WITH_TRANSPORT>
         void calculate_scalar_impl(int wavelength, int wavelength_thread,
                                    Eigen::Ref<Eigen::VectorXd> forcing,
                                    TransportOperator* transport);

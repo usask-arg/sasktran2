@@ -6,6 +6,7 @@
 #include <array>
 #include <cstring>
 #include <stdexcept>
+#include <type_traits>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -818,4 +819,212 @@ TEST_CASE("Successive-orders scattering rejects mismatched dimensions",
     REQUIRE_THROWS_AS(scattering.apply(bad_input, output, workspace),
                       std::invalid_argument);
     REQUIRE_THROWS_AS(scattering.ground_block(1), std::out_of_range);
+}
+
+namespace {
+    template <int NSTOKES>
+    void require_ragged_scattering_products(bool shared_outgoing) {
+        using namespace sasktran2::successive_orders;
+        using Basis = std::conditional_t<NSTOKES == 1, ScalarAngularBasis,
+                                         VectorAngularBasis>;
+        constexpr int points = 3;
+        constexpr int degrees = 16;
+        constexpr int coefficient_columns =
+            NSTOKES == 1 ? degrees : 4 * degrees;
+        const std::array<int, points> incoming_counts{14, 26, 6};
+        const std::array<int, points> outgoing_counts =
+            shared_outgoing ? std::array<int, points>{26, 26, 26}
+                            : std::array<int, points>{26, 6, 14};
+        std::vector<int> input_offsets{0}, output_offsets{0};
+        std::vector<std::shared_ptr<const Basis>> bases;
+        for (int point = 0; point < points; ++point) {
+            sasktran2::math::LebedevSphere incoming(incoming_counts[point]);
+            sasktran2::math::LebedevSphere outgoing(outgoing_counts[point]);
+            if constexpr (NSTOKES == 1) {
+                if (shared_outgoing && point != 0) {
+                    bases.push_back(std::make_shared<const Basis>(
+                        incoming, *bases.front()));
+                } else {
+                    bases.push_back(std::make_shared<const Basis>(
+                        incoming, outgoing, degrees));
+                }
+            } else {
+                bases.push_back(
+                    std::make_shared<const Basis>(incoming, outgoing, degrees));
+            }
+            input_offsets.push_back(input_offsets.back() +
+                                    NSTOKES * incoming_counts[point]);
+            output_offsets.push_back(output_offsets.back() +
+                                     NSTOKES * outgoing_counts[point]);
+        }
+        input_offsets.push_back(input_offsets.back() + 3 * NSTOKES);
+        output_offsets.push_back(output_offsets.back() + 2 * NSTOKES);
+        const ScatteringBlockLayout layout(points, NSTOKES, input_offsets,
+                                           output_offsets);
+        ScatteringOperator<NSTOKES> scattering(layout, bases, shared_outgoing);
+        const Eigen::MatrixXd ground =
+            0.1 * Eigen::MatrixXd::Random(2 * NSTOKES, 3 * NSTOKES);
+        scattering.set_ground_block(0, ground);
+        auto workspace = scattering.make_workspace();
+        const Eigen::VectorXd incoming =
+            Eigen::VectorXd::LinSpaced(scattering.input_size(), -0.91, 0.73);
+        const Eigen::VectorXd tangent =
+            Eigen::VectorXd::LinSpaced(scattering.input_size(), 0.37, -0.63);
+        const Eigen::VectorXd cotangent =
+            Eigen::VectorXd::LinSpaced(scattering.output_size(), -0.28, 0.44);
+        const Eigen::MatrixXd coefficient_tangent =
+            0.03 * Eigen::MatrixXd::Random(points, coefficient_columns);
+        const Eigen::VectorXd ground_tangent =
+            0.02 * Eigen::VectorXd::Random(scattering.ground_value_size());
+        const auto close = [](const auto& actual, const auto& expected) {
+            REQUIRE(actual.rows() == expected.rows());
+            REQUIRE(actual.cols() == expected.cols());
+            REQUIRE((actual - expected).cwiseAbs().maxCoeff() < 2.0e-11);
+        };
+        for (const int active : {3, degrees, 1}) {
+            CAPTURE(NSTOKES, shared_outgoing, active);
+            Eigen::MatrixXd coefficients =
+                Eigen::MatrixXd::Zero(points, coefficient_columns);
+            for (int point = 0; point < points; ++point) {
+                for (int column = 0;
+                     column < (NSTOKES == 1 ? active : 4 * active); ++column) {
+                    coefficients(point, column) =
+                        0.13 * (point + 1) / (column + 1);
+                }
+            }
+            scattering.set_atmospheric_coefficients(coefficients);
+            REQUIRE(scattering.active_coefficients() == active);
+            Eigen::VectorXd expected(scattering.output_size()),
+                expected_jvp(scattering.output_size());
+            Eigen::VectorXd expected_transpose(scattering.input_size()),
+                expected_vjp(scattering.input_size());
+            Eigen::MatrixXd expected_coefficient_gradient(points,
+                                                          coefficient_columns);
+            Eigen::VectorXd expected_ground_gradient(
+                scattering.ground_value_size());
+            // Each reference point uses the pre-existing uniform operator
+            // path. Its configured basis and coefficient count are identical.
+            for (int point = 0; point < points; ++point) {
+                ScatteringOperator<NSTOKES> reference(
+                    ScatteringBlockLayout(1, 0, incoming_counts[point],
+                                          outgoing_counts[point], 1, 1,
+                                          NSTOKES),
+                    bases[point]);
+                reference.set_atmospheric_coefficients(
+                    coefficients.middleRows(point, 1));
+                auto reference_workspace = reference.make_workspace();
+                const auto point_input = incoming.segment(
+                    input_offsets[point], reference.input_size());
+                const auto point_tangent = tangent.segment(
+                    input_offsets[point], reference.input_size());
+                const auto point_cotangent = cotangent.segment(
+                    output_offsets[point], reference.output_size());
+                Eigen::VectorXd result(reference.output_size()),
+                    jvp(reference.output_size());
+                Eigen::VectorXd transposed(reference.input_size()),
+                    vjp(reference.input_size());
+                Eigen::MatrixXd coefficient_gradient(1, coefficient_columns);
+                Eigen::VectorXd no_ground(0);
+                reference.apply(point_input, result, reference_workspace);
+                reference.apply_transpose(point_cotangent, transposed,
+                                          reference_workspace);
+                reference.apply_jvp(point_input, point_tangent,
+                                    coefficient_tangent.middleRows(point, 1),
+                                    no_ground, jvp, reference_workspace);
+                reference.apply_vjp(point_input, point_cotangent, vjp,
+                                    coefficient_gradient, no_ground,
+                                    reference_workspace);
+                expected.segment(output_offsets[point], result.size()) = result;
+                expected_jvp.segment(output_offsets[point], jvp.size()) = jvp;
+                expected_transpose.segment(input_offsets[point],
+                                           transposed.size()) = transposed;
+                expected_vjp.segment(input_offsets[point], vjp.size()) = vjp;
+                expected_coefficient_gradient.row(point) =
+                    coefficient_gradient.row(0);
+            }
+            ScatteringOperator<NSTOKES> ground_reference(
+                ScatteringBlockLayout(0, 1, incoming_counts[0],
+                                      outgoing_counts[0], 3, 2, NSTOKES),
+                bases.front());
+            ground_reference.set_ground_block(0, ground);
+            auto ground_workspace = ground_reference.make_workspace();
+            const auto ground_input = incoming.tail(3 * NSTOKES);
+            const auto ground_direction = tangent.tail(3 * NSTOKES);
+            const auto ground_cotangent = cotangent.tail(2 * NSTOKES);
+            Eigen::VectorXd ground_result(2 * NSTOKES), ground_jvp(2 * NSTOKES);
+            Eigen::VectorXd ground_transpose(3 * NSTOKES),
+                ground_vjp(3 * NSTOKES);
+            Eigen::MatrixXd no_coefficients(0, coefficient_columns);
+            ground_reference.apply(ground_input, ground_result,
+                                   ground_workspace);
+            ground_reference.apply_transpose(ground_cotangent, ground_transpose,
+                                             ground_workspace);
+            ground_reference.apply_jvp(ground_input, ground_direction,
+                                       no_coefficients, ground_tangent,
+                                       ground_jvp, ground_workspace);
+            ground_reference.apply_vjp(
+                ground_input, ground_cotangent, ground_vjp, no_coefficients,
+                expected_ground_gradient, ground_workspace);
+            expected.tail(2 * NSTOKES) = ground_result;
+            expected_jvp.tail(2 * NSTOKES) = ground_jvp;
+            expected_transpose.tail(3 * NSTOKES) = ground_transpose;
+            expected_vjp.tail(3 * NSTOKES) = ground_vjp;
+
+            Eigen::VectorXd actual(scattering.output_size()),
+                actual_jvp(scattering.output_size());
+            Eigen::VectorXd actual_transpose(scattering.input_size()),
+                actual_vjp(scattering.input_size());
+            Eigen::MatrixXd coefficient_gradient(points, coefficient_columns);
+            Eigen::VectorXd ground_gradient(scattering.ground_value_size());
+            scattering.apply(incoming, actual, workspace);
+            scattering.apply_transpose(cotangent, actual_transpose, workspace);
+            scattering.apply_jvp(incoming, tangent, coefficient_tangent,
+                                 ground_tangent, actual_jvp, workspace);
+            scattering.apply_vjp(incoming, cotangent, actual_vjp,
+                                 coefficient_gradient, ground_gradient,
+                                 workspace);
+            close(actual, expected);
+            close(actual_jvp, expected_jvp);
+            close(actual_transpose, expected_transpose);
+            close(actual_vjp, expected_vjp);
+            close(coefficient_gradient, expected_coefficient_gradient);
+            close(ground_gradient, expected_ground_gradient);
+            REQUIRE(
+                actual.dot(cotangent) ==
+                Catch::Approx(incoming.dot(actual_transpose)).epsilon(3.0e-11));
+            REQUIRE(actual_jvp.dot(cotangent) ==
+                    Catch::Approx(tangent.dot(actual_vjp) +
+                                  (coefficient_tangent.array() *
+                                   coefficient_gradient.array())
+                                      .sum() +
+                                  ground_tangent.dot(ground_gradient))
+                        .epsilon(3.0e-11));
+            if constexpr (NSTOKES == 1) {
+                scattering.apply_transpose(cotangent, actual_transpose,
+                                           workspace);
+                Eigen::VectorXd input_only(scattering.input_size());
+                scattering.apply_input_vjp(cotangent, input_only, workspace);
+                REQUIRE(std::memcmp(input_only.data(), actual_vjp.data(),
+                                    input_only.size() * sizeof(double)) == 0);
+                REQUIRE(std::memcmp(actual_vjp.data(), expected_vjp.data(),
+                                    actual_vjp.size() * sizeof(double)) == 0);
+            }
+        }
+    }
+} // namespace
+
+TEST_CASE("Ragged scalar angular blocks preserve complete primal and native "
+          "derivative products",
+          "[successive_orders][scattering][angular_profiles]") {
+    for (const bool shared_outgoing : {false, true}) {
+        require_ragged_scattering_products<1>(shared_outgoing);
+    }
+}
+
+TEST_CASE("Ragged vector angular blocks preserve complete primal and "
+          "derivative products",
+          "[successive_orders][scattering][angular_profiles]") {
+    for (const bool shared_outgoing : {false, true}) {
+        require_ragged_scattering_products<3>(shared_outgoing);
+    }
 }

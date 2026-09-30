@@ -143,6 +143,76 @@ def inject_update_validation(source: str, helper: Path) -> str:
     return source
 
 
+def direction_profile(value: str) -> list[int]:
+    path = Path(value)
+    try:
+        is_file = path.is_file()
+    except OSError:
+        # A long comma-separated profile need not be a valid filesystem name.
+        is_file = False
+    try:
+        if is_file:
+            result = json.loads(path.read_text())
+        else:
+            result = [int(item.strip()) for item in value.split(",")]
+    except (OSError, ValueError) as error:
+        msg = "Direction profile must be comma-separated integers or a JSON file"
+        raise argparse.ArgumentTypeError(msg) from error
+    if not isinstance(result, list) or any(
+        isinstance(item, bool) or not isinstance(item, int) or item <= 0
+        for item in result
+    ):
+        msg = "Direction profile must be a JSON array of positive integers"
+        raise argparse.ArgumentTypeError(msg)
+    return result
+
+
+def inject_configuration(source: str, helper: Path, overrides: dict) -> str:
+    marker = '    (destination / "parameters.json").write_text(\n'
+    if source.count(marker) != 1:
+        msg = "Runner changed: expected exactly one parameters.json injection marker"
+        raise ValueError(msg)
+    replacement = (
+        "    candidate_overrides = " + repr(overrides) + "\n"
+        "    kw['model_kwargs'] = {**(kw.get('model_kwargs') or {}), **candidate_overrides}\n"
+        "    __import__('runpy').run_path(" + repr(str(helper)) + ")"
+        "['install_configuration_recorder'](destination, candidate_overrides)\n"
+        + marker
+    )
+    source = source.replace(marker, replacement)
+    compile(source, "runner_snapshot.py", "exec")
+    return source
+
+
+def capture_native_diagnostics(output: Path, label: str) -> dict:
+    records = {"source_angular_grid": [], "scalar_transport_cache": []}
+    for line in (output / "stdout-stderr.log").read_text().splitlines():
+        if line.startswith("SASKTRAN2_MEMORY "):
+            record = json.loads(line.removeprefix("SASKTRAN2_MEMORY "))
+            if record.get("kind") in records:
+                records[record["kind"]].append(record)
+    reports = {}
+    for kind, filename, parameter in (
+        ("source_angular_grid", "native_geometry.json", "candidate_native_geometry"),
+        (
+            "scalar_transport_cache",
+            "native_transport_cache.json",
+            "candidate_transport_cache",
+        ),
+    ):
+        report = {"records": records[kind], "available": bool(records[kind])}
+        path = output / label / filename
+        if path.parent.is_dir():
+            path.write_text(json.dumps(report, indent=2) + "\n")
+            parameters_path = path.parent / "parameters.json"
+            if parameters_path.is_file():
+                parameters = json.loads(parameters_path.read_text())
+                parameters[parameter] = report
+                parameters_path.write_text(json.dumps(parameters, indent=2) + "\n")
+        reports[kind] = report
+    return reports
+
+
 def run_guard(command: list[str], root: Path, environment: dict, log: Path) -> int:
     with log.open("w") as stream:
         child = subprocess.Popen(
@@ -176,6 +246,9 @@ def main() -> int:
     parser.add_argument("--label", required=True)
     parser.add_argument("--columns", type=int, default=5)
     parser.add_argument("--check-updates", action="store_true")
+    parser.add_argument("--transport-cache-wavelengths", type=int)
+    parser.add_argument("--incoming-directions-by-altitude", type=direction_profile)
+    parser.add_argument("--outgoing-directions-by-altitude", type=direction_profile)
     parser.add_argument(
         "--profile-geometry",
         action="store_true",
@@ -207,6 +280,20 @@ def main() -> int:
         parser.error("--label must be a single directory name")
     if args.columns < 2:
         parser.error("--columns must be at least two")
+    if (
+        args.transport_cache_wavelengths is not None
+        and args.transport_cache_wavelengths < 0
+    ):
+        parser.error("--transport-cache-wavelengths must be nonnegative")
+    overrides = {
+        name: value
+        for name, value in {
+            "successive_orders_transport_cache_wavelengths": args.transport_cache_wavelengths,
+            "successive_orders_incoming_directions_by_altitude": args.incoming_directions_by_altitude,
+            "successive_orders_outgoing_directions_by_altitude": args.outgoing_directions_by_altitude,
+        }.items()
+        if value is not None
+    }
     build_provenance_path = (
         args.build_provenance.resolve() if args.build_provenance else None
     )
@@ -246,6 +333,12 @@ def main() -> int:
     helper = REPOSITORY / "tools/benchmarks/omps_update_validation.py"
     helper_snapshot = output / "update_validation_snapshot.py"
     runner_source = original_runner.read_text()
+    configuration_helper = REPOSITORY / "tools/benchmarks/omps_probe_configuration.py"
+    configuration_snapshot = output / "configuration_snapshot.py"
+    if overrides:
+        runner_source = inject_configuration(
+            runner_source, configuration_snapshot, overrides
+        )
     if args.check_updates:
         runner_source = inject_update_validation(runner_source, helper_snapshot)
     command[runner_index] = str(runner)
@@ -260,7 +353,7 @@ def main() -> int:
     environment = dict(os.environ)
     environment.pop("PYTHONPATH", None)
     environment.pop("SASKTRAN2_PROFILE_MEMORY", None)
-    if args.profile_geometry:
+    if args.profile_geometry or overrides:
         environment["SASKTRAN2_PROFILE_MEMORY"] = "1"
     candidate = args.candidate_package.resolve() if args.candidate_package else None
     if candidate:
@@ -339,6 +432,10 @@ def main() -> int:
         "original_runner": str(original_runner),
         "original_runner_sha256": sha256(original_runner),
         "check_updates": args.check_updates,
+        "requested_native_config_overrides": overrides,
+        "configuration_helper_sha256": (
+            sha256(configuration_helper) if overrides else None
+        ),
         "update_validation_helper_sha256": (
             sha256(helper) if args.check_updates else None
         ),
@@ -361,10 +458,19 @@ def main() -> int:
         (output / "build-provenance_snapshot.json").write_bytes(build_provenance_bytes)
     if args.check_updates:
         helper_snapshot.write_bytes(helper.read_bytes())
+    if overrides:
+        configuration_snapshot.write_bytes(configuration_helper.read_bytes())
     provenance_path = output / "provenance.json"
     provenance_path.write_text(json.dumps(provenance, indent=2) + "\n")
     return_code = run_guard(guarded, root, environment, output / "stdout-stderr.log")
     provenance["guard_return_code"] = return_code
+    if overrides:
+        provenance["actual_native_diagnostics"] = capture_native_diagnostics(
+            output, args.label
+        )
+        actual_config = output / args.label / "effective_native_config.json"
+        if actual_config.is_file():
+            provenance["actual_native_config"] = json.loads(actual_config.read_text())
     provenance["finished_utc"] = datetime.now(timezone.utc).isoformat()
     provenance_path.write_text(json.dumps(provenance, indent=2) + "\n")
     return return_code

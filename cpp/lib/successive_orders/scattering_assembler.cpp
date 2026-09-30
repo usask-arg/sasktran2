@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <unordered_set>
+#include <unordered_map>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -163,23 +164,42 @@ namespace sasktran2::successive_orders {
         const SourceGeometry1D& geometry, int num_coefficients)
         : m_geometry(&geometry), m_layout(make_layout(geometry)),
           m_angular_basis(make_basis(geometry, num_coefficients)) {
-        if (geometry.settings().use_reduced_horizon_quadrature) {
+        const auto& first_point = geometry.source_point(0);
+        const bool point_specific_grids =
+            geometry.settings().use_reduced_horizon_quadrature ||
+            std::any_of(geometry.source_points().begin(),
+                        geometry.source_points().begin() +
+                            geometry.num_interior_points(),
+                        [&](const auto& point) {
+                            return &point.incoming_sphere() !=
+                                       &first_point.incoming_sphere() ||
+                                   &point.outgoing_sphere() !=
+                                       &first_point.outgoing_sphere();
+                        });
+        if (point_specific_grids) {
             m_point_angular_bases.reserve(geometry.num_interior_points());
             m_point_angular_bases.push_back(m_angular_basis);
+            std::unordered_map<const sasktran2::math::UnitSphere*,
+                               std::shared_ptr<const ScalarAngularBasis>>
+                synthesis_by_sphere;
+            synthesis_by_sphere.emplace(&first_point.outgoing_sphere(),
+                                        m_angular_basis);
             for (int point_index = 1;
                  point_index < geometry.num_interior_points(); ++point_index) {
                 const auto& point = geometry.source_point(point_index);
-                const auto& first_point = geometry.source_point(0);
-                if (&point.outgoing_sphere() ==
-                    &first_point.outgoing_sphere()) {
+                const auto found =
+                    synthesis_by_sphere.find(&point.outgoing_sphere());
+                if (found != synthesis_by_sphere.end()) {
                     m_point_angular_bases.push_back(
                         std::make_shared<const ScalarAngularBasis>(
-                            point.incoming_sphere(), *m_angular_basis));
+                            point.incoming_sphere(), *found->second));
                 } else {
                     m_point_angular_bases.push_back(
                         std::make_shared<const ScalarAngularBasis>(
                             point.incoming_sphere(), point.outgoing_sphere(),
                             num_coefficients));
+                    synthesis_by_sphere.emplace(&point.outgoing_sphere(),
+                                                m_point_angular_bases.back());
                 }
             }
             if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
@@ -210,11 +230,14 @@ namespace sasktran2::successive_orders {
         for (int point_index = 0; point_index < geometry.num_interior_points();
              ++point_index) {
             const auto& point = geometry.source_point(point_index);
-            if (point.num_incoming() != m_angular_basis->input_size() ||
-                point.num_outgoing() != m_angular_basis->output_size()) {
+            const auto& basis = m_point_angular_bases.empty()
+                                    ? m_angular_basis
+                                    : m_point_angular_bases[point_index];
+            if (point.num_incoming() != basis->input_size() ||
+                point.num_outgoing() != basis->output_size()) {
                 throw std::invalid_argument(
                     "scalar successive-orders atmospheric angular grids "
-                    "must share one basis");
+                    "must match their point basis");
             }
         }
 
@@ -625,7 +648,18 @@ namespace sasktran2::successive_orders {
             atmospheric_point.incoming_sphere(),
             atmospheric_point.outgoing_sphere(), num_coefficients);
 
-        if (geometry.settings().use_reduced_horizon_quadrature) {
+        const bool point_specific_grids =
+            geometry.settings().use_reduced_horizon_quadrature ||
+            std::any_of(geometry.source_points().begin(),
+                        geometry.source_points().begin() +
+                            geometry.num_interior_points(),
+                        [&](const auto& point) {
+                            return &point.incoming_sphere() !=
+                                       &atmospheric_point.incoming_sphere() ||
+                                   &point.outgoing_sphere() !=
+                                       &atmospheric_point.outgoing_sphere();
+                        });
+        if (point_specific_grids) {
             m_point_angular_bases.reserve(geometry.num_interior_points());
             m_point_angular_bases.push_back(m_angular_basis);
             for (int point_index = 1;
@@ -641,11 +675,14 @@ namespace sasktran2::successive_orders {
         for (int point_index = 0; point_index < geometry.num_interior_points();
              ++point_index) {
             const auto& point = geometry.source_point(point_index);
-            if (point.num_incoming() != m_angular_basis->input_directions() ||
-                point.num_outgoing() != m_angular_basis->output_directions()) {
+            const auto& basis = m_point_angular_bases.empty()
+                                    ? m_angular_basis
+                                    : m_point_angular_bases[point_index];
+            if (point.num_incoming() != basis->input_directions() ||
+                point.num_outgoing() != basis->output_directions()) {
                 throw std::invalid_argument(
                     "vector successive-orders atmospheric angular grids "
-                    "must share one basis");
+                    "must match their point basis");
             }
         }
 
@@ -698,7 +735,18 @@ namespace sasktran2::successive_orders {
 
     ScatteringOperator<3> VectorScatteringAssembler::create_operator() const {
         if (!m_point_angular_bases.empty()) {
-            return ScatteringOperator<3>(m_layout, m_point_angular_bases, true);
+            const auto* outgoing =
+                &m_geometry->source_point(0).outgoing_sphere();
+            bool shares_synthesis = true;
+            for (int point = 1; point < m_geometry->num_interior_points();
+                 ++point) {
+                shares_synthesis =
+                    shares_synthesis &&
+                    &m_geometry->source_point(point).outgoing_sphere() ==
+                        outgoing;
+            }
+            return ScatteringOperator<3>(m_layout, m_point_angular_bases,
+                                         shares_synthesis);
         }
         return ScatteringOperator<3>(m_layout, m_angular_basis);
     }

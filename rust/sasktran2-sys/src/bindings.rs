@@ -889,6 +889,56 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_config_get_successive_orders_transport_cache_wavelengths(
+        config: *mut Config,
+        count: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_successive_orders_transport_cache_wavelengths(
+        config: *mut Config,
+        count: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_get_num_successive_orders_incoming_directions_by_altitude(
+        config: *mut Config,
+        count: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_get_successive_orders_incoming_directions_by_altitude(
+        config: *mut Config,
+        counts: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_successive_orders_incoming_directions_by_altitude(
+        config: *mut Config,
+        counts: *const ::std::os::raw::c_int,
+        count: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_get_num_successive_orders_outgoing_directions_by_altitude(
+        config: *mut Config,
+        count: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_get_successive_orders_outgoing_directions_by_altitude(
+        config: *mut Config,
+        counts: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_successive_orders_outgoing_directions_by_altitude(
+        config: *mut Config,
+        counts: *const ::std::os::raw::c_int,
+        count: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_config_get_num_successive_orders_altitudes(
         config: *mut Config,
         num_altitudes: *mut ::std::os::raw::c_int,

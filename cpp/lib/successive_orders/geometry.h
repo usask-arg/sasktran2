@@ -19,6 +19,10 @@ namespace sasktran2::successive_orders {
     struct SourceGeometrySettings {
         int num_incoming = 110;
         int num_outgoing = 110;
+        /** Optional interior direction counts in source-altitude order.
+         * Empty retains the uniform counts; ground grids remain uniform. */
+        std::vector<int> incoming_directions_by_altitude;
+        std::vector<int> outgoing_directions_by_altitude;
         int num_sza = 1;
         int num_threads = 1;
         bool include_refraction = false;

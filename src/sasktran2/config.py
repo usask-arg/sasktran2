@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import operator
+
 import numpy as np
 
 from sasktran2._core_rust import (
@@ -499,6 +501,102 @@ class Config:
     @successive_orders_reduced_horizon_quadrature.setter
     def successive_orders_reduced_horizon_quadrature(self, value: bool):
         self._config.successive_orders_reduced_horizon_quadrature = value
+
+    @property
+    def successive_orders_transport_cache_wavelengths(self) -> int:
+        """Number of scalar compact transport wavelengths pinned per worker.
+
+        Zero (the default) retains only the active transport values. A positive
+        count pins the first N wavelength indices, clamped to the available
+        wavelengths, without changing execution or gradient accumulation order.
+        The active vector and cache exchange ownership; an all-wavelength cache
+        adds N-1 transport vectors per worker. Partial caches can also retain an
+        active unpinned vector. Values are invalidated after atmosphere or
+        geometry updates. Polarized and noncompact calculations use their
+        existing storage policy.
+        """
+        return self._config.successive_orders_transport_cache_wavelengths
+
+    @successive_orders_transport_cache_wavelengths.setter
+    def successive_orders_transport_cache_wavelengths(self, value: int):
+        try:
+            count = operator.index(value)
+        except TypeError as error:
+            msg = "successive_orders_transport_cache_wavelengths must be a non-negative integer"
+            raise ValueError(msg) from error
+        if (
+            isinstance(value, bool | np.bool_)
+            or not 0 <= count <= np.iinfo(np.int32).max
+        ):
+            msg = "successive_orders_transport_cache_wavelengths must be a non-negative native integer"
+            raise ValueError(msg)
+        self._config.successive_orders_transport_cache_wavelengths = count
+
+    @staticmethod
+    def _successive_orders_direction_profile(value, name):
+        if value is None:
+            return None
+        counts = np.asarray(value)
+        if counts.ndim != 1:
+            msg = f"{name} must be one-dimensional"
+            raise ValueError(msg)
+        if counts.size == 0:
+            return None
+        if not np.issubdtype(counts.dtype, np.integer):
+            msg = f"{name} must contain positive integer counts"
+            raise ValueError(msg)
+        if np.any(counts <= 0) or np.any(counts > np.iinfo(np.int32).max):
+            msg = f"{name} must contain positive native integer counts"
+            raise ValueError(msg)
+        return counts.tolist()
+
+    @property
+    def successive_orders_incoming_directions_by_altitude(self) -> np.ndarray | None:
+        """Optional incoming counts at each successive-orders source altitude.
+
+        None or an empty array uses the uniform direction count. A profile must
+        contain one positive integer per resolved source altitude, repeated at
+        every horizontal source column. Ground points keep the existing uniform hemisphere rules.
+        Horizon-fitted incoming counts must be at least six.
+        Keep the profile fixed throughout retrieval; it changes angular
+        discretization and must be validated against a uniform reference.
+        """
+        counts = self._config.successive_orders_incoming_directions_by_altitude
+        return None if counts is None else np.asarray(counts, dtype=np.int32)
+
+    @successive_orders_incoming_directions_by_altitude.setter
+    def successive_orders_incoming_directions_by_altitude(
+        self, value: np.ndarray | None
+    ):
+        self._config.successive_orders_incoming_directions_by_altitude = (
+            self._successive_orders_direction_profile(
+                value, "successive_orders_incoming_directions_by_altitude"
+            )
+        )
+
+    @property
+    def successive_orders_outgoing_directions_by_altitude(self) -> np.ndarray | None:
+        """Optional outgoing counts at each successive-orders source altitude.
+
+        None or an empty array uses the uniform direction count. A profile must
+        contain one positive integer per resolved source altitude, repeated at
+        every horizontal source column. Ground points keep the existing uniform hemisphere rules.
+        Outgoing counts must match a supported quadrature rule.
+        Keep the profile fixed throughout retrieval; it changes angular
+        discretization and must be validated against a uniform reference.
+        """
+        counts = self._config.successive_orders_outgoing_directions_by_altitude
+        return None if counts is None else np.asarray(counts, dtype=np.int32)
+
+    @successive_orders_outgoing_directions_by_altitude.setter
+    def successive_orders_outgoing_directions_by_altitude(
+        self, value: np.ndarray | None
+    ):
+        self._config.successive_orders_outgoing_directions_by_altitude = (
+            self._successive_orders_direction_profile(
+                value, "successive_orders_outgoing_directions_by_altitude"
+            )
+        )
 
     @property
     def successive_orders_altitude_grid_m(self) -> np.ndarray | None:
