@@ -12,7 +12,7 @@ namespace sasktran2::successive_orders {
                            int wavelength) {
             double result = 0.0;
             for (const auto& weight : weights) {
-                result += weight.weight * values(weight.index, wavelength);
+                result += weight.weight() * values(weight.index, wavelength);
             }
             return result;
         }
@@ -23,7 +23,7 @@ namespace sasktran2::successive_orders {
             double result = 0.0;
             for (const auto& weight : weights) {
                 result +=
-                    weight.weight * tangent(tangent_offset + weight.index);
+                    weight.weight() * tangent(tangent_offset + weight.index);
             }
             return result;
         }
@@ -98,11 +98,28 @@ namespace sasktran2::successive_orders {
     } // namespace
 
     void RayTransportWorkspace::resize(int maximum_layers) {
-        optical_depth.resize(maximum_layers);
-        albedo.resize(maximum_layers);
-        transmission_before.resize(maximum_layers);
-        source_fraction.resize(maximum_layers);
-        factor_cotangent.resize(maximum_layers);
+        if (maximum_layers < 0) {
+            throw std::invalid_argument(
+                "invalid successive-orders ray transport workspace size");
+        }
+        if (optical_depth.size() == maximum_layers &&
+            albedo.size() == maximum_layers &&
+            transmission_before.size() == maximum_layers &&
+            source_fraction.size() == maximum_layers &&
+            factor_cotangent.size() == maximum_layers) {
+            return;
+        }
+        RayTransportWorkspace replacement;
+        replacement.optical_depth.resize(maximum_layers);
+        replacement.albedo.resize(maximum_layers);
+        replacement.transmission_before.resize(maximum_layers);
+        replacement.source_fraction.resize(maximum_layers);
+        replacement.factor_cotangent.resize(maximum_layers);
+        optical_depth.swap(replacement.optical_depth);
+        albedo.swap(replacement.albedo);
+        transmission_before.swap(replacement.transmission_before);
+        source_fraction.swap(replacement.source_fraction);
+        factor_cotangent.swap(replacement.factor_cotangent);
     }
 
     std::size_t RayTransportWorkspace::storage_bytes() const {
@@ -117,19 +134,35 @@ namespace sasktran2::successive_orders {
                                      int num_source_columns,
                                      const std::vector<int>& row_offsets,
                                      const std::vector<int>& column_indices)
-        : m_rays(&rays),
-          m_sparsity(num_source_columns, row_offsets, column_indices) {
+        : RayTransportMap(rays,
+                          TransportSparsity(num_source_columns, row_offsets,
+                                            column_indices)) {}
+
+    RayTransportMap::RayTransportMap(const std::vector<RayInterpolation>& rays,
+                                     const TransportSparsity& sparsity)
+        : m_rays(&rays), m_sparsity(sparsity) {
         if (m_sparsity.rows() != static_cast<int>(rays.size())) {
             throw std::invalid_argument(
                 "successive-orders transport row count does not match rays");
         }
         for (std::size_t row = 0; row < rays.size(); ++row) {
             const auto& ray = rays[row];
+            if (!ray.transport_compiled) {
+                throw std::invalid_argument(
+                    "Successive-orders source row has not been compiled");
+            }
             const bool owns_optical_depth =
                 !ray.optical_depth_indices.empty() ||
                 !ray.optical_depth_weights.empty();
-            if ((ray.optical_depth_indices.size() !=
-                 ray.optical_depth_weights.size()) ||
+            const bool valid_owned_optical_depth =
+                ray.layers.is_structured()
+                    ? ray.structured_altitude_stride > 0 &&
+                          ray.optical_depth_indices.empty() &&
+                          ray.optical_depth_weights.size() ==
+                              4 * ray.layers.size()
+                    : ray.optical_depth_indices.size() ==
+                          ray.optical_depth_weights.size();
+            if (!valid_owned_optical_depth ||
                 (!ray.layers.empty() && !owns_optical_depth &&
                  ray.traced_ray == nullptr) ||
                 (ray.traced_ray != nullptr &&
@@ -137,8 +170,8 @@ namespace sasktran2::successive_orders {
                 throw std::invalid_argument(
                     "invalid successive-orders compiled ray interpolation");
             }
-            const int row_start = row_offsets[row];
-            const int row_nnz = row_offsets[row + 1] - row_start;
+            const int row_start = m_sparsity.row_offsets()[row];
+            const int row_nnz = m_sparsity.row_offsets()[row + 1] - row_start;
             if (ray.transport_value_offset !=
                     static_cast<std::size_t>(row_start) ||
                 ray.transport_row_nnz != static_cast<std::uint32_t>(row_nnz)) {
@@ -146,16 +179,17 @@ namespace sasktran2::successive_orders {
                     "successive-orders ray CSR metadata is inconsistent");
             }
             const auto validate_weights = [&](const auto& weights) {
-                for (const auto& weight : weights) {
-                    if (weight.row_inner_index >=
-                            static_cast<std::uint32_t>(row_nnz) ||
-                        column_indices[row_start + weight.row_inner_index] !=
-                            weight.source_index) {
-                        throw std::invalid_argument(
-                            "successive-orders source interpolation does not "
-                            "match its CSR row");
+                weights.visit([&](const auto& typed_weights) {
+                    for (const auto& weight : typed_weights) {
+                        if (weight.row_inner_index() >=
+                            static_cast<std::uint32_t>(row_nnz)) {
+                            throw std::invalid_argument(
+                                "successive-orders source interpolation does "
+                                "not "
+                                "match its CSR row");
+                        }
                     }
-                }
+                });
             };
             validate_weights(ray.source_weights);
             validate_weights(ray.ground_weights);
@@ -218,20 +252,25 @@ namespace sasktran2::successive_orders {
                     -std::expm1(-layer_optical_depth);
                 const double factor =
                     transmission_before * albedo * source_fraction;
-                for (const auto& source : source_weights) {
-                    values(offsets[row] + source.row_inner_index) +=
-                        source.weight * factor;
-                }
+                source_weights.visit([&](const auto& weights) {
+                    for (const auto& source : weights) {
+                        values(offsets[row] + source.row_inner_index()) +=
+                            source.weight() * factor;
+                    }
+                });
                 transmission_before *= layer_transmission;
             }
 
             if (interpolation.ground_is_hit()) {
                 const double ground_albedo = ground_transport_albedo(
                     atmosphere, wavelength, interpolation);
-                for (const auto& source : interpolation.ground()) {
-                    values(offsets[row] + source.row_inner_index) +=
-                        source.weight * transmission_before * ground_albedo;
-                }
+                interpolation.ground().visit([&](const auto& weights) {
+                    for (const auto& source : weights) {
+                        values(offsets[row] + source.row_inner_index()) +=
+                            source.weight() * transmission_before *
+                            ground_albedo;
+                    }
+                });
             }
         }
     }
@@ -282,10 +321,13 @@ namespace sasktran2::successive_orders {
                     (albedo_tangent * source_fraction +
                      albedo * layer_transmission * layer_tangent -
                      albedo * source_fraction * cumulative_tangent);
-                for (const auto& source : source_weights) {
-                    value_tangent(offsets[row] + source.row_inner_index) +=
-                        source.weight * factor_tangent;
-                }
+                source_weights.visit([&](const auto& weights) {
+                    for (const auto& source : weights) {
+                        value_tangent(offsets[row] +
+                                      source.row_inner_index()) +=
+                            source.weight() * factor_tangent;
+                    }
+                });
                 transmission_before *= layer_transmission;
                 cumulative_tangent += layer_tangent;
             }
@@ -299,10 +341,13 @@ namespace sasktran2::successive_orders {
                 const double factor_tangent =
                     transmission_before * (ground_albedo_tangent -
                                            ground_albedo * cumulative_tangent);
-                for (const auto& source : interpolation.ground()) {
-                    value_tangent(offsets[row] + source.row_inner_index) +=
-                        source.weight * factor_tangent;
-                }
+                interpolation.ground().visit([&](const auto& weights) {
+                    for (const auto& source : weights) {
+                        value_tangent(offsets[row] +
+                                      source.row_inner_index()) +=
+                            source.weight() * factor_tangent;
+                    }
+                });
             }
         }
     }
@@ -319,7 +364,11 @@ namespace sasktran2::successive_orders {
             throw std::invalid_argument(
                 "invalid successive-orders ray transport VJP dimensions");
         }
-        if (workspace.optical_depth.size() < m_maximum_layers) {
+        if (workspace.optical_depth.size() < m_maximum_layers ||
+            workspace.albedo.size() < m_maximum_layers ||
+            workspace.transmission_before.size() < m_maximum_layers ||
+            workspace.source_fraction.size() < m_maximum_layers ||
+            workspace.factor_cotangent.size() < m_maximum_layers) {
             workspace.resize(m_maximum_layers);
         }
         const auto extinction =
@@ -349,11 +398,14 @@ namespace sasktran2::successive_orders {
                 workspace.source_fraction(layer_index) =
                     -std::expm1(-workspace.optical_depth(layer_index));
                 double factor_cotangent = 0.0;
-                for (const auto& source : source_weights) {
-                    factor_cotangent +=
-                        source.weight *
-                        value_gradient(offsets[row] + source.row_inner_index);
-                }
+                source_weights.visit([&](const auto& weights) {
+                    for (const auto& source : weights) {
+                        factor_cotangent +=
+                            source.weight() *
+                            value_gradient(offsets[row] +
+                                           source.row_inner_index());
+                    }
+                });
                 workspace.factor_cotangent(layer_index) = factor_cotangent;
                 transmission_before *= layer_transmission;
             }
@@ -363,11 +415,14 @@ namespace sasktran2::successive_orders {
                 const double ground_albedo = ground_transport_albedo(
                     atmosphere, wavelength, interpolation);
                 double ground_cotangent = 0.0;
-                for (const auto& source : interpolation.ground()) {
-                    ground_cotangent +=
-                        source.weight *
-                        value_gradient(offsets[row] + source.row_inner_index);
-                }
+                interpolation.ground().visit([&](const auto& weights) {
+                    for (const auto& source : weights) {
+                        ground_cotangent +=
+                            source.weight() *
+                            value_gradient(offsets[row] +
+                                           source.row_inner_index());
+                    }
+                });
                 cumulative_cotangent =
                     -transmission_before * ground_albedo * ground_cotangent;
                 accumulate_ground_transport_albedo_vjp(
@@ -410,7 +465,7 @@ namespace sasktran2::successive_orders {
                 for (const auto& weight : atmosphere_weights) {
                     native_gradient(atmosphere.ssa_deriv_start_index() +
                                     weight.index) +=
-                        weight.weight * albedo_cotangent;
+                        weight.weight() * albedo_cotangent;
                 }
 
                 cumulative_cotangent -= factor_cotangent * transmission_before *

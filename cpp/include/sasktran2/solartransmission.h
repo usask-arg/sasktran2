@@ -9,6 +9,8 @@
 #include <sasktran2/dual.h>
 #include <array>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <limits>
 
 namespace sasktran2::solartransmission {
@@ -171,11 +173,41 @@ namespace sasktran2::solartransmission {
         }
 
         void finalize() {
+            const auto values_capacity_before = m_compact_values.capacity();
+            const auto inner_capacity_before = m_compact_inner.capacity();
             if (m_compact) {
                 m_compact_outer[m_compact_rows] = m_compact_values.size();
+                m_compact_values.shrink_to_fit();
+                m_compact_inner.shrink_to_fit();
             } else {
                 m_standard.finalize();
                 m_standard.data().squeeze();
+            }
+            if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
+                std::fprintf(
+                    stderr,
+                    "SASKTRAN2_MEMORY "
+                    "{\"kind\":\"solar_exact_geometry_memory\","
+                    "\"owner\":\"%p\",\"rows\":%lld,\"columns\":%lld,"
+                    "\"compact\":%s,\"nonzeros\":%lld,"
+                    "\"value_size\":%zu,\"value_capacity_before\":%zu,"
+                    "\"value_capacity_after\":%zu,\"inner_size\":%zu,"
+                    "\"inner_capacity_before\":%zu,"
+                    "\"inner_capacity_after\":%zu,\"outer_size\":%zu,"
+                    "\"outer_capacity\":%zu,\"released_capacity_bytes\":%zu}\n",
+                    static_cast<const void*>(this),
+                    static_cast<long long>(rows()),
+                    static_cast<long long>(cols()),
+                    m_compact ? "true" : "false",
+                    static_cast<long long>(non_zeros()),
+                    m_compact_values.size(), values_capacity_before,
+                    m_compact_values.capacity(), m_compact_inner.size(),
+                    inner_capacity_before, m_compact_inner.capacity(),
+                    m_compact_outer.size(), m_compact_outer.capacity(),
+                    (values_capacity_before - m_compact_values.capacity()) *
+                            sizeof(double) +
+                        (inner_capacity_before - m_compact_inner.capacity()) *
+                            sizeof(std::uint16_t));
             }
         }
 
@@ -287,16 +319,30 @@ namespace sasktran2::solartransmission {
      * entries for a three-dimensional table. Keeping the construction in CSR
      * form avoids the large temporary triplet list required by Eigen's sparse
      * matrix builder for the hundreds of thousands of endpoints used by the
-     * successive-orders source.
+     * successive-orders source. Completed rows can share identical ordered
+     * column patterns while keeping every row's original weights and product
+     * order.
      */
     class SolarTableInterpolation {
       private:
         std::vector<std::uint32_t> m_outer;
         std::vector<std::uint32_t> m_inner;
+        std::vector<std::uint8_t> m_row_counts;
+        std::vector<std::uint16_t> m_relative_inner;
+        std::vector<std::uint32_t> m_row_bases;
+        std::vector<std::uint16_t> m_row_patterns16;
+        std::vector<std::uint32_t> m_row_patterns32;
+        std::vector<std::uint32_t> m_column_patterns;
         std::vector<double> m_values;
         Eigen::Index m_rows = 0;
         Eigen::Index m_cols = 0;
         Eigen::Index m_next_row = 0;
+        bool m_compact_rows = false;
+        bool m_relative_indices = false;
+        bool m_interned_indices = false;
+        bool m_finalized = false;
+
+        bool try_intern_column_patterns(std::size_t maximum_index_bytes);
 
       public:
         void clear();
@@ -310,6 +356,16 @@ namespace sasktran2::solartransmission {
         Eigen::Index cols() const { return m_cols; }
         Eigen::Index non_zeros() const {
             return static_cast<Eigen::Index>(m_values.size());
+        }
+        bool compact_row_counts() const { return m_compact_rows; }
+        bool relative_column_indices() const { return m_relative_indices; }
+        bool interned_column_patterns() const { return m_interned_indices; }
+        int pattern_id_bits() const {
+            return m_interned_indices ? (m_row_patterns32.empty() ? 16 : 32)
+                                      : 0;
+        }
+        std::size_t unique_pattern_count() const {
+            return m_column_patterns.size();
         }
 
         void apply(Eigen::Ref<const Eigen::VectorXd> table_values,

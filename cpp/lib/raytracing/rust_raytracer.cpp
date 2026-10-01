@@ -106,10 +106,14 @@ namespace sasktran2::rust::raytracer {
 
     class CppTraceResult2D {
       public:
-        CppTraceResult2D(sasktran2::raytracing::TracedRay& result,
-                         const sasktran2::Geometry2D& geometry,
-                         const sasktran2::viewinggeometry::ViewingRay& ray)
-            : m_result(result), m_geometry(geometry), m_ray(ray) {}
+        CppTraceResult2D(
+            sasktran2::raytracing::TracedRay& result,
+            const sasktran2::Geometry2D& geometry,
+            const sasktran2::viewinggeometry::ViewingRay& ray,
+            std::vector<sasktran2::raytracing::LayerEndpointFactors2D>*
+                endpoint_factors = nullptr)
+            : m_result(result), m_geometry(geometry), m_ray(ray),
+              m_endpoint_factors(endpoint_factors) {}
 
         void prepare(const RustTraceSummary& summary) {
             m_result.reset();
@@ -119,6 +123,9 @@ namespace sasktran2::rust::raytracer {
             m_result.tangent_radius = summary.tangent_radius;
             m_result.layers.resize(summary.num_layers);
             m_result.reserve_grid_weights(summary.num_layers * 4);
+            if (m_endpoint_factors != nullptr) {
+                m_endpoint_factors->assign(summary.num_layers, {});
+            }
         }
 
         void set_layer(std::size_t index, const RustTraceLayer& rust_layer,
@@ -190,6 +197,13 @@ namespace sasktran2::rust::raytracer {
             const auto exit_coordinates =
                 m_geometry.cell_interpolation_coordinates(
                     layer.exit, altitude_cell, horizontal_cell);
+            if (m_endpoint_factors != nullptr) {
+                auto& factors = (*m_endpoint_factors)[index];
+                factors.entrance = {entrance_coordinates.first,
+                                    entrance_coordinates.second};
+                factors.exit = {exit_coordinates.first,
+                                exit_coordinates.second};
+            }
             const auto interpolation_weights = [](const auto& coordinates) {
                 // coordinates = (altitude upper fraction,
                 //                horizontal upper fraction).
@@ -214,6 +228,8 @@ namespace sasktran2::rust::raytracer {
         sasktran2::raytracing::TracedRay& m_result;
         const sasktran2::Geometry2D& m_geometry;
         const sasktran2::viewinggeometry::ViewingRay& m_ray;
+        std::vector<sasktran2::raytracing::LayerEndpointFactors2D>*
+            m_endpoint_factors;
     };
 
     void prepare_trace_result(CppTraceResult& result,
@@ -322,6 +338,18 @@ namespace sasktran2::raytracing {
         trace_ray_impl(ray, nullptr, result, false);
     }
 
+    void RustRayTracer2D::trace_ray_with_endpoint_factors(
+        const sasktran2::viewinggeometry::ViewingRay& ray, TracedRay& result,
+        std::vector<LayerEndpointFactors2D>& endpoint_factors) const {
+        endpoint_factors.clear();
+        try {
+            trace_ray_impl(ray, nullptr, result, false, &endpoint_factors);
+        } catch (...) {
+            endpoint_factors.clear();
+            throw;
+        }
+    }
+
     void RustRayTracer2D::trace_ray_optical_depth(
         const sasktran2::viewinggeometry::ViewingRay& ray,
         TracedRay& result) const {
@@ -343,7 +371,8 @@ namespace sasktran2::raytracing {
     void RustRayTracer2D::trace_ray_impl(
         const sasktran2::viewinggeometry::ViewingRay& ray,
         const Eigen::VectorXd* refractive_index, TracedRay& result,
-        bool optical_depth_only) const {
+        bool optical_depth_only,
+        std::vector<LayerEndpointFactors2D>* endpoint_factors) const {
         if (refractive_index != nullptr &&
             refractive_index->size() != m_geometry.num_altitudes()) {
             throw std::invalid_argument(
@@ -357,7 +386,7 @@ namespace sasktran2::raytracing {
                 ? 0
                 : static_cast<std::size_t>(refractive_index->size()));
         sasktran2::rust::raytracer::CppTraceResult2D cpp_result(
-            result, m_geometry, ray);
+            result, m_geometry, ray, endpoint_factors);
         sasktran2::rust::raytracer::trace_structured_ray_2d_into_cpp_result(
             *m_impl->rust_tracer, ray.observer.position.x(),
             ray.observer.position.y(), ray.observer.position.z(),

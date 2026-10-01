@@ -107,6 +107,402 @@ def calculate(
     return result.radiance.values
 
 
+def _spectral_cache_atmosphere(
+    geometry: sk.Geometry2D,
+    config: sk.Config,
+    spectral_indices: np.ndarray,
+    *,
+    calculate_derivatives: bool,
+    uniform_phase: bool = False,
+    legendre_derivative: bool = False,
+) -> sk.Atmosphere:
+    """Use distinct optics so reusing another wavelength's cache is visible."""
+    wavelengths_nm = np.array([410.0, 530.0, 690.0])[spectral_indices]
+    result = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=wavelengths_nm,
+        calculate_derivatives=calculate_derivatives,
+        legendre_derivative=legendre_derivative,
+    )
+    horizontal, altitude = np.meshgrid(
+        HORIZONTAL_ANGLES_RAD, ALTITUDES_M, indexing="ij"
+    )
+    result.storage.total_extinction[:] = (
+        1.5e-5 * np.exp(-altitude / 15_000.0) * (1.0 + 0.3 * horizontal)
+    ).reshape(-1, 1) * np.array([0.8, 1.1, 1.5])[spectral_indices]
+    result.storage.ssa[:] = (
+        0.89 - 0.08 * altitude / ALTITUDES_M[-1] + 0.02 * horizontal
+    ).reshape(-1, 1) - np.array([0.0, 0.03, 0.07])[spectral_indices]
+    result.leg_coeff.a1[0] = 1.0
+    phase_profile = 0.3 if uniform_phase else (0.3 + 0.04 * horizontal).reshape(-1, 1)
+    result.leg_coeff.a1[2] = phase_profile + 0.05 * spectral_indices
+    result.surface.albedo[:] = np.array([0.06, 0.12, 0.23])[spectral_indices]
+    result.mark_changed()
+    return result
+
+
+@pytest.mark.parametrize("num_threads", [1, 2])
+def test_2d_mixed_uniform_phase_history_preserves_native_products(num_threads):
+    config = successive_orders_config()
+    config.num_threads = num_threads
+    config.threading_model = sk.ThreadingModel.Wavelength
+    config.num_sza = 3
+    geometry = geometry2d()
+    viewing = viewing_geometry()
+    indices = np.arange(2)
+    scene = _spectral_cache_atmosphere(
+        geometry,
+        config,
+        indices,
+        calculate_derivatives=True,
+        uniform_phase=True,
+        legendre_derivative=True,
+    )
+    engine = sk.Engine(config, geometry, viewing)
+    initial_extinction = scene.storage.total_extinction.copy()
+    initial_ssa = scene.storage.ssa.copy()
+    initial_albedo = scene.surface.albedo.copy()
+    uniform_phase = scene.leg_coeff.a1[2].copy()
+    variation = np.linspace(-0.04, 0.04, initial_extinction.shape[0]).reshape(-1, 1)
+    scene.leg_coeff.a1[2] = uniform_phase + variation * [0.0, 1.0]
+    initial_phase = scene.leg_coeff.a1[2].copy()
+    scene.mark_changed()
+    parameters = ("extinction", "ssa", "leg_coeff_3", "albedo")
+    initial_products = None
+
+    def assert_gradient_equal(actual, expected):
+        try:
+            if num_threads == 1:
+                xr.testing.assert_identical(actual, expected)
+            else:
+                # Allow final-bit rounding differences in parallel reductions.
+                xr.testing.assert_allclose(
+                    actual, expected, rtol=8 * np.finfo(float).eps, atol=0
+                )
+        except AssertionError as error:
+            msg = (
+                f"Native gradient mismatch: update={update!r}, "
+                f"num_threads={num_threads}\n{error}"
+            )
+            raise AssertionError(msg) from error
+
+    for update in ("initial", "swap", "surface", "both_varying", "restore"):
+        if update == "swap":
+            scene.leg_coeff.a1[2] = uniform_phase + variation * [1.0, 0.0]
+            scene.storage.total_extinction[:] *= 1.12
+            scene.storage.ssa[:] -= 0.015
+        elif update == "surface":
+            scene.surface.albedo[:] *= 1.3
+        elif update == "both_varying":
+            scene.leg_coeff.a1[2] = uniform_phase + variation * [1.0, 0.7]
+        elif update == "restore":
+            scene.storage.total_extinction[:] = initial_extinction
+            scene.storage.ssa[:] = initial_ssa
+            scene.surface.albedo[:] = initial_albedo
+            scene.leg_coeff.a1[2] = initial_phase
+        if update != "initial":
+            # The raw Python API uses a full revision even when only albedo
+            # changes; the native source fixture covers surface-only revisions.
+            scene.mark_changed()
+
+        linearization = engine.linearize(scene)
+        assert linearization.backends == {
+            "jvp": sk.LinearizationBackend.Native,
+            "vjp": sk.LinearizationBackend.Native,
+        }
+        tangent = linearization.tangent_template[list(parameters)]
+        for name, scale in zip(parameters, (2.0e-7, 0.015, 0.03, 0.04), strict=True):
+            tangent[name].values[...] = scale * np.linspace(
+                -0.7, 1.1, tangent[name].size
+            ).reshape(tangent[name].shape)
+        # Degree three is absent from the primal phase but present in its JVP.
+        cotangent = xr.ones_like(linearization.value)
+        cotangent.values[:] = np.linspace(0.35, 1.1, cotangent.size).reshape(
+            cotangent.shape
+        )
+        gradient = linearization.vjp(cotangent, parameters=parameters)
+        xr.testing.assert_identical(
+            linearization.vjp(cotangent, parameters=parameters), gradient
+        )
+        jvp = linearization.jvp(tangent)
+        # Preparing a JVP projection must not change the transport VJP path.
+        xr.testing.assert_identical(
+            linearization.vjp(cotangent, parameters=parameters), gradient
+        )
+        xr.testing.assert_identical(linearization.jvp(tangent), jvp)
+        jacobian = linearization.jacobian.copy(deep=True)
+        xr.testing.assert_identical(
+            linearization.vjp(cotangent, parameters=parameters), gradient
+        )
+
+        reference_scene = _spectral_cache_atmosphere(
+            geometry,
+            config,
+            indices,
+            calculate_derivatives=True,
+            legendre_derivative=True,
+        )
+        reference_scene.storage.total_extinction[:] = scene.storage.total_extinction
+        reference_scene.storage.ssa[:] = scene.storage.ssa
+        reference_scene.leg_coeff.a1[:] = scene.leg_coeff.a1
+        reference_scene.surface.albedo[:] = scene.surface.albedo
+        reference_scene.mark_changed()
+        reference = sk.Engine(config, geometry, viewing).linearize(reference_scene)
+        xr.testing.assert_identical(linearization.value, reference.value)
+        xr.testing.assert_identical(jacobian, reference.jacobian)
+        xr.testing.assert_identical(jvp, reference.jvp(tangent))
+        assert_gradient_equal(gradient, reference.vjp(cotangent, parameters=parameters))
+        products = tuple(
+            product.copy(deep=True) for product in (linearization.value, jvp, gradient)
+        )
+        if update == "initial":
+            initial_products = products
+        elif update == "restore":
+            for actual, initial in zip(products[:2], initial_products[:2], strict=True):
+                xr.testing.assert_identical(actual, initial)
+            assert_gradient_equal(products[2], initial_products[2])
+
+
+def test_2d_native_phase_products_survive_derivative_group_transitions():
+    config = successive_orders_config()
+    config.num_sza = 3
+    geometry = geometry2d()
+    viewing = viewing_geometry()
+    engine = sk.Engine(config, geometry, viewing)
+    initial_products = None
+    # All phases vary spatially. The same engine must allocate phase scratch
+    # for phase mappings and release it when those mappings disappear.
+    for evaluation, phase_derivatives in enumerate((False, True, False)):
+        scene = _spectral_cache_atmosphere(
+            geometry,
+            config,
+            np.arange(2),
+            calculate_derivatives=True,
+            legendre_derivative=phase_derivatives,
+        )
+        linearization = engine.linearize(scene)
+        parameters = ("extinction", "ssa", "albedo")
+        if phase_derivatives:
+            parameters += ("leg_coeff_3",)
+        tangent = linearization.tangent_template[list(parameters)]
+        for name, scale in zip(parameters, (2.0e-7, 0.015, 0.04, 0.03), strict=False):
+            tangent[name].values[...] = scale * np.linspace(
+                -0.7, 1.1, tangent[name].size
+            ).reshape(tangent[name].shape)
+        cotangent = xr.ones_like(linearization.value)
+        cotangent.values[:] = np.linspace(0.35, 1.1, cotangent.size).reshape(
+            cotangent.shape
+        )
+        jvp = linearization.jvp(tangent)
+        gradient = linearization.vjp(cotangent, parameters=parameters)
+        reference = sk.Engine(config, geometry, viewing).linearize(scene)
+        xr.testing.assert_identical(linearization.value, reference.value)
+        xr.testing.assert_identical(jvp, reference.jvp(tangent))
+        xr.testing.assert_identical(
+            gradient, reference.vjp(cotangent, parameters=parameters)
+        )
+        products = tuple(
+            product.copy(deep=True) for product in (linearization.value, jvp, gradient)
+        )
+        if evaluation == 0:
+            initial_products = products
+        elif evaluation == 2:
+            for actual, initial in zip(products, initial_products, strict=True):
+                xr.testing.assert_identical(actual, initial)
+
+
+@pytest.mark.parametrize("uniform_phase", [False, True])
+@pytest.mark.parametrize(
+    ("num_threads", "threading_model"),
+    [
+        (1, sk.ThreadingModel.Wavelength),
+        (2, sk.ThreadingModel.Wavelength),
+        (2, sk.ThreadingModel.Source),
+    ],
+)
+def test_2d_spectral_worker_cache_preserves_native_products_after_updates(
+    uniform_phase,
+    num_threads,
+    threading_model,
+):
+    config = successive_orders_config()
+    config.num_threads = num_threads
+    config.threading_model = threading_model
+    config.num_sza = 3
+    config.num_successive_orders_iterations = 80
+    config.successive_orders_relative_tolerance = 1.0e-12
+    config.successive_orders_absolute_tolerance = 1.0e-14
+    config.successive_orders_anderson_depth = 3
+    geometry = geometry2d()
+    viewing = viewing_geometry()
+    engine = sk.Engine(config, geometry, viewing)
+    scene = _spectral_cache_atmosphere(
+        geometry,
+        config,
+        np.arange(3),
+        calculate_derivatives=True,
+        uniform_phase=uniform_phase,
+    )
+    # Three wavelengths exceed the worker count, forcing cache eviction.
+    # Independent engines retain their single wavelength throughout.
+    reference_engines = [sk.Engine(config, geometry, viewing) for _ in range(3)]
+    reference_scenes = [
+        _spectral_cache_atmosphere(
+            geometry,
+            config,
+            np.array([index]),
+            calculate_derivatives=True,
+            uniform_phase=uniform_phase,
+        )
+        for index in range(3)
+    ]
+
+    for evaluation in range(3):
+        if evaluation:
+            for current in [scene, *reference_scenes]:
+                if evaluation == 1:
+                    current.surface.albedo[:] *= 1.3
+                else:
+                    current.storage.total_extinction[:] *= 1.12
+                    current.storage.ssa[:] -= 0.015
+                current.mark_changed()
+
+        linearization = engine.linearize(scene)
+        tangent = linearization.tangent_template[["extinction", "ssa"]]
+        tangent.extinction.values[:] = np.linspace(
+            -2.0e-7, 3.0e-7, tangent.extinction.size
+        ).reshape(tangent.extinction.shape)
+        tangent.ssa.values[:] = np.linspace(-0.015, 0.02, tangent.ssa.size).reshape(
+            tangent.ssa.shape
+        )
+        cotangent = xr.ones_like(linearization.value)
+        cotangent.values[:] = np.linspace(0.35, 1.1, cotangent.size).reshape(
+            cotangent.shape
+        )
+        gradient = linearization.vjp(cotangent, parameters=("extinction", "ssa"))
+        jvp = linearization.jvp(tangent)
+        xr.testing.assert_allclose(
+            linearization.vjp(cotangent, parameters=("extinction", "ssa")),
+            gradient,
+            rtol=2.0e-12,
+            atol=2.0e-13,
+        )
+        xr.testing.assert_allclose(
+            linearization.jvp(tangent), jvp, rtol=2.0e-12, atol=2.0e-14
+        )
+
+        reference_values = []
+        reference_jvps = []
+        reference_gradient = xr.zeros_like(gradient)
+        for index, (reference_engine, reference_scene) in enumerate(
+            zip(reference_engines, reference_scenes, strict=True)
+        ):
+            reference = reference_engine.linearize(reference_scene)
+            reference_values.append(reference.value)
+            reference_gradient += reference.vjp(
+                cotangent.isel(wavelength=[index]), parameters=("extinction", "ssa")
+            )
+            reference_jvps.append(reference.jvp(tangent))
+        xr.testing.assert_allclose(
+            linearization.value,
+            xr.concat(reference_values, dim="wavelength"),
+            rtol=2.0e-12,
+            atol=2.0e-14,
+        )
+        xr.testing.assert_allclose(
+            jvp,
+            xr.concat(reference_jvps, dim="wavelength"),
+            rtol=2.0e-12,
+            atol=2.0e-14,
+        )
+        xr.testing.assert_allclose(
+            gradient, reference_gradient, rtol=2.0e-12, atol=2.0e-13
+        )
+        np.testing.assert_allclose(
+            float((jvp * cotangent).sum()),
+            float((tangent * gradient).to_array().sum()),
+            rtol=3.0e-8,
+            atol=3.0e-11,
+        )
+
+
+@pytest.mark.parametrize("iterations", [0, 2])
+def test_2d_spectral_worker_cache_preserves_fixed_iteration_history(iterations):
+    config = successive_orders_config()
+    config.num_sza = 3
+    config.num_successive_orders_iterations = iterations
+    geometry = geometry2d()
+    viewing = viewing_geometry()
+    engine = sk.Engine(config, geometry, viewing)
+    scene = _spectral_cache_atmosphere(
+        geometry, config, np.arange(3), calculate_derivatives=True
+    )
+
+    for evaluation in range(2):
+        if evaluation:
+            scene.storage.total_extinction[:] *= 1.2
+            scene.storage.ssa[:] -= 0.025
+            scene.surface.albedo[:] *= 1.3
+            scene.mark_changed()
+        linearization = engine.linearize(scene)
+        result = linearization.value
+        xr.testing.assert_identical(engine.linearize(scene).value, result)
+        tangent = linearization.tangent_template[["extinction", "ssa"]]
+        tangent.extinction.values[:] = np.linspace(
+            -2.0e-7, 3.0e-7, tangent.extinction.size
+        ).reshape(tangent.extinction.shape)
+        tangent.ssa.values[:] = 0.012
+        cotangent = xr.ones_like(result)
+        cotangent.values[:] = np.linspace(0.35, 1.1, cotangent.size).reshape(
+            cotangent.shape
+        )
+        gradient = linearization.vjp(cotangent, parameters=("extinction", "ssa"))
+        jvp = linearization.jvp(tangent)
+        # Every native pass revisits wavelengths evicted by the previous pass.
+        # These comparisons exercise the saved forcing even at zero orders,
+        # where radiance alone does not constrain the implicit native product.
+        xr.testing.assert_identical(
+            linearization.vjp(cotangent, parameters=("extinction", "ssa")), gradient
+        )
+        xr.testing.assert_identical(linearization.jvp(tangent), jvp)
+        reference_values = []
+        reference_jvps = []
+        reference_gradient = xr.zeros_like(gradient)
+        for index in range(3):
+            reference_scene = _spectral_cache_atmosphere(
+                geometry, config, np.array([index]), calculate_derivatives=True
+            )
+            reference_scene.storage.total_extinction[:] = (
+                scene.storage.total_extinction[:, [index]]
+            )
+            reference_scene.storage.ssa[:] = scene.storage.ssa[:, [index]]
+            reference_scene.surface.albedo[:] = scene.surface.albedo[:, [index]]
+            reference_scene.mark_changed()
+            reference = sk.Engine(config, geometry, viewing).linearize(reference_scene)
+            reference_values.append(reference.value)
+            reference_jvps.append(reference.jvp(tangent))
+            reference_gradient += reference.vjp(
+                cotangent.isel(wavelength=[index]), parameters=("extinction", "ssa")
+            )
+        xr.testing.assert_allclose(
+            result,
+            xr.concat(reference_values, dim="wavelength"),
+            rtol=2.0e-12,
+            atol=2.0e-14,
+        )
+
+        xr.testing.assert_allclose(
+            jvp,
+            xr.concat(reference_jvps, dim="wavelength"),
+            rtol=2.0e-12,
+            atol=2.0e-14,
+        )
+        xr.testing.assert_allclose(
+            gradient, reference_gradient, rtol=2.0e-12, atol=2.0e-13
+        )
+
+
 @pytest.mark.parametrize("num_stokes", [1, 3])
 def test_2d_successive_orders_is_finite_and_adds_multiple_scatter(num_stokes: int):
     geometry = geometry2d()

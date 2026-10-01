@@ -7,6 +7,7 @@
 #include <Eigen/Core>
 
 #include <cstddef>
+#include <utility>
 
 namespace sasktran2::successive_orders {
 
@@ -48,11 +49,50 @@ namespace sasktran2::successive_orders {
 
         void resize(const TransportOperator&,
                     const ScatteringOperator<NSTOKES>& scattering_operator) {
-            incoming.resize(scattering_operator.input_size());
-            auxiliary_incoming.resize(scattering_operator.input_size());
-            auxiliary_state.resize(scattering_operator.output_size());
-            direct_state.resize(scattering_operator.output_size());
-            scattering = scattering_operator.make_workspace();
+            const auto input_size = scattering_operator.input_size();
+            const auto state_size = scattering_operator.output_size();
+            const bool resize_incoming = incoming.size() != input_size;
+            const bool resize_auxiliary_incoming =
+                auxiliary_incoming.size() != input_size;
+            const bool resize_auxiliary_state =
+                auxiliary_state.size() != state_size;
+            const bool resize_direct_state = direct_state.size() != state_size;
+            if (!resize_incoming && !resize_auxiliary_incoming &&
+                !resize_auxiliary_state && !resize_direct_state) {
+                // Preserve explicit resize's original scattering reset even
+                // when different layouts happen to have the same total sizes.
+                scattering = scattering_operator.make_workspace();
+                return;
+            }
+
+            // Construct new owning storage before modifying a retained pool.
+            ProblemWorkspace replacement;
+            if (resize_incoming) {
+                replacement.incoming.resize(input_size);
+            }
+            if (resize_auxiliary_incoming) {
+                replacement.auxiliary_incoming.resize(input_size);
+            }
+            if (resize_auxiliary_state) {
+                replacement.auxiliary_state.resize(state_size);
+            }
+            if (resize_direct_state) {
+                replacement.direct_state.resize(state_size);
+            }
+            replacement.scattering = scattering_operator.make_workspace();
+            if (resize_incoming) {
+                incoming.swap(replacement.incoming);
+            }
+            if (resize_auxiliary_incoming) {
+                auxiliary_incoming.swap(replacement.auxiliary_incoming);
+            }
+            if (resize_auxiliary_state) {
+                auxiliary_state.swap(replacement.auxiliary_state);
+            }
+            if (resize_direct_state) {
+                direct_state.swap(replacement.direct_state);
+            }
+            scattering = std::move(replacement.scattering);
         }
 
         std::size_t storage_bytes() const {
@@ -213,7 +253,8 @@ namespace sasktran2::successive_orders {
                   const FixedPointSettings& settings,
                   ProblemWorkspace<NSTOKES>& workspace,
                   Eigen::VectorXd& adjoint,
-                  bool materialize_transport_gradient = true) const {
+                  bool materialize_transport_gradient = true,
+                  bool skip_scattering_parameter_vjp = false) const {
             prepare_workspace(workspace);
             gradient.resize(*m_transport, *m_scattering,
                             materialize_transport_gradient);
@@ -236,11 +277,20 @@ namespace sasktran2::successive_orders {
                 },
                 settings, workspace.fixed_point);
 
-            m_transport->template apply_stokes<NSTOKES>(state,
-                                                        workspace.incoming);
-            workspace.incoming += forcing;
+            // Scalar callers may omit phase and ground parameter products
+            // only when their native mappings discard those sensitivities.
+            bool skip_parameters = false;
+            if constexpr (NSTOKES == 1) {
+                skip_parameters = skip_scattering_parameter_vjp;
+            }
+            if (!skip_parameters) {
+                m_transport->template apply_stokes<NSTOKES>(state,
+                                                            workspace.incoming);
+                workspace.incoming += forcing;
+            }
             scattering_vjp(workspace.incoming, adjoint,
-                           workspace.auxiliary_incoming, gradient, workspace);
+                           workspace.auxiliary_incoming, gradient, workspace,
+                           skip_parameters);
             if (materialize_transport_gradient) {
                 m_transport->template apply_vjp_stokes<NSTOKES>(
                     state, workspace.auxiliary_incoming,
@@ -253,6 +303,8 @@ namespace sasktran2::successive_orders {
       private:
         void prepare_workspace(ProblemWorkspace<NSTOKES>& workspace) const {
             if (workspace.incoming.size() != incoming_size() ||
+                workspace.auxiliary_incoming.size() != incoming_size() ||
+                workspace.auxiliary_state.size() != state_size() ||
                 workspace.direct_state.size() != state_size()) {
                 workspace.resize(*m_transport, *m_scattering);
             }
@@ -281,10 +333,11 @@ namespace sasktran2::successive_orders {
                             Eigen::Ref<const Eigen::VectorXd> state_cotangent,
                             Eigen::Ref<Eigen::VectorXd> incoming_cotangent,
                             ProblemParameterData<NSTOKES>& gradient,
-                            ProblemWorkspace<NSTOKES>& workspace) const;
+                            ProblemWorkspace<NSTOKES>& workspace,
+                            bool skip_parameters) const;
 
         TransportOperator* m_transport;
-        ScatteringOperator<NSTOKES>* m_scattering;
+        const ScatteringOperator<NSTOKES>* m_scattering;
     };
 
     template <>
@@ -312,15 +365,15 @@ namespace sasktran2::successive_orders {
         Eigen::Ref<const Eigen::VectorXd> incoming,
         Eigen::Ref<const Eigen::VectorXd> state_cotangent,
         Eigen::Ref<Eigen::VectorXd> incoming_cotangent,
-        ProblemParameterData<1>& gradient,
-        ProblemWorkspace<1>& workspace) const;
+        ProblemParameterData<1>& gradient, ProblemWorkspace<1>& workspace,
+        bool skip_parameters) const;
     template <>
     void Problem<3>::scattering_vjp(
         Eigen::Ref<const Eigen::VectorXd> incoming,
         Eigen::Ref<const Eigen::VectorXd> state_cotangent,
         Eigen::Ref<Eigen::VectorXd> incoming_cotangent,
-        ProblemParameterData<3>& gradient,
-        ProblemWorkspace<3>& workspace) const;
+        ProblemParameterData<3>& gradient, ProblemWorkspace<3>& workspace,
+        bool skip_parameters) const;
 
     extern template class Problem<1>;
     extern template class Problem<3>;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "geometry.h"
+#include "endpoint_stencil_storage.h"
 #include "transport.h"
 
 #include <sasktran2/solartransmission.h>
@@ -42,6 +43,13 @@ namespace sasktran2::successive_orders {
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
             bool volume_changed = true);
 
+        /** Select the bounded spectral cache owned by this wavelength worker.
+         *
+         * Call before returning a cached primal or requesting native products.
+         * Simultaneous workers must evaluate distinct wavelengths.
+         */
+        void prepare_wavelength(int wavelength, int wavelength_thread);
+
         int size() const { return m_num_rays * NSTOKES; }
 
         /** Calculates the first-order incoming radiance. */
@@ -52,10 +60,21 @@ namespace sasktran2::successive_orders {
         bool can_release_incoming_geometry() const {
             return m_use_compact_scalar && !m_use_lower_interpolation;
         }
+        /** Factored coefficients must be decoded on the calling OS thread. */
+        bool requests_endpoint_factors() const {
+            return m_compact_scalar_requested && m_geometry_1d == nullptr &&
+                   m_num_threads == 1 && m_num_source_threads == 1 &&
+                   m_num_wavelength_threads == 1;
+        }
 
         void calculate_with_transport(int wavelength, int wavelength_thread,
                                       TransportOperator& transport,
                                       Eigen::Ref<Eigen::VectorXd> forcing);
+
+        /** Rebuilds transport and product layer caches without first-order
+         * forcing. The caller must already own current, matching forcing. */
+        void calculate_transport_only(int wavelength, int wavelength_thread,
+                                      TransportOperator& transport);
 
         /** Calculates the first-order radiance and one native JVP. */
         void calculate_jvp(int wavelength, int wavelength_thread,
@@ -95,13 +114,16 @@ namespace sasktran2::successive_orders {
             Eigen::Ref<const Eigen::VectorXd> forcing_cotangent,
             Eigen::Ref<Eigen::VectorXd> native_gradient);
 
+        /** Provider-owned storage; shared calling-thread product scratch is
+         * reported separately and retained until that OS thread exits. */
         std::size_t workspace_bytes() const;
 
       private:
         using ExactSource = sasktran2::solartransmission::SingleScatterSource<
             sasktran2::solartransmission::SolarTransmissionExact, NSTOKES>;
-        void validate_ready(int wavelength, int wavelength_thread) const;
+        void validate_ready(int wavelength, int wavelength_thread);
         int ray_thread_index(int wavelength_thread) const;
+        int scalar_cache_index(int wavelength) const;
         const Eigen::VectorXd& ensure_solar_transmission(int wavelength,
                                                          int wavelength_thread);
         void ensure_endpoint_medium(int wavelength);
@@ -141,9 +163,38 @@ namespace sasktran2::successive_orders {
             bool active = false;
         };
 
+        // These views are prepared after the worker's physical caches and
+        // product scratch are sized. They live only for the current sweep.
+        struct ScalarEndpointContext {
+            const double* extinction = nullptr;
+            const double* albedo = nullptr;
+            const double* coefficients = nullptr;
+            Eigen::Index coefficient_stride = 0;
+            const int* phase_orders = nullptr;
+            const int* maximum_orders = nullptr;
+            const double* basis = nullptr;
+            int endpoint_basis_stride = 0;
+            const double* uniform_phase = nullptr;
+            const int* endpoint_slots = nullptr;
+            const double* endpoint_extinction = nullptr;
+            const double* endpoint_albedo = nullptr;
+            const double* solar = nullptr;
+            int ssa_deriv_start = 0;
+            const double* coefficient_tangent = nullptr;
+            const int* tangent_orders = nullptr;
+            const double* endpoint_extinction_tangent = nullptr;
+            const double* endpoint_albedo_tangent = nullptr;
+        };
+
+        ScalarEndpointContext
+        prepare_scalar_endpoint_context(int wavelength, int cache_slot) const;
+        ScalarEndpointContext
+        scalar_endpoint_context_for_ray(const ScalarEndpointContext& context,
+                                        int ray) const;
+
         struct ScalarVolumeCache {
-            Eigen::VectorXd forcing;
-            Eigen::VectorXd transport_values;
+            // Retain only the exact layer sweep's transmission to the ground
+            // for reverse products; transport and forcing live in the worker.
             Eigen::VectorXd ground_prefix;
             bool active = false;
         };
@@ -170,11 +221,12 @@ namespace sasktran2::successive_orders {
         void calculate_scalar(int wavelength, int wavelength_thread,
                               Eigen::Ref<Eigen::VectorXd> forcing,
                               TransportOperator* transport = nullptr);
-        template <bool WITH_TRANSPORT, bool LOWER_INTERPOLATION>
+        template <bool WITH_TRANSPORT, bool LOWER_INTERPOLATION,
+                  bool WITH_FORCING = true>
         void calculate_scalar_impl(int wavelength, int wavelength_thread,
                                    Eigen::Ref<Eigen::VectorXd> forcing,
                                    TransportOperator* transport);
-        template <bool WITH_TRANSPORT>
+        template <bool WITH_TRANSPORT, bool WITH_FORCING = true>
         void calculate_scalar_uniform_impl(int wavelength,
                                            int wavelength_thread,
                                            Eigen::Ref<Eigen::VectorXd> forcing,
@@ -198,7 +250,7 @@ namespace sasktran2::successive_orders {
             Eigen::VectorXd* direct_transport_tangent);
         void calculate_scalar_jvp_uniform_proportional(
             int wavelength, Eigen::Ref<const Eigen::VectorXd> native_tangent,
-            const Eigen::VectorXd& solar_tangent,
+            Eigen::Ref<const Eigen::VectorXd> solar_tangent,
             double extinction_direction_scale, double albedo,
             double albedo_tangent,
             const Eigen::VectorXd& layer_state_projection,
@@ -220,6 +272,15 @@ namespace sasktran2::successive_orders {
             const Eigen::VectorXd* transport_state,
             const Eigen::VectorXd* ground_state_projection);
         template <bool WITH_TRANSPORT, bool LOWER_INTERPOLATION>
+        void accumulate_scalar_vjp_dispatch(
+            int wavelength, int wavelength_thread,
+            Eigen::Ref<const Eigen::VectorXd> forcing_cotangent,
+            Eigen::Ref<Eigen::VectorXd> native_gradient,
+            const Eigen::VectorXd* transport_state,
+            const Eigen::VectorXd* layer_state_projection,
+            const Eigen::VectorXd* ground_state_projection);
+        template <bool WITH_TRANSPORT, bool LOWER_INTERPOLATION,
+                  bool WITH_PHASE_GRADIENT>
         void accumulate_scalar_vjp_impl(
             int wavelength, int wavelength_thread,
             Eigen::Ref<const Eigen::VectorXd> forcing_cotangent,
@@ -228,34 +289,77 @@ namespace sasktran2::successive_orders {
             const Eigen::VectorXd* layer_state_projection,
             const Eigen::VectorXd* ground_state_projection);
 
+        // Callers resolve and validate their worker cache before entering the
+        // ray loop; endpoint helpers reuse the prepared views in that sweep.
         template <typename Weights>
-        ScalarEndpoint scalar_endpoint(int wavelength, int ray, int layer,
-                                       bool entrance, int solar_index,
+        ScalarEndpoint scalar_endpoint(const ScalarEndpointContext& context,
+                                       int layer, bool entrance,
+                                       int solar_index,
                                        const Weights& weights) const;
         template <bool USE_ENDPOINT_MEDIUM, typename Weights>
         ScalarValueTangent scalar_endpoint_jvp(
-            int wavelength, int wavelength_thread, int ray, int layer,
-            bool entrance, int solar_index, const Weights& weights,
+            const ScalarEndpointContext& context, int layer, bool entrance,
+            int solar_index, const Weights& weights,
             const double* extinction_direction, const double* albedo_direction,
             const double* solar_tangent, bool uniform_albedo_direction,
             double uniform_albedo_tangent, bool phase_tangent_active) const;
-        template <typename Weights>
+        template <bool WITH_PHASE_GRADIENT, typename Weights>
         void accumulate_scalar_endpoint_vjp(
-            int wavelength, int ray, int layer, bool entrance, int solar_index,
-            const Weights& weights, const ScalarEndpoint& endpoint,
-            double source_cotangent,
+            const ScalarEndpointContext& context, int layer, bool entrance,
+            int solar_index, const Weights& weights,
+            const ScalarEndpoint& endpoint, double source_cotangent,
             Eigen::Ref<Eigen::VectorXd> native_gradient,
             Eigen::Ref<Eigen::VectorXd> solar_gradient,
             Eigen::Ref<Eigen::VectorXd> coefficient_gradient) const;
 
-        InterpolationView<InterpolationWeight>
-        endpoint_weights(int solar_index) const {
+        EIGEN_STRONG_INLINE ScalarEndpoint
+        scalar_endpoint(const ScalarEndpointContext& context, int layer,
+                        bool entrance, int solar_index) const {
+            return visit_endpoint_weights(solar_index, [&](const auto& values) {
+                return scalar_endpoint(context, layer, entrance, solar_index,
+                                       values);
+            });
+        }
+
+        template <bool USE_ENDPOINT_MEDIUM>
+        EIGEN_STRONG_INLINE ScalarValueTangent scalar_endpoint_jvp(
+            const ScalarEndpointContext& context, int layer, bool entrance,
+            int solar_index, const double* extinction_direction,
+            const double* albedo_direction, const double* solar_tangent,
+            bool uniform_albedo_direction, double uniform_albedo_tangent,
+            bool phase_tangent_active) const {
+            return visit_endpoint_weights(solar_index, [&](const auto& values) {
+                return scalar_endpoint_jvp<USE_ENDPOINT_MEDIUM>(
+                    context, layer, entrance, solar_index, values,
+                    extinction_direction, albedo_direction, solar_tangent,
+                    uniform_albedo_direction, uniform_albedo_tangent,
+                    phase_tangent_active);
+            });
+        }
+
+        template <bool WITH_PHASE_GRADIENT>
+        EIGEN_STRONG_INLINE void accumulate_scalar_endpoint_vjp(
+            const ScalarEndpointContext& context, int layer, bool entrance,
+            int solar_index, const ScalarEndpoint& endpoint,
+            double source_cotangent,
+            Eigen::Ref<Eigen::VectorXd> native_gradient,
+            Eigen::Ref<Eigen::VectorXd> solar_gradient,
+            Eigen::Ref<Eigen::VectorXd> coefficient_gradient) const {
+            visit_endpoint_weights(solar_index, [&](const auto& values) {
+                accumulate_scalar_endpoint_vjp<WITH_PHASE_GRADIENT>(
+                    context, layer, entrance, solar_index, values, endpoint,
+                    source_cotangent, native_gradient, solar_gradient,
+                    coefficient_gradient);
+            });
+        }
+
+        template <typename Callback>
+        EIGEN_STRONG_INLINE decltype(auto)
+        visit_endpoint_weights(int solar_index, Callback&& callback) const {
             const int slot = m_endpoint_slots[solar_index];
-            return {
-                m_unique_endpoint_weights,
-                static_cast<std::size_t>(m_unique_endpoint_offsets[slot]),
-                static_cast<std::size_t>(m_unique_endpoint_offsets[slot + 1] -
-                                         m_unique_endpoint_offsets[slot])};
+            return m_endpoint_stencils.visit_view(
+                static_cast<std::size_t>(slot),
+                std::forward<Callback>(callback));
         }
 
         int phase_basis_slot(int ray, int solar_index) const {
@@ -307,8 +411,7 @@ namespace sasktran2::successive_orders {
         std::vector<int> m_solar_offsets;
         std::vector<double> m_phase_basis;
         std::vector<int> m_endpoint_slots;
-        std::vector<int> m_unique_endpoint_offsets;
-        std::vector<InterpolationWeight> m_unique_endpoint_weights;
+        EndpointStencilStorage m_endpoint_stencils;
         std::vector<ScalarPackedRay> m_scalar_packed_rays;
         std::vector<ScalarPackedLayer> m_scalar_packed_layers;
         std::vector<ScalarGroundGeometry> m_scalar_ground_geometry;
@@ -321,16 +424,11 @@ namespace sasktran2::successive_orders {
         mutable std::vector<
             Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>>
             m_vjp_cotangent_scratch;
-        mutable std::vector<Eigen::VectorXd> m_solar_product_scratch;
-        mutable std::vector<Eigen::VectorXd> m_solar_table_product_scratch;
         mutable std::vector<Eigen::VectorXd> m_phase_product_scratch;
         mutable std::vector<std::vector<int>> m_phase_order_scratch;
-        mutable std::vector<Eigen::VectorXd>
-            m_endpoint_extinction_tangent_scratch;
-        mutable std::vector<Eigen::VectorXd> m_endpoint_albedo_tangent_scratch;
         std::vector<int> m_scalar_phase_orders;
         std::vector<unsigned char> m_uniform_phase_active;
-        std::vector<double> m_uniform_phase_values;
+        std::vector<std::vector<double>> m_uniform_phase_values;
         std::vector<unsigned char> m_uniform_albedo_active;
         std::vector<double> m_uniform_albedo_values;
         std::vector<Eigen::VectorXd> m_cached_solar_transmission;
@@ -338,6 +436,11 @@ namespace sasktran2::successive_orders {
         std::vector<ScalarLayerCache> m_scalar_layer_cache;
         std::vector<ScalarEndpointMediumCache> m_endpoint_medium_cache;
         std::vector<ScalarVolumeCache> m_scalar_volume_cache;
+        // Spectral values live in one reusable slot per wavelength worker.
+        // Each active wavelength installs its own mapping before use; stale
+        // mappings are deliberately left untouched by other workers.
+        std::vector<int> m_scalar_cache_wavelength;
+        std::vector<int> m_scalar_cache_index;
         mutable std::vector<ScalarVjpScratch> m_scalar_vjp_scratch;
     };
 

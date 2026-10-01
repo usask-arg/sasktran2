@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <complex>
+#include <memory>
 #include <vector>
 
 namespace sasktran2::math {
@@ -26,14 +27,24 @@ namespace sasktran2::successive_orders {
                            const sasktran2::math::UnitSphere& outgoing,
                            int num_coefficients);
 
+        /** Build a point-specific analysis with the reference's exact outgoing
+         * transform. The immutable synthesis survives the reference object. */
+        ScalarAngularBasis(const sasktran2::math::UnitSphere& incoming,
+                           const ScalarAngularBasis& shared_outgoing);
+
         int input_size() const { return static_cast<int>(m_analysis.cols()); }
-        int output_size() const { return static_cast<int>(m_synthesis.rows()); }
+        int output_size() const {
+            return static_cast<int>(m_synthesis->rows());
+        }
         int num_coefficients() const { return m_num_coefficients; }
         int num_modes() const {
             return static_cast<int>(m_mode_degrees.size());
         }
 
         std::size_t storage_bytes() const;
+        std::size_t analysis_storage_bytes() const;
+        std::size_t synthesis_storage_bytes() const;
+        const void* synthesis_storage_id() const { return m_synthesis.get(); }
 
         /** Applies point-local scattering blocks.
          *
@@ -113,7 +124,7 @@ namespace sasktran2::successive_orders {
 
         int m_num_coefficients;
         Eigen::MatrixXd m_analysis;
-        Eigen::MatrixXd m_synthesis;
+        std::shared_ptr<const Eigen::MatrixXd> m_synthesis;
         std::vector<int> m_mode_degrees;
     };
 

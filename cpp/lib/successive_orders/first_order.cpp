@@ -1,7 +1,10 @@
 #include "first_order.h"
+#include "first_order_scratch.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -17,7 +20,39 @@ namespace sasktran2::successive_orders {
         constexpr double minimum_layer_distance_m = 1.0e-4;
         constexpr double inverse_four_pi = 1.0 / (4.0 * EIGEN_PI);
 
+        void profile_product_scratch(const void* provider,
+                                     const FirstOrderScratchLease& scratch,
+                                     const char* operation, int wavelength,
+                                     int wavelength_thread) {
+            if (std::getenv("SASKTRAN2_PROFILE_MEMORY") == nullptr) {
+                return;
+            }
+            std::fprintf(
+                stderr,
+                "SASKTRAN2_MEMORY {\"kind\":\"first_order_ephemeral_arena\","
+                "\"provider\":\"%p\",\"operation\":\"%s\","
+                "\"wavelength\":%d,\"worker\":%d,\"allocation_id\":%llu,"
+                "\"shared\":%s,\"solar_product_bytes\":%zu,"
+                "\"solar_table_product_bytes\":%zu,\"endpoint_jvp_bytes\":%zu,"
+                "\"payload_bytes\":%zu}\n",
+                provider, operation, wavelength, wavelength_thread,
+                static_cast<unsigned long long>(scratch.allocation_id()),
+                scratch.shared() ? "true" : "false", scratch.solar_bytes(),
+                scratch.table_bytes(), scratch.endpoint_bytes(),
+                scratch.storage_bytes());
+        }
+
         using EndpointKey = std::vector<std::pair<int, std::uint64_t>>;
+
+        std::pair<int, double>
+        interpolation_pair(const InterpolationWeight& value) {
+            return {value.index, value.weight()};
+        }
+
+        std::pair<int, double>
+        interpolation_pair(const std::pair<int, double>& value) {
+            return value;
+        }
 
         struct EndpointKeyHash {
             std::size_t operator()(const EndpointKey& key) const noexcept {
@@ -40,7 +75,8 @@ namespace sasktran2::successive_orders {
             EndpointKey result;
             result.reserve(weights.size());
             for (std::size_t index = 0; index < weights.size(); ++index) {
-                const auto [atmosphere_index, weight] = weights[index];
+                const auto [atmosphere_index, weight] =
+                    interpolation_pair(weights[index]);
                 std::uint64_t bits;
                 static_assert(sizeof(bits) == sizeof(weight));
                 std::memcpy(&bits, &weight, sizeof(bits));
@@ -190,12 +226,8 @@ namespace sasktran2::successive_orders {
         m_gradient_scratch.clear();
         m_vjp_radiance_scratch.clear();
         m_vjp_cotangent_scratch.clear();
-        m_solar_product_scratch.clear();
-        m_solar_table_product_scratch.clear();
         m_phase_product_scratch.clear();
         m_phase_order_scratch.clear();
-        m_endpoint_extinction_tangent_scratch.clear();
-        m_endpoint_albedo_tangent_scratch.clear();
         m_scalar_phase_orders.clear();
         m_uniform_phase_active.clear();
         m_uniform_phase_values.clear();
@@ -206,13 +238,14 @@ namespace sasktran2::successive_orders {
         m_scalar_layer_cache.clear();
         m_endpoint_medium_cache.clear();
         m_scalar_volume_cache.clear();
+        m_scalar_cache_wavelength.clear();
+        m_scalar_cache_index.clear();
         m_scalar_vjp_scratch.clear();
         m_source_geometry = nullptr;
         m_solar_offsets.clear();
         m_phase_basis.clear();
         m_endpoint_slots.clear();
-        m_unique_endpoint_offsets.clear();
-        m_unique_endpoint_weights.clear();
+        m_endpoint_stencils.clear();
         m_scalar_packed_rays.clear();
         m_scalar_packed_layers.clear();
         m_scalar_ground_geometry.clear();
@@ -255,12 +288,8 @@ namespace sasktran2::successive_orders {
         m_gradient_scratch.clear();
         m_vjp_radiance_scratch.clear();
         m_vjp_cotangent_scratch.clear();
-        m_solar_product_scratch.clear();
-        m_solar_table_product_scratch.clear();
         m_phase_product_scratch.clear();
         m_phase_order_scratch.clear();
-        m_endpoint_extinction_tangent_scratch.clear();
-        m_endpoint_albedo_tangent_scratch.clear();
         m_scalar_phase_orders.clear();
         m_uniform_phase_active.clear();
         m_uniform_phase_values.clear();
@@ -271,13 +300,14 @@ namespace sasktran2::successive_orders {
         m_scalar_layer_cache.clear();
         m_endpoint_medium_cache.clear();
         m_scalar_volume_cache.clear();
+        m_scalar_cache_wavelength.clear();
+        m_scalar_cache_index.clear();
         m_scalar_vjp_scratch.clear();
         m_source_geometry = nullptr;
         m_solar_offsets.clear();
         m_phase_basis.clear();
         m_endpoint_slots.clear();
-        m_unique_endpoint_offsets.clear();
-        m_unique_endpoint_weights.clear();
+        m_endpoint_stencils.clear();
         m_scalar_packed_rays.clear();
         m_scalar_packed_layers.clear();
         m_scalar_ground_geometry.clear();
@@ -332,8 +362,6 @@ namespace sasktran2::successive_orders {
         m_gradient_scratch.resize(m_num_threads);
         m_vjp_radiance_scratch.resize(m_num_threads);
         m_vjp_cotangent_scratch.resize(m_num_threads);
-        m_solar_product_scratch.resize(m_num_threads);
-        m_solar_table_product_scratch.resize(m_num_threads);
         m_phase_product_scratch.resize(m_num_threads);
         m_phase_order_scratch.resize(m_num_threads);
         m_scalar_vjp_scratch.resize(m_num_threads);
@@ -406,14 +434,33 @@ namespace sasktran2::successive_orders {
                         traced_ray.layers[layer].average_look_away);
                 }
             }
+            std::vector<int> unique_endpoint_offsets;
+            std::vector<InterpolationWeight> unique_endpoint_weights;
+            std::vector<std::array<double, 2>> unique_endpoint_factors;
             if (!m_use_lower_interpolation) {
+                const auto& captured_factors =
+                    source_geometry.incoming_endpoint_factors();
+                bool factors_available =
+                    requests_endpoint_factors() &&
+                    captured_factors.size() == viewing.traced_rays.size();
+                for (int ray = 0; factors_available && ray < m_num_rays;
+                     ++ray) {
+                    factors_available = captured_factors[ray].size() ==
+                                        viewing.traced_rays[ray].layers.size();
+                }
+                if (factors_available) {
+                    // The number of solar endpoints bounds the deduplicated
+                    // factor count, avoiding repeated large staging copies.
+                    unique_endpoint_factors.reserve(solar_offset);
+                }
                 m_endpoint_slots.assign(solar_offset, -1);
-                m_unique_endpoint_offsets.push_back(0);
+                unique_endpoint_offsets.push_back(0);
                 std::unordered_map<EndpointKey, int, EndpointKeyHash> slots;
                 const auto assign_endpoint =
                     [&](int solar_index,
                         const sasktran2::raytracing::GridWeightStencilView&
-                            weights) {
+                            weights,
+                        const std::array<double, 2>* factors) {
                         auto key = endpoint_key(weights);
                         const auto [position, inserted] = slots.emplace(
                             std::move(key), static_cast<int>(slots.size()));
@@ -426,25 +473,33 @@ namespace sasktran2::successive_orders {
                              ++index) {
                             const auto [atmosphere_index, weight] =
                                 weights[index];
-                            m_unique_endpoint_weights.push_back(
+                            unique_endpoint_weights.push_back(
                                 {atmosphere_index, weight});
                         }
-                        m_unique_endpoint_offsets.push_back(
-                            static_cast<int>(m_unique_endpoint_weights.size()));
+                        unique_endpoint_offsets.push_back(
+                            static_cast<int>(unique_endpoint_weights.size()));
+                        if (factors != nullptr) {
+                            unique_endpoint_factors.push_back(*factors);
+                        }
                     };
                 for (int ray = 0; ray < m_num_rays; ++ray) {
                     const auto& traced_ray = viewing.traced_rays[ray];
                     if (traced_ray.layers.empty()) {
                         continue;
                     }
-                    assign_endpoint(m_solar_offsets[ray],
-                                    traced_ray.exit_weights(0));
+                    assign_endpoint(
+                        m_solar_offsets[ray], traced_ray.exit_weights(0),
+                        factors_available ? &captured_factors[ray][0].exit
+                                          : nullptr);
                     for (int endpoint = 1;
                          endpoint <= static_cast<int>(traced_ray.layers.size());
                          ++endpoint) {
                         assign_endpoint(
                             m_solar_offsets[ray] + endpoint,
-                            traced_ray.entrance_weights(endpoint - 1));
+                            traced_ray.entrance_weights(endpoint - 1),
+                            factors_available
+                                ? &captured_factors[ray][endpoint - 1].entrance
+                                : nullptr);
                     }
                 }
             }
@@ -478,22 +533,136 @@ namespace sasktran2::successive_orders {
                     }
                 }
             }
-            const int unique_endpoints =
-                m_unique_endpoint_offsets.empty()
-                    ? 0
-                    : static_cast<int>(m_unique_endpoint_offsets.size()) - 1;
-            m_endpoint_extinction_tangent_scratch.resize(m_num_threads);
-            m_endpoint_albedo_tangent_scratch.resize(m_num_threads);
-            for (int thread = 0; thread < m_num_threads; ++thread) {
-                m_endpoint_extinction_tangent_scratch[thread].resize(
-                    unique_endpoints);
-                m_endpoint_albedo_tangent_scratch[thread].resize(
-                    unique_endpoints);
+            // Construction can grow these vectors beyond their retained
+            // endpoint data. Runtime views are acquired after setup, so
+            // compaction preserves their order without invalidating a view.
+            m_endpoint_slots.shrink_to_fit();
+            unique_endpoint_offsets.shrink_to_fit();
+            unique_endpoint_weights.shrink_to_fit();
+            unique_endpoint_factors.shrink_to_fit();
+            if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
+                std::fprintf(stderr,
+                             "SASKTRAN2_MEMORY "
+                             "{\"kind\":\"endpoint_interpolation_weights\","
+                             "\"count\":%zu,\"bytes\":%zu,"
+                             "\"alignment_padding_bytes_saved\":%zu}\n",
+                             unique_endpoint_weights.size(),
+                             unique_endpoint_weights.size() *
+                                 sizeof(InterpolationWeight),
+                             unique_endpoint_weights.size() * 4);
+            }
+
+            if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
+                std::size_t sizes[6] = {};
+                std::size_t index16_stencils = 0;
+                std::size_t index16_weights = 0;
+                std::size_t corner_stencils = 0;
+                std::size_t corner16_stencils = 0;
+                int maximum_index = -1;
+                int altitude_stride = 0;
+#ifdef SKTRAN_RUST_SUPPORT
+                if (const auto* geometry2d =
+                        dynamic_cast<const sasktran2::Geometry2D*>(
+                            &m_geometry)) {
+                    altitude_stride = geometry2d->num_altitudes();
+                }
+#endif
+                const std::size_t stencils =
+                    unique_endpoint_offsets.empty()
+                        ? 0
+                        : unique_endpoint_offsets.size() - 1;
+                for (std::size_t slot = 0; slot < stencils; ++slot) {
+                    const int begin = unique_endpoint_offsets[slot];
+                    const int end = unique_endpoint_offsets[slot + 1];
+                    const int count = end - begin;
+                    ++sizes[std::min(count, 5)];
+                    bool index16 = true;
+                    for (int index = begin; index < end; ++index) {
+                        const int atmosphere_index =
+                            unique_endpoint_weights[index].index;
+                        maximum_index =
+                            std::max(maximum_index, atmosphere_index);
+                        index16 = index16 && atmosphere_index >= 0 &&
+                                  atmosphere_index <=
+                                      std::numeric_limits<std::uint16_t>::max();
+                    }
+                    if (index16) {
+                        ++index16_stencils;
+                        index16_weights += static_cast<std::size_t>(count);
+                    }
+                    if (count == 4 && altitude_stride > 0) {
+                        const int base = unique_endpoint_weights[begin].index;
+                        const bool corner =
+                            base >= 0 &&
+                            base / altitude_stride + 1 <
+                                m_geometry.size() / altitude_stride &&
+                            base % altitude_stride + 1 < altitude_stride &&
+                            unique_endpoint_weights[begin + 1].index ==
+                                base + 1 &&
+                            unique_endpoint_weights[begin + 2].index ==
+                                base + altitude_stride &&
+                            unique_endpoint_weights[begin + 3].index ==
+                                base + altitude_stride + 1;
+                        corner_stencils += corner;
+                        corner16_stencils +=
+                            corner &&
+                            base <= std::numeric_limits<std::uint16_t>::max();
+                    }
+                }
+                std::fprintf(
+                    stderr,
+                    "SASKTRAN2_MEMORY "
+                    "{\"kind\":\"endpoint_stencil_eligibility\","
+                    "\"provider\":\"%p\",\"rays\":%d,\"stencils\":%zu,"
+                    "\"weights\":%zu,\"altitude_stride\":%d,\"maximum_index\":%"
+                    "d,"
+                    "\"size0\":%zu,\"size1\":%zu,\"size2\":%zu,\"size3\":%zu,"
+                    "\"size4\":%zu,\"size_gt4\":%zu,\"index16_stencils\":%zu,"
+                    "\"index16_weights\":%zu,\"corner_stencils\":%zu,"
+                    "\"corner16_stencils\":%zu,\"weights_bytes\":%zu,"
+                    "\"offset_bytes\":%zu,\"slot_bytes\":%zu}\n",
+                    static_cast<const void*>(this), m_num_rays, stencils,
+                    unique_endpoint_weights.size(), altitude_stride,
+                    maximum_index, sizes[0], sizes[1], sizes[2], sizes[3],
+                    sizes[4], sizes[5], index16_stencils, index16_weights,
+                    corner_stencils, corner16_stencils,
+                    unique_endpoint_weights.capacity() *
+                        sizeof(InterpolationWeight),
+                    unique_endpoint_offsets.capacity() * sizeof(int),
+                    m_endpoint_slots.capacity() * sizeof(int));
+            }
+            int endpoint_altitude_stride = 0;
+#ifdef SKTRAN_RUST_SUPPORT
+            if (const auto* geometry2d =
+                    dynamic_cast<const sasktran2::Geometry2D*>(&m_geometry)) {
+                endpoint_altitude_stride = geometry2d->num_altitudes();
+            }
+#endif
+            const std::size_t factor_staging_bytes =
+                unique_endpoint_factors.capacity() *
+                sizeof(std::array<double, 2>);
+            m_endpoint_stencils.assign(
+                std::move(unique_endpoint_offsets),
+                std::move(unique_endpoint_weights), endpoint_altitude_stride,
+                m_geometry.size(), std::move(unique_endpoint_factors));
+            if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
+                std::fprintf(
+                    stderr,
+                    "SASKTRAN2_MEMORY {\"kind\":\"endpoint_stencil_storage\","
+                    "\"provider\":\"%p\",\"stencils\":%zu,\"weights\":%zu,"
+                    "\"base_bits\":%d,\"storage_bytes\":%zu,"
+                    "\"is_factored\":%s,\"owner_bytes\":%zu,"
+                    "\"view_bytes\":%zu,\"source_geometry_owner_bytes\":%zu,"
+                    "\"factor_staging_bytes\":%zu}\n",
+                    static_cast<const void*>(this), m_endpoint_stencils.size(),
+                    m_endpoint_stencils.weight_count(),
+                    m_endpoint_stencils.base_bits(),
+                    m_endpoint_stencils.storage_bytes(),
+                    m_endpoint_stencils.is_factored() ? "true" : "false",
+                    sizeof(EndpointStencilStorage), sizeof(EndpointStencilView),
+                    sizeof(SourceGeometry1D), factor_staging_bytes);
             }
             for (int thread = 0; thread < m_num_threads; ++thread) {
-                m_solar_product_scratch[thread].resize(solar_offset);
-                m_solar_table_product_scratch[thread].resize(
-                    m_solar_table->table_size());
                 auto& vjp = m_scalar_vjp_scratch[thread];
                 vjp.optical_depth.resize(maximum_layers);
                 vjp.attenuation.resize(maximum_layers);
@@ -531,21 +700,25 @@ namespace sasktran2::successive_orders {
         }
         if (m_use_compact_scalar && volume_changed) {
             const int coefficient_count =
-                atmosphere.storage().total_extinction.rows() *
-                m_num_phase_moments;
+                atmosphere.num_scattering_deriv_groups() == 0
+                    ? 0
+                    : atmosphere.storage().total_extinction.rows() *
+                          m_num_phase_moments;
             for (auto& product : m_phase_product_scratch) {
                 product.resize(coefficient_count);
             }
             const int locations = atmosphere.storage().total_extinction.rows();
             for (auto& orders : m_phase_order_scratch) {
-                orders.resize(locations);
+                if (coefficient_count == 0) {
+                    std::vector<int>().swap(orders);
+                } else {
+                    orders.resize(locations);
+                }
             }
             m_scalar_phase_orders.resize(static_cast<std::size_t>(locations) *
                                          atmosphere.num_wavel());
             m_uniform_phase_active.assign(atmosphere.num_wavel(), 0);
-            m_uniform_phase_values.resize(
-                static_cast<std::size_t>(atmosphere.num_wavel()) *
-                num_phase_basis_slots());
+            m_uniform_phase_values.resize(atmosphere.num_wavel());
             m_uniform_albedo_active.assign(atmosphere.num_wavel(), 0);
             m_uniform_albedo_values.resize(atmosphere.num_wavel());
             const auto& storage = atmosphere.storage();
@@ -593,16 +766,19 @@ namespace sasktran2::successive_orders {
                     const double* coefficients =
                         &storage.leg_coeff(0, 0, wavelength);
                     const int phase_slots = num_phase_basis_slots();
+                    auto& phase_values = m_uniform_phase_values[wavelength];
+                    phase_values.resize(phase_slots);
                     for (int slot = 0; slot < phase_slots; ++slot) {
                         const double* basis = m_phase_basis.data() +
                                               static_cast<std::size_t>(slot) *
                                                   m_num_phase_moments;
-                        m_uniform_phase_values[static_cast<std::size_t>(
-                                                   wavelength) *
-                                                   phase_slots +
-                                               slot] =
+                        phase_values[slot] =
                             phase_dot(coefficients, basis, order);
                     }
+                } else {
+                    // Nonuniform wavelengths do not use this fast-path data.
+                    std::vector<double>().swap(
+                        m_uniform_phase_values[wavelength]);
                 }
             }
         } else if (!m_use_compact_scalar) {
@@ -612,51 +788,190 @@ namespace sasktran2::successive_orders {
             m_uniform_albedo_active.clear();
             m_uniform_albedo_values.clear();
         }
-        if (m_use_compact_scalar && volume_changed) {
-            m_cached_solar_transmission.resize(atmosphere.num_wavel());
-            m_cached_solar_active.assign(atmosphere.num_wavel(), 0);
-            const int solar_size = m_solar_offsets.back();
-            for (auto& transmission : m_cached_solar_transmission) {
-                transmission.resize(solar_size);
+        const bool cache_shape_changed =
+            m_scalar_cache_index.size() !=
+                static_cast<std::size_t>(atmosphere.num_wavel()) ||
+            m_scalar_cache_wavelength.size() !=
+                static_cast<std::size_t>(m_num_wavelength_threads);
+        if (m_use_compact_scalar && (volume_changed || cache_shape_changed)) {
+            if (cache_shape_changed) {
+                m_cached_solar_transmission.clear();
+                m_endpoint_medium_cache.clear();
+                m_scalar_layer_cache.clear();
+                m_scalar_volume_cache.clear();
+                m_scalar_cache_index.assign(atmosphere.num_wavel(), -1);
+                m_scalar_cache_wavelength.assign(m_num_wavelength_threads, -1);
             }
-            if (!m_unique_endpoint_offsets.empty()) {
-                const int endpoint_count =
-                    static_cast<int>(m_unique_endpoint_offsets.size()) - 1;
-                m_endpoint_medium_cache.resize(atmosphere.num_wavel());
+            m_cached_solar_transmission.resize(m_num_wavelength_threads);
+            m_cached_solar_active.assign(m_num_wavelength_threads, 0);
+            if (!m_endpoint_stencils.empty()) {
+                m_endpoint_medium_cache.resize(m_num_wavelength_threads);
                 for (auto& cache : m_endpoint_medium_cache) {
-                    cache.extinction.resize(endpoint_count);
-                    cache.albedo.resize(endpoint_count);
                     cache.active = false;
                 }
             } else {
                 m_endpoint_medium_cache.clear();
             }
             if (atmosphere.num_deriv() > 0) {
-                const int layer_count = solar_size - m_num_rays;
-                m_scalar_layer_cache.resize(atmosphere.num_wavel());
+                m_scalar_layer_cache.resize(m_num_wavelength_threads);
                 for (auto& cache : m_scalar_layer_cache) {
-                    cache.optical_depth.resize(layer_count);
-                    cache.source_factor.resize(layer_count);
                     cache.active = false;
                 }
             } else {
                 m_scalar_layer_cache.clear();
             }
-            if (m_scalar_volume_cache.size() !=
-                static_cast<std::size_t>(atmosphere.num_wavel())) {
-                m_scalar_volume_cache.resize(atmosphere.num_wavel());
-            }
+            m_scalar_volume_cache.resize(m_num_wavelength_threads);
             for (auto& cache : m_scalar_volume_cache) {
                 cache.active = false;
             }
+        }
+
+        if (m_use_compact_scalar &&
+            std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
+            const std::size_t active_uniform = static_cast<std::size_t>(
+                std::count(m_uniform_phase_active.begin(),
+                           m_uniform_phase_active.end(),
+                           static_cast<unsigned char>(1)));
+            const std::size_t required_uniform_values =
+                active_uniform *
+                static_cast<std::size_t>(num_phase_basis_slots());
+            std::size_t uniform_bytes = 0;
+            for (const auto& values : m_uniform_phase_values) {
+                uniform_bytes += values.capacity() * sizeof(double);
+            }
+            std::fprintf(
+                stderr,
+                "SASKTRAN2_MEMORY {\"kind\":\"first_order_spectral_metadata\","
+                "\"provider\":\"%p\",\"instance_id\":%llu,\"revision\":%llu,"
+                "\"volume_revision\":%llu,\"wavelengths\":%d,\"rays\":%d,"
+                "\"phase_basis_slots\":%d,\"endpoint_phase_basis\":%s,"
+                "\"uniform_wavelengths\":%zu,\"uniform_phase_allocated_bytes\":"
+                "%zu,"
+                "\"uniform_phase_used_bytes\":%zu,\"uniform_phase_unused_"
+                "bytes\":%zu,"
+                "\"phase_order_bytes\":%zu,\"phase_basis_geometry_bytes\":%zu,"
+                "\"solar_interpolation_rows\":%lld,\"solar_interpolation_"
+                "columns\":%lld,\"solar_interpolation_nonzeros\":%lld,"
+                "\"solar_interpolation_geometry_bytes\":%zu,"
+                "\"solar_table_shared_bytes\":%zu}\n",
+                static_cast<const void*>(this),
+                static_cast<unsigned long long>(atmosphere.instance_id()),
+                static_cast<unsigned long long>(atmosphere.revision()),
+                static_cast<unsigned long long>(atmosphere.volume_revision()),
+                atmosphere.num_wavel(), m_num_rays, num_phase_basis_slots(),
+                m_endpoint_phase_basis ? "true" : "false", active_uniform,
+                uniform_bytes, required_uniform_values * sizeof(double),
+                uniform_bytes - required_uniform_values * sizeof(double),
+                m_scalar_phase_orders.capacity() * sizeof(int),
+                m_phase_basis.capacity() * sizeof(double),
+                static_cast<long long>(m_solar_interpolation.rows()),
+                static_cast<long long>(m_solar_interpolation.cols()),
+                static_cast<long long>(m_solar_interpolation.non_zeros()),
+                m_solar_interpolation.storage_bytes(),
+                m_solar_table == nullptr ? 0 : m_solar_table->storage_bytes());
         }
         m_atmosphere = &atmosphere;
     }
 
     template <int NSTOKES>
     void
-    FirstOrderProvider<NSTOKES>::validate_ready(int wavelength,
-                                                int wavelength_thread) const {
+    FirstOrderProvider<NSTOKES>::prepare_wavelength(int wavelength,
+                                                    int wavelength_thread) {
+        validate_ready(wavelength, wavelength_thread);
+        if (!m_use_compact_scalar) {
+            return;
+        }
+        // Only the current wavelength's map entry is written. Clearing the
+        // old entry would race a different worker newly evaluating it.
+        m_scalar_cache_index[wavelength] = wavelength_thread;
+        if (m_scalar_cache_wavelength[wavelength_thread] != wavelength) {
+            m_cached_solar_active[wavelength_thread] = 0;
+            if (!m_endpoint_medium_cache.empty()) {
+                m_endpoint_medium_cache[wavelength_thread].active = false;
+            }
+            if (!m_scalar_layer_cache.empty()) {
+                m_scalar_layer_cache[wavelength_thread].active = false;
+            }
+            m_scalar_volume_cache[wavelength_thread].active = false;
+            m_scalar_cache_wavelength[wavelength_thread] = wavelength;
+        }
+        const int solar_size = m_solar_offsets.back();
+        m_cached_solar_transmission[wavelength_thread].resize(solar_size);
+        if (!m_endpoint_medium_cache.empty()) {
+            const int endpoint_count =
+                static_cast<int>(m_endpoint_stencils.size());
+            auto& cache = m_endpoint_medium_cache[wavelength_thread];
+            cache.extinction.resize(endpoint_count);
+            cache.albedo.resize(endpoint_count);
+        }
+        if (!m_scalar_layer_cache.empty()) {
+            const int layer_count = solar_size - m_num_rays;
+            auto& cache = m_scalar_layer_cache[wavelength_thread];
+            cache.optical_depth.resize(layer_count);
+            cache.source_factor.resize(layer_count);
+        }
+
+        if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
+            const auto eigen_bytes = [](const auto& values) {
+                return static_cast<std::size_t>(values.size()) * sizeof(double);
+            };
+            const std::size_t endpoint_bytes =
+                m_endpoint_medium_cache.empty()
+                    ? 0
+                    : eigen_bytes(m_endpoint_medium_cache[wavelength_thread]
+                                      .extinction) +
+                          eigen_bytes(m_endpoint_medium_cache[wavelength_thread]
+                                          .albedo);
+            const std::size_t layer_bytes =
+                m_scalar_layer_cache.empty()
+                    ? 0
+                    : eigen_bytes(m_scalar_layer_cache[wavelength_thread]
+                                      .optical_depth) +
+                          eigen_bytes(m_scalar_layer_cache[wavelength_thread]
+                                          .source_factor);
+            std::fprintf(
+                stderr,
+                "SASKTRAN2_MEMORY {\"kind\":\"first_order_worker_allocations\","
+                "\"provider\":\"%p\",\"instance_id\":%llu,\"revision\":%llu,"
+                "\"wavelength\":%d,\"worker\":%d,\"worker_count\":%d,"
+                "\"solar_bytes\":%zu,\"endpoint_bytes\":%zu,\"layer_bytes\":%"
+                "zu,"
+                "\"ground_prefix_bytes\":%zu,\"endpoint_jvp_bytes\":%zu,"
+                "\"solar_product_bytes\":%zu,\"solar_table_product_bytes\":%zu,"
+                "\"phase_product_bytes\":%zu}\n",
+                static_cast<const void*>(this),
+                static_cast<unsigned long long>(m_atmosphere->instance_id()),
+                static_cast<unsigned long long>(m_atmosphere->revision()),
+                wavelength, wavelength_thread, m_num_wavelength_threads,
+                eigen_bytes(m_cached_solar_transmission[wavelength_thread]),
+                endpoint_bytes, layer_bytes,
+                eigen_bytes(
+                    m_scalar_volume_cache[wavelength_thread].ground_prefix),
+                std::size_t{0}, std::size_t{0}, std::size_t{0},
+                eigen_bytes(m_phase_product_scratch[wavelength_thread]));
+        }
+    }
+
+    template <int NSTOKES>
+    int FirstOrderProvider<NSTOKES>::scalar_cache_index(int wavelength) const {
+        if (wavelength < 0 ||
+            wavelength >= static_cast<int>(m_scalar_cache_index.size())) {
+            throw std::logic_error(
+                "Successive-orders scalar wavelength cache is not prepared");
+        }
+        const int slot = m_scalar_cache_index[wavelength];
+        if (slot < 0 ||
+            slot >= static_cast<int>(m_scalar_cache_wavelength.size()) ||
+            m_scalar_cache_wavelength[slot] != wavelength) {
+            throw std::logic_error(
+                "Successive-orders scalar wavelength cache is not prepared");
+        }
+        return slot;
+    }
+
+    template <int NSTOKES>
+    void FirstOrderProvider<NSTOKES>::validate_ready(int wavelength,
+                                                     int wavelength_thread) {
         if (!m_geometry_initialized || m_atmosphere == nullptr ||
             wavelength < 0 || wavelength >= m_atmosphere->num_wavel() ||
             wavelength_thread < 0 ||
@@ -664,6 +979,7 @@ namespace sasktran2::successive_orders {
             throw std::invalid_argument(
                 "Invalid successive-orders first-order calculation");
         }
+        m_endpoint_stencils.prepare_for_current_rounding();
     }
 
     template <int NSTOKES>
@@ -681,9 +997,11 @@ namespace sasktran2::successive_orders {
     const Eigen::VectorXd&
     FirstOrderProvider<NSTOKES>::ensure_solar_transmission(
         int wavelength, int wavelength_thread) {
-        auto& transmission = m_cached_solar_transmission.at(wavelength);
-        if (m_cached_solar_active.at(wavelength) == 0) {
-            auto& table = m_solar_table_product_scratch[wavelength_thread];
+        const int cache_slot = scalar_cache_index(wavelength);
+        auto& transmission = m_cached_solar_transmission.at(cache_slot);
+        if (m_cached_solar_active.at(cache_slot) == 0) {
+            FirstOrderScratchLease scratch(0, 0, m_solar_table->table_size());
+            auto table = scratch.table();
             m_solar_table->apply(
                 m_atmosphere->storage().total_extinction.col(wavelength),
                 table);
@@ -696,91 +1014,144 @@ namespace sasktran2::successive_orders {
                     transmission(row) = 0.0;
                 }
             }
-            m_cached_solar_active[wavelength] = 1;
+            m_cached_solar_active[cache_slot] = 1;
+            profile_product_scratch(this, scratch, "solar", wavelength,
+                                    wavelength_thread);
         }
         return transmission;
     }
 
     template <int NSTOKES>
     void FirstOrderProvider<NSTOKES>::ensure_endpoint_medium(int wavelength) {
+        const int cache_slot = scalar_cache_index(wavelength);
         if (m_endpoint_medium_cache.empty()) {
             return;
         }
-        auto& cache = m_endpoint_medium_cache[wavelength];
+        auto& cache = m_endpoint_medium_cache[cache_slot];
         if (cache.active) {
             return;
         }
         const auto& storage = m_atmosphere->storage();
-        for (int slot = 0; slot < cache.extinction.size(); ++slot) {
-            double extinction = 0.0;
-            double albedo = 0.0;
-            for (int index = m_unique_endpoint_offsets[slot];
-                 index < m_unique_endpoint_offsets[slot + 1]; ++index) {
-                const auto& value = m_unique_endpoint_weights[index];
-                extinction += value.weight *
-                              storage.total_extinction(value.index, wavelength);
-                albedo += value.weight * storage.ssa(value.index, wavelength);
+        m_endpoint_stencils.visit([&](const auto& stencils) {
+            for (int slot = 0; slot < cache.extinction.size(); ++slot) {
+                double extinction = 0.0;
+                double albedo = 0.0;
+                const auto weights = stencils[slot];
+                for (std::size_t index = 0; index < weights.size(); ++index) {
+                    const auto [atmosphere_index, weight] =
+                        interpolation_pair(weights[index]);
+                    extinction += weight * storage.total_extinction(
+                                               atmosphere_index, wavelength);
+                    albedo +=
+                        weight * storage.ssa(atmosphere_index, wavelength);
+                }
+                cache.extinction(slot) = extinction;
+                cache.albedo(slot) = albedo;
             }
-            cache.extinction(slot) = extinction;
-            cache.albedo(slot) = albedo;
-        }
+        });
         cache.active = true;
+    }
+
+    template <int NSTOKES>
+    typename FirstOrderProvider<NSTOKES>::ScalarEndpointContext
+    FirstOrderProvider<NSTOKES>::prepare_scalar_endpoint_context(
+        int wavelength, int cache_slot) const {
+        ScalarEndpointContext context;
+        const auto& storage = m_atmosphere->storage();
+        const int locations = storage.total_extinction.rows();
+        context.extinction = storage.total_extinction.col(wavelength).data();
+        context.albedo = storage.ssa.col(wavelength).data();
+        context.coefficient_stride = storage.leg_coeff.dimension(0);
+        if (locations > 0) {
+            context.coefficients = storage.leg_coeff.data() +
+                                   static_cast<Eigen::Index>(wavelength) *
+                                       storage.leg_coeff.dimension(1) *
+                                       context.coefficient_stride;
+            context.phase_orders =
+                m_scalar_phase_orders.data() +
+                static_cast<std::size_t>(wavelength) * locations;
+        }
+        context.maximum_orders = storage.max_order.col(wavelength).data();
+        context.basis = m_phase_basis.data();
+        context.endpoint_basis_stride =
+            m_endpoint_phase_basis ? m_num_phase_moments : 0;
+        if (m_uniform_phase_active[wavelength] != 0) {
+            context.uniform_phase = m_uniform_phase_values[wavelength].data();
+        }
+        if (!m_endpoint_slots.empty()) {
+            context.endpoint_slots = m_endpoint_slots.data();
+        }
+        if (!m_endpoint_medium_cache.empty()) {
+            const auto& medium = m_endpoint_medium_cache[cache_slot];
+            if (medium.active) {
+                context.endpoint_extinction = medium.extinction.data();
+                context.endpoint_albedo = medium.albedo.data();
+            }
+        }
+        context.solar = m_cached_solar_transmission[cache_slot].data();
+        context.ssa_deriv_start = m_atmosphere->ssa_deriv_start_index();
+        return context;
+    }
+
+    template <int NSTOKES>
+    typename FirstOrderProvider<NSTOKES>::ScalarEndpointContext
+    FirstOrderProvider<NSTOKES>::scalar_endpoint_context_for_ray(
+        const ScalarEndpointContext& context, int ray) const {
+        auto result = context;
+        if (!m_endpoint_phase_basis) {
+            result.basis += static_cast<std::size_t>(ray) * m_num_phase_moments;
+            if (result.uniform_phase != nullptr) {
+                result.uniform_phase += ray;
+            }
+        }
+        return result;
     }
 
     template <int NSTOKES>
     template <typename Weights>
     typename FirstOrderProvider<NSTOKES>::ScalarEndpoint
-    FirstOrderProvider<NSTOKES>::scalar_endpoint(int wavelength, int ray,
-                                                 int layer, bool entrance,
-                                                 int solar_index,
-                                                 const Weights& weights) const {
+    FirstOrderProvider<NSTOKES>::scalar_endpoint(
+        const ScalarEndpointContext& context, int layer, bool entrance,
+        int solar_index, const Weights& weights) const {
         ScalarEndpoint result;
-        const auto& storage = m_atmosphere->storage();
-        const int endpoint_slot =
-            m_endpoint_slots.empty() ? -1 : m_endpoint_slots[solar_index];
+        const int endpoint_slot = context.endpoint_slots == nullptr
+                                      ? -1
+                                      : context.endpoint_slots[solar_index];
         const bool use_endpoint_medium =
-            endpoint_slot >= 0 && !m_endpoint_medium_cache.empty() &&
-            m_endpoint_medium_cache[wavelength].active;
+            endpoint_slot >= 0 && context.endpoint_extinction != nullptr;
         if (use_endpoint_medium) {
-            result.extinction =
-                m_endpoint_medium_cache[wavelength].extinction(endpoint_slot);
-            result.albedo =
-                m_endpoint_medium_cache[wavelength].albedo(endpoint_slot);
+            result.extinction = context.endpoint_extinction[endpoint_slot];
+            result.albedo = context.endpoint_albedo[endpoint_slot];
         }
-        const int phase_slot = phase_basis_slot(ray, solar_index);
-        const int phase_slots = num_phase_basis_slots();
         const double* basis =
-            m_phase_basis.data() +
-            static_cast<std::size_t>(phase_slot) * m_num_phase_moments;
-        const bool uniform_phase = m_uniform_phase_active[wavelength] != 0;
+            context.basis + static_cast<std::size_t>(solar_index) *
+                                context.endpoint_basis_stride;
+        const bool uniform_phase = context.uniform_phase != nullptr;
         if (uniform_phase) {
             result.phase =
-                m_uniform_phase_values[static_cast<std::size_t>(wavelength) *
-                                           phase_slots +
-                                       phase_slot];
+                context.uniform_phase[context.endpoint_basis_stride == 0
+                                          ? 0
+                                          : solar_index];
         }
         if (use_endpoint_medium && uniform_phase) {
             return result;
         }
         for (std::size_t index = 0; index < weights.size(); ++index) {
-            const auto [atmosphere_index, weight] = weights[index];
+            const auto [atmosphere_index, weight] =
+                interpolation_pair(weights[index]);
             if (weight == 0.0) {
                 continue;
             }
             if (!use_endpoint_medium) {
-                result.extinction += weight * storage.total_extinction(
-                                                  atmosphere_index, wavelength);
-                result.albedo +=
-                    weight * storage.ssa(atmosphere_index, wavelength);
+                result.extinction +=
+                    weight * context.extinction[atmosphere_index];
+                result.albedo += weight * context.albedo[atmosphere_index];
             }
             if (!uniform_phase) {
-                const int locations = storage.total_extinction.rows();
-                const int order =
-                    m_scalar_phase_orders[static_cast<std::size_t>(wavelength) *
-                                              locations +
-                                          atmosphere_index];
+                const int order = context.phase_orders[atmosphere_index];
                 const double* coefficients =
-                    &storage.leg_coeff(0, atmosphere_index, wavelength);
+                    context.coefficients +
+                    atmosphere_index * context.coefficient_stride;
                 const double phase = phase_dot(coefficients, basis, order);
                 result.phase += weight * phase;
             }
@@ -795,22 +1166,16 @@ namespace sasktran2::successive_orders {
     template <bool USE_ENDPOINT_MEDIUM, typename Weights>
     typename FirstOrderProvider<NSTOKES>::ScalarValueTangent
     FirstOrderProvider<NSTOKES>::scalar_endpoint_jvp(
-        int wavelength, int wavelength_thread, int ray, int layer,
-        bool entrance, int solar_index, const Weights& weights,
+        const ScalarEndpointContext& context, int layer, bool entrance,
+        int solar_index, const Weights& weights,
         const double* __restrict extinction_direction,
         const double* __restrict albedo_direction,
         const double* __restrict solar_tangent, bool uniform_albedo_direction,
         double uniform_albedo_tangent, bool phase_tangent_active) const {
         ScalarValueTangent result;
-        const auto& storage = m_atmosphere->storage();
-        const auto& coefficient_tangent =
-            m_phase_product_scratch[wavelength_thread];
-        const auto& tangent_orders = m_phase_order_scratch[wavelength_thread];
-        const int phase_slot = phase_basis_slot(ray, solar_index);
-        const int phase_slots = num_phase_basis_slots();
         const double* basis =
-            m_phase_basis.data() +
-            static_cast<std::size_t>(phase_slot) * m_num_phase_moments;
+            context.basis + static_cast<std::size_t>(solar_index) *
+                                context.endpoint_basis_stride;
         double extinction = 0.0;
         double extinction_tangent = 0.0;
         double albedo = 0.0;
@@ -818,29 +1183,23 @@ namespace sasktran2::successive_orders {
             uniform_albedo_direction ? uniform_albedo_tangent : 0.0;
         double phase = 0.0;
         double phase_tangent = 0.0;
-        const bool uniform_phase = m_uniform_phase_active[wavelength] != 0;
+        const bool uniform_phase = context.uniform_phase != nullptr;
         if (uniform_phase) {
-            phase =
-                m_uniform_phase_values[static_cast<std::size_t>(wavelength) *
-                                           phase_slots +
-                                       phase_slot];
+            phase = context.uniform_phase[context.endpoint_basis_stride == 0
+                                              ? 0
+                                              : solar_index];
         }
         if constexpr (USE_ENDPOINT_MEDIUM) {
-            const int endpoint_slot = m_endpoint_slots[solar_index];
-            extinction =
-                m_endpoint_medium_cache[wavelength].extinction(endpoint_slot);
-            albedo = m_endpoint_medium_cache[wavelength].albedo(endpoint_slot);
+            const int endpoint_slot = context.endpoint_slots[solar_index];
+            extinction = context.endpoint_extinction[endpoint_slot];
+            albedo = context.endpoint_albedo[endpoint_slot];
             extinction_tangent =
-                m_endpoint_extinction_tangent_scratch[wavelength_thread](
-                    endpoint_slot);
-            albedo_tangent =
-                m_endpoint_albedo_tangent_scratch[wavelength_thread](
-                    endpoint_slot);
+                context.endpoint_extinction_tangent[endpoint_slot];
+            albedo_tangent = context.endpoint_albedo_tangent[endpoint_slot];
         }
         if constexpr (USE_ENDPOINT_MEDIUM) {
             if (uniform_phase && !phase_tangent_active) {
-                const double solar =
-                    m_cached_solar_transmission[wavelength](solar_index);
+                const double solar = context.solar[solar_index];
                 const double solar_jvp = solar_tangent[solar_index];
                 const double phase_scale = phase * inverse_four_pi;
                 const double extinction_albedo = extinction * albedo;
@@ -857,52 +1216,47 @@ namespace sasktran2::successive_orders {
             !USE_ENDPOINT_MEDIUM || !uniform_phase || phase_tangent_active;
         for (std::size_t index = 0;
              require_weight_interpolation && index < weights.size(); ++index) {
-            const auto [atmosphere_index, weight] = weights[index];
+            const auto [atmosphere_index, weight] =
+                interpolation_pair(weights[index]);
             if (weight == 0.0) {
                 continue;
             }
             if constexpr (!USE_ENDPOINT_MEDIUM) {
-                extinction += weight * storage.total_extinction(
-                                           atmosphere_index, wavelength);
+                extinction += weight * context.extinction[atmosphere_index];
                 extinction_tangent +=
                     weight * extinction_direction[atmosphere_index];
             }
             if constexpr (!USE_ENDPOINT_MEDIUM) {
-                albedo += weight * storage.ssa(atmosphere_index, wavelength);
+                albedo += weight * context.albedo[atmosphere_index];
                 if (!uniform_albedo_direction) {
                     albedo_tangent +=
                         weight * albedo_direction[atmosphere_index];
                 }
             }
-            const double* tangent_coefficients =
-                coefficient_tangent.data() +
-                atmosphere_index * m_num_phase_moments;
             if (phase_tangent_active) {
+                const double* tangent_coefficients =
+                    context.coefficient_tangent +
+                    atmosphere_index * m_num_phase_moments;
                 if (!uniform_phase) {
-                    const int locations = storage.total_extinction.rows();
-                    const int order = m_scalar_phase_orders
-                        [static_cast<std::size_t>(wavelength) * locations +
-                         atmosphere_index];
+                    const int order = context.phase_orders[atmosphere_index];
                     const double* coefficients =
-                        &storage.leg_coeff(0, atmosphere_index, wavelength);
+                        context.coefficients +
+                        atmosphere_index * context.coefficient_stride;
                     phase += weight * phase_dot(coefficients, basis, order);
                 }
                 phase_tangent +=
-                    weight * phase_dot(tangent_coefficients, basis,
-                                       tangent_orders[atmosphere_index]);
+                    weight *
+                    phase_dot(tangent_coefficients, basis,
+                              context.tangent_orders[atmosphere_index]);
             } else if (!uniform_phase) {
-                const int locations = storage.total_extinction.rows();
-                const int order =
-                    m_scalar_phase_orders[static_cast<std::size_t>(wavelength) *
-                                              locations +
-                                          atmosphere_index];
+                const int order = context.phase_orders[atmosphere_index];
                 const double* coefficients =
-                    &storage.leg_coeff(0, atmosphere_index, wavelength);
+                    context.coefficients +
+                    atmosphere_index * context.coefficient_stride;
                 phase += weight * phase_dot(coefficients, basis, order);
             }
         }
-        const double solar =
-            m_cached_solar_transmission[wavelength](solar_index);
+        const double solar = context.solar[solar_index];
         const double solar_jvp = solar_tangent[solar_index];
         result.value = extinction * albedo * solar * phase * inverse_four_pi;
         result.tangent =
@@ -918,17 +1272,16 @@ namespace sasktran2::successive_orders {
     }
 
     template <int NSTOKES>
-    template <typename Weights>
+    template <bool WITH_PHASE_GRADIENT, typename Weights>
     void FirstOrderProvider<NSTOKES>::accumulate_scalar_endpoint_vjp(
-        int wavelength, int ray, int layer, bool entrance, int solar_index,
-        const Weights& weights, const ScalarEndpoint& endpoint,
+        const ScalarEndpointContext& context, int layer, bool entrance,
+        int solar_index, const Weights& weights, const ScalarEndpoint& endpoint,
         double source_cotangent, Eigen::Ref<Eigen::VectorXd> native_gradient,
         Eigen::Ref<Eigen::VectorXd> solar_gradient,
         Eigen::Ref<Eigen::VectorXd> coefficient_gradient) const {
         if (source_cotangent == 0.0) {
             return;
         }
-        const auto& storage = m_atmosphere->storage();
         const double scale = source_cotangent * inverse_four_pi;
         const double extinction_cotangent = scale * endpoint.albedo *
                                             endpoint.solar_transmission *
@@ -938,29 +1291,33 @@ namespace sasktran2::successive_orders {
                                         endpoint.phase;
         const double solar_cotangent =
             scale * endpoint.extinction * endpoint.albedo * endpoint.phase;
-        const double phase_cotangent = scale * endpoint.extinction *
-                                       endpoint.albedo *
-                                       endpoint.solar_transmission;
-        const int phase_slot = phase_basis_slot(ray, solar_index);
+        const double phase_cotangent = WITH_PHASE_GRADIENT
+                                           ? scale * endpoint.extinction *
+                                                 endpoint.albedo *
+                                                 endpoint.solar_transmission
+                                           : 0.0;
         const double* basis =
-            m_phase_basis.data() +
-            static_cast<std::size_t>(phase_slot) * m_num_phase_moments;
+            context.basis + static_cast<std::size_t>(solar_index) *
+                                context.endpoint_basis_stride;
         for (std::size_t index = 0; index < weights.size(); ++index) {
-            const auto [atmosphere_index, weight] = weights[index];
+            const auto [atmosphere_index, weight] =
+                interpolation_pair(weights[index]);
             if (weight == 0.0) {
                 continue;
             }
             native_gradient(atmosphere_index) += weight * extinction_cotangent;
-            native_gradient(m_atmosphere->ssa_deriv_start_index() +
-                            atmosphere_index) += weight * albedo_cotangent;
-            const int order =
-                std::min(storage.max_order(atmosphere_index, wavelength),
-                         m_num_phase_moments);
-            const int coefficient_offset =
-                atmosphere_index * m_num_phase_moments;
-            const double coefficient_cotangent = weight * phase_cotangent;
-            phase_axpy(coefficient_cotangent, basis, order,
-                       coefficient_gradient.data() + coefficient_offset);
+            native_gradient(context.ssa_deriv_start + atmosphere_index) +=
+                weight * albedo_cotangent;
+            if constexpr (WITH_PHASE_GRADIENT) {
+                const int order =
+                    std::min(context.maximum_orders[atmosphere_index],
+                             m_num_phase_moments);
+                const int coefficient_offset =
+                    atmosphere_index * m_num_phase_moments;
+                const double coefficient_cotangent = weight * phase_cotangent;
+                phase_axpy(coefficient_cotangent, basis, order,
+                           coefficient_gradient.data() + coefficient_offset);
+            }
         }
         solar_gradient(solar_index) += solar_cotangent;
         (void)layer;
@@ -1029,6 +1386,7 @@ namespace sasktran2::successive_orders {
     void FirstOrderProvider<NSTOKES>::calculate_scalar(
         int wavelength, int wavelength_thread,
         Eigen::Ref<Eigen::VectorXd> forcing, TransportOperator* transport) {
+        prepare_wavelength(wavelength, wavelength_thread);
         if (transport != nullptr) {
             if (m_use_lower_interpolation) {
                 calculate_scalar_impl<true, true>(wavelength, wavelength_thread,
@@ -1047,16 +1405,19 @@ namespace sasktran2::successive_orders {
     }
 
     template <int NSTOKES>
-    template <bool WITH_TRANSPORT>
+    template <bool WITH_TRANSPORT, bool WITH_FORCING>
     void FirstOrderProvider<NSTOKES>::calculate_scalar_uniform_impl(
         int wavelength, int wavelength_thread,
         Eigen::Ref<Eigen::VectorXd> forcing, TransportOperator* transport) {
+        const int cache_slot = scalar_cache_index(wavelength);
         const auto& interpolation = m_source_geometry->incoming_interpolation();
         const auto& extinction = m_atmosphere->storage().total_extinction;
         const auto& ssa = m_atmosphere->storage().ssa;
-        const auto& solar =
+        if constexpr (WITH_FORCING) {
             ensure_solar_transmission(wavelength, wavelength_thread);
-        ensure_endpoint_medium(wavelength);
+            ensure_endpoint_medium(wavelength);
+        }
+        const auto& solar = m_cached_solar_transmission[cache_slot];
         const bool uniform_albedo = m_uniform_albedo_active[wavelength] != 0;
         const double uniform_albedo_value =
             uniform_albedo ? m_uniform_albedo_values[wavelength] : 0.0;
@@ -1065,7 +1426,7 @@ namespace sasktran2::successive_orders {
         }
         ScalarLayerCache* layer_cache = m_scalar_layer_cache.empty()
                                             ? nullptr
-                                            : &m_scalar_layer_cache[wavelength];
+                                            : &m_scalar_layer_cache[cache_slot];
         if (layer_cache != nullptr) {
             layer_cache->active = false;
         }
@@ -1075,13 +1436,12 @@ namespace sasktran2::successive_orders {
             const auto& packed_ray = m_scalar_packed_rays[ray];
             const auto& ray_interpolation = interpolation[ray];
             const double phase_scale =
-                m_uniform_phase_values[static_cast<std::size_t>(wavelength) *
-                                           m_num_rays +
-                                       ray] *
-                inverse_four_pi;
+                WITH_FORCING
+                    ? m_uniform_phase_values[wavelength][ray] * inverse_four_pi
+                    : 0.0;
             const auto endpoint_source = [&](int solar_index) {
                 const int slot = m_endpoint_slots[solar_index];
-                const auto& medium = m_endpoint_medium_cache[wavelength];
+                const auto& medium = m_endpoint_medium_cache[cache_slot];
                 return medium.extinction(slot) * medium.albedo(slot) *
                        solar(solar_index) * phase_scale;
             };
@@ -1109,7 +1469,8 @@ namespace sasktran2::successive_orders {
                 }
                 if (!uniform_albedo) {
                     for (const auto& weight : atmosphere_weights) {
-                        albedo += weight.weight * ssa(weight.index, wavelength);
+                        albedo +=
+                            weight.weight() * ssa(weight.index, wavelength);
                     }
                 }
                 const auto transfer = scalar_layer_transfer(optical_depth);
@@ -1121,30 +1482,35 @@ namespace sasktran2::successive_orders {
                 if constexpr (WITH_TRANSPORT) {
                     const double source_factor =
                         prefix * albedo * (1.0 - transfer.attenuation);
-                    for (const auto& source :
-                         ray_interpolation.source_for_layer(local_layer)) {
-                        transport->values()(
-                            ray_interpolation.transport_value_offset +
-                            source.row_inner_index) +=
-                            source.weight * source_factor;
-                    }
+                    ray_interpolation.source_for_layer(local_layer)
+                        .visit([&](const auto sources) {
+                            for (const auto& source : sources) {
+                                transport->values()(
+                                    ray_interpolation.transport_value_offset +
+                                    source.row_inner_index()) +=
+                                    source.weight() * source_factor;
+                            }
+                        });
                 }
-                const double layer_distance =
-                    layer.source_quad_start + layer.source_quad_end;
-                if (layer_distance < minimum_layer_distance_m) {
-                    have_shared_endpoint = false;
-                } else {
-                    const int exit_solar =
-                        m_solar_offsets[ray] + static_cast<int>(local_layer);
-                    const double start = have_shared_endpoint
-                                             ? shared_endpoint
-                                             : endpoint_source(exit_solar + 1);
-                    const double end = endpoint_source(exit_solar);
-                    radiance += prefix * transfer.source_factor *
-                                (start * layer.source_quad_start +
-                                 end * layer.source_quad_end);
-                    shared_endpoint = end;
-                    have_shared_endpoint = true;
+                if constexpr (WITH_FORCING) {
+                    const double layer_distance =
+                        layer.source_quad_start + layer.source_quad_end;
+                    if (layer_distance < minimum_layer_distance_m) {
+                        have_shared_endpoint = false;
+                    } else {
+                        const int exit_solar = m_solar_offsets[ray] +
+                                               static_cast<int>(local_layer);
+                        const double start =
+                            have_shared_endpoint
+                                ? shared_endpoint
+                                : endpoint_source(exit_solar + 1);
+                        const double end = endpoint_source(exit_solar);
+                        radiance += prefix * transfer.source_factor *
+                                    (start * layer.source_quad_start +
+                                     end * layer.source_quad_end);
+                        shared_endpoint = end;
+                        have_shared_endpoint = true;
+                    }
                 }
                 prefix *= transfer.attenuation;
             }
@@ -1152,31 +1518,35 @@ namespace sasktran2::successive_orders {
                 if (ray_interpolation.ground_is_hit()) {
                     const double ground_albedo =
                         ground_transport_albedo(wavelength, ray);
-                    for (const auto& source :
-                         ray_interpolation.ground_weights) {
-                        transport->values()(
-                            ray_interpolation.transport_value_offset +
-                            source.row_inner_index) +=
-                            source.weight * prefix * ground_albedo;
+                    ray_interpolation.ground_weights.visit(
+                        [&](const auto sources) {
+                            for (const auto& source : sources) {
+                                transport->values()(
+                                    ray_interpolation.transport_value_offset +
+                                    source.row_inner_index()) +=
+                                    source.weight() * prefix * ground_albedo;
+                            }
+                        });
+                }
+            }
+            if constexpr (WITH_FORCING) {
+                if (packed_ray.ground_geometry >= 0) {
+                    const auto& ground =
+                        m_scalar_ground_geometry[packed_ray.ground_geometry];
+                    double mu_in;
+                    double mu_out;
+                    double phi;
+                    if (ground_scattering_geometry(m_solar_offsets[ray], ground,
+                                                   mu_in, mu_out, phi)) {
+                        const auto brdf = m_atmosphere->surface().brdf(
+                            wavelength, mu_in, mu_out, phi,
+                            m_ground_horizontal_weights[ray]);
+                        radiance += prefix * solar(m_solar_offsets[ray]) *
+                                    mu_in * brdf(0, 0);
                     }
                 }
+                forcing(ray) = radiance;
             }
-            if (packed_ray.ground_geometry >= 0) {
-                const auto& ground =
-                    m_scalar_ground_geometry[packed_ray.ground_geometry];
-                double mu_in;
-                double mu_out;
-                double phi;
-                if (ground_scattering_geometry(m_solar_offsets[ray], ground,
-                                               mu_in, mu_out, phi)) {
-                    const auto brdf = m_atmosphere->surface().brdf(
-                        wavelength, mu_in, mu_out, phi,
-                        m_ground_horizontal_weights[ray]);
-                    radiance += prefix * solar(m_solar_offsets[ray]) * mu_in *
-                                brdf(0, 0);
-                }
-            }
-            forcing(ray) = radiance;
         }
         if (layer_cache != nullptr) {
             layer_cache->active = true;
@@ -1184,14 +1554,15 @@ namespace sasktran2::successive_orders {
     }
 
     template <int NSTOKES>
-    template <bool WITH_TRANSPORT, bool LOWER_INTERPOLATION>
+    template <bool WITH_TRANSPORT, bool LOWER_INTERPOLATION, bool WITH_FORCING>
     void FirstOrderProvider<NSTOKES>::calculate_scalar_impl(
         int wavelength, int wavelength_thread,
         Eigen::Ref<Eigen::VectorXd> forcing, TransportOperator* transport) {
+        const int cache_slot = scalar_cache_index(wavelength);
         if constexpr (!LOWER_INTERPOLATION) {
             if (m_uniform_phase_active[wavelength] != 0 &&
                 !m_endpoint_phase_basis) {
-                calculate_scalar_uniform_impl<WITH_TRANSPORT>(
+                calculate_scalar_uniform_impl<WITH_TRANSPORT, WITH_FORCING>(
                     wavelength, wavelength_thread, forcing, transport);
                 return;
             }
@@ -1200,84 +1571,44 @@ namespace sasktran2::successive_orders {
         const auto& interpolation = m_source_geometry->incoming_interpolation();
         const auto& extinction = m_atmosphere->storage().total_extinction;
         const auto& ssa = m_atmosphere->storage().ssa;
-        const auto& solar =
+        ScalarEndpointContext endpoint_context;
+        if constexpr (WITH_FORCING) {
             ensure_solar_transmission(wavelength, wavelength_thread);
-        ensure_endpoint_medium(wavelength);
+            ensure_endpoint_medium(wavelength);
+            endpoint_context =
+                prepare_scalar_endpoint_context(wavelength, cache_slot);
+        }
+        const auto& solar = m_cached_solar_transmission[cache_slot];
         const bool uniform_albedo = m_uniform_albedo_active[wavelength] != 0;
         const double uniform_albedo_value =
             uniform_albedo ? m_uniform_albedo_values[wavelength] : 0.0;
         ScalarVolumeCache* volume_cache = nullptr;
         if constexpr (WITH_TRANSPORT && !LOWER_INTERPOLATION) {
             if (!m_scalar_volume_cache.empty()) {
-                volume_cache = &m_scalar_volume_cache[wavelength];
-            }
-        }
-        if (volume_cache != nullptr && volume_cache->active) {
-            if (volume_cache->forcing.size() != forcing.size() ||
-                volume_cache->transport_values.size() !=
-                    transport->values().size() ||
-                volume_cache->ground_prefix.size() != m_num_rays) {
-                volume_cache->active = false;
-            } else {
-                forcing = volume_cache->forcing;
-                transport->values() = volume_cache->transport_values;
-#pragma omp parallel for if (m_num_source_threads > 1)                         \
-    num_threads(m_num_source_threads) schedule(dynamic)
-                for (int ray = 0; ray < m_num_rays; ++ray) {
-                    const auto& ray_interpolation = interpolation[ray];
-                    const auto& packed_ray = m_scalar_packed_rays[ray];
-                    const double prefix = volume_cache->ground_prefix(ray);
-                    if (ray_interpolation.ground_is_hit()) {
-                        const double ground_albedo =
-                            ground_transport_albedo(wavelength, ray);
-                        for (const auto& source :
-                             ray_interpolation.ground_weights) {
-                            transport->values()(
-                                ray_interpolation.transport_value_offset +
-                                source.row_inner_index) +=
-                                source.weight * prefix * ground_albedo;
-                        }
-                    }
-                    if (packed_ray.ground_geometry >= 0) {
-                        const auto& ground =
-                            m_scalar_ground_geometry[packed_ray
-                                                         .ground_geometry];
-                        double mu_in;
-                        double mu_out;
-                        double phi;
-                        if (ground_scattering_geometry(m_solar_offsets[ray],
-                                                       ground, mu_in, mu_out,
-                                                       phi)) {
-                            const auto brdf = m_atmosphere->surface().brdf(
-                                wavelength, mu_in, mu_out, phi,
-                                m_ground_horizontal_weights[ray]);
-                            forcing(ray) += prefix *
-                                            solar(m_solar_offsets[ray]) *
-                                            mu_in * brdf(0, 0);
-                        }
-                    }
-                }
-                return;
+                volume_cache = &m_scalar_volume_cache[cache_slot];
             }
         }
         if constexpr (WITH_TRANSPORT) {
             transport->values().setZero();
         }
         if (volume_cache != nullptr) {
-            volume_cache->forcing.setZero(forcing.size());
-            volume_cache->transport_values.setZero(transport->values().size());
             volume_cache->ground_prefix.setZero(m_num_rays);
             volume_cache->active = false;
         }
         ScalarLayerCache* layer_cache = m_scalar_layer_cache.empty()
                                             ? nullptr
-                                            : &m_scalar_layer_cache[wavelength];
+                                            : &m_scalar_layer_cache[cache_slot];
         if (layer_cache != nullptr) {
             layer_cache->active = false;
         }
 #pragma omp parallel for if (m_num_source_threads > 1)                         \
     num_threads(m_num_source_threads) schedule(dynamic)
         for (int ray = 0; ray < m_num_rays; ++ray) {
+            ScalarEndpointContext ray_endpoint_context;
+            if constexpr (WITH_FORCING) {
+                ray_endpoint_context =
+                    scalar_endpoint_context_for_ray(endpoint_context, ray);
+            }
             const auto& ray_interpolation = interpolation[ray];
             const ScalarPackedRay* packed_ray = nullptr;
             if constexpr (!LOWER_INTERPOLATION) {
@@ -1291,22 +1622,25 @@ namespace sasktran2::successive_orders {
             for (int layer =
                      static_cast<int>(ray_interpolation.layers.size()) - 1;
                  layer >= 0; --layer) {
-                double source_quad_start;
-                double source_quad_end;
-                double layer_distance;
-                if constexpr (LOWER_INTERPOLATION) {
-                    const auto& traced_layer = rays[ray].layers[layer];
-                    layer_distance = traced_layer.layer_distance;
-                    source_quad_start =
-                        layer_distance * traced_layer.od_quad_start_fraction;
-                    source_quad_end =
-                        layer_distance * traced_layer.od_quad_end_fraction;
-                } else {
-                    const auto& packed_layer =
-                        m_scalar_packed_layers[packed_ray->layer_begin + layer];
-                    source_quad_start = packed_layer.source_quad_start;
-                    source_quad_end = packed_layer.source_quad_end;
-                    layer_distance = source_quad_start + source_quad_end;
+                double source_quad_start = 0.0;
+                double source_quad_end = 0.0;
+                double layer_distance = 0.0;
+                if constexpr (WITH_FORCING) {
+                    if constexpr (LOWER_INTERPOLATION) {
+                        const auto& traced_layer = rays[ray].layers[layer];
+                        layer_distance = traced_layer.layer_distance;
+                        source_quad_start = layer_distance *
+                                            traced_layer.od_quad_start_fraction;
+                        source_quad_end =
+                            layer_distance * traced_layer.od_quad_end_fraction;
+                    } else {
+                        const auto& packed_layer =
+                            m_scalar_packed_layers[packed_ray->layer_begin +
+                                                   layer];
+                        source_quad_start = packed_layer.source_quad_start;
+                        source_quad_end = packed_layer.source_quad_end;
+                        layer_distance = source_quad_start + source_quad_end;
+                    }
                 }
                 double optical_depth = 0.0;
                 double albedo = uniform_albedo_value;
@@ -1323,7 +1657,7 @@ namespace sasktran2::successive_orders {
                         for (const auto& weight :
                              ray_interpolation.atmosphere_for_layer(layer)) {
                             albedo +=
-                                weight.weight * ssa(weight.index, wavelength);
+                                weight.weight() * ssa(weight.index, wavelength);
                         }
                     }
                 }
@@ -1339,140 +1673,144 @@ namespace sasktran2::successive_orders {
                 if constexpr (WITH_TRANSPORT) {
                     const double source_factor =
                         prefix * albedo * (1.0 - attenuation);
-                    for (const auto& source :
-                         ray_interpolation.source_for_layer(layer)) {
-                        const int transport_index =
-                            ray_interpolation.transport_value_offset +
-                            source.row_inner_index;
-                        const double contribution =
-                            source.weight * source_factor;
-                        transport->values()(transport_index) += contribution;
-                        if (volume_cache != nullptr) {
-                            volume_cache->transport_values(transport_index) +=
-                                contribution;
-                        }
+                    ray_interpolation.source_for_layer(layer).visit(
+                        [&](const auto sources) {
+                            for (const auto& source : sources) {
+                                const int transport_index =
+                                    ray_interpolation.transport_value_offset +
+                                    source.row_inner_index();
+                                const double contribution =
+                                    source.weight() * source_factor;
+                                transport->values()(transport_index) +=
+                                    contribution;
+                            }
+                        });
+                }
+                if constexpr (WITH_FORCING) {
+                    if (layer_distance < minimum_layer_distance_m) {
+                        have_shared_endpoint = false;
                     }
-                }
-                if (layer_distance < minimum_layer_distance_m) {
-                    have_shared_endpoint = false;
-                }
-                if (layer_distance >= minimum_layer_distance_m) {
-                    if constexpr (LOWER_INTERPOLATION) {
-                        const auto& traced_layer = rays[ray].layers[layer];
-                        auto entrance_weights =
-                            rays[ray].entrance_weights(layer);
-                        auto exit_weights = rays[ray].exit_weights(layer);
-                        const auto* start_weights = &entrance_weights;
-                        const auto* end_weights = &exit_weights;
-                        bool start_entrance = true;
-                        bool end_entrance = false;
-                        if (traced_layer.r_exit > traced_layer.r_entrance) {
-                            end_weights = &entrance_weights;
-                            end_entrance = true;
-                        } else {
-                            start_weights = &exit_weights;
-                            start_entrance = false;
-                        }
-                        const int exit_solar = m_solar_offsets[ray] + layer;
-                        auto start = scalar_endpoint(
-                            wavelength, ray, layer, start_entrance,
-                            exit_solar + 1, *start_weights);
-                        auto end = scalar_endpoint(wavelength, ray, layer,
-                                                   end_entrance, exit_solar,
-                                                   *end_weights);
-                        start.solar_transmission = solar(exit_solar + 1);
-                        start.source = start.extinction * start.albedo *
-                                       start.solar_transmission * start.phase *
-                                       inverse_four_pi;
-                        end.solar_transmission = solar(exit_solar);
-                        end.source = end.extinction * end.albedo *
-                                     end.solar_transmission * end.phase *
-                                     inverse_four_pi;
-                        radiance += prefix * factor *
-                                    (start.source * source_quad_start +
-                                     end.source * source_quad_end);
-                    } else {
-                        const int exit_solar = m_solar_offsets[ray] + layer;
-                        auto start =
-                            have_shared_endpoint
-                                ? shared_endpoint
-                                : scalar_endpoint(
-                                      wavelength, ray, layer, true,
-                                      exit_solar + 1,
-                                      endpoint_weights(exit_solar + 1));
-                        auto end = scalar_endpoint(
-                            wavelength, ray, layer, false, exit_solar,
-                            endpoint_weights(exit_solar));
-                        if (!have_shared_endpoint) {
+                    if (layer_distance >= minimum_layer_distance_m) {
+                        if constexpr (LOWER_INTERPOLATION) {
+                            const auto& traced_layer = rays[ray].layers[layer];
+                            auto entrance_weights =
+                                rays[ray].entrance_weights(layer);
+                            auto exit_weights = rays[ray].exit_weights(layer);
+                            const auto* start_weights = &entrance_weights;
+                            const auto* end_weights = &exit_weights;
+                            bool start_entrance = true;
+                            bool end_entrance = false;
+                            if (traced_layer.r_exit > traced_layer.r_entrance) {
+                                end_weights = &entrance_weights;
+                                end_entrance = true;
+                            } else {
+                                start_weights = &exit_weights;
+                                start_entrance = false;
+                            }
+                            const int exit_solar = m_solar_offsets[ray] + layer;
+                            auto start = scalar_endpoint(
+                                ray_endpoint_context, layer, start_entrance,
+                                exit_solar + 1, *start_weights);
+                            auto end = scalar_endpoint(
+                                ray_endpoint_context, layer, end_entrance,
+                                exit_solar, *end_weights);
                             start.solar_transmission = solar(exit_solar + 1);
                             start.source = start.extinction * start.albedo *
                                            start.solar_transmission *
                                            start.phase * inverse_four_pi;
+                            end.solar_transmission = solar(exit_solar);
+                            end.source = end.extinction * end.albedo *
+                                         end.solar_transmission * end.phase *
+                                         inverse_four_pi;
+                            radiance += prefix * factor *
+                                        (start.source * source_quad_start +
+                                         end.source * source_quad_end);
+                        } else {
+                            const int exit_solar = m_solar_offsets[ray] + layer;
+                            auto start = have_shared_endpoint
+                                             ? shared_endpoint
+                                             : scalar_endpoint(
+                                                   ray_endpoint_context, layer,
+                                                   true, exit_solar + 1);
+                            auto end = scalar_endpoint(
+                                ray_endpoint_context, layer, false, exit_solar);
+                            if (!have_shared_endpoint) {
+                                start.solar_transmission =
+                                    solar(exit_solar + 1);
+                                start.source = start.extinction * start.albedo *
+                                               start.solar_transmission *
+                                               start.phase * inverse_four_pi;
+                            }
+                            end.solar_transmission = solar(exit_solar);
+                            end.source = end.extinction * end.albedo *
+                                         end.solar_transmission * end.phase *
+                                         inverse_four_pi;
+                            radiance += prefix * factor *
+                                        (start.source * source_quad_start +
+                                         end.source * source_quad_end);
+                            shared_endpoint = end;
                         }
-                        end.solar_transmission = solar(exit_solar);
-                        end.source = end.extinction * end.albedo *
-                                     end.solar_transmission * end.phase *
-                                     inverse_four_pi;
-                        radiance += prefix * factor *
-                                    (start.source * source_quad_start +
-                                     end.source * source_quad_end);
-                        shared_endpoint = end;
+                        have_shared_endpoint = true;
                     }
-                    have_shared_endpoint = true;
                 }
                 prefix *= attenuation;
             }
             if (volume_cache != nullptr) {
-                volume_cache->forcing(ray) = radiance;
                 volume_cache->ground_prefix(ray) = prefix;
             }
             if constexpr (WITH_TRANSPORT) {
                 if (ray_interpolation.ground_is_hit()) {
                     const double ground_albedo =
                         ground_transport_albedo(wavelength, ray);
-                    for (const auto& source :
-                         ray_interpolation.ground_weights) {
-                        transport->values()(
-                            ray_interpolation.transport_value_offset +
-                            source.row_inner_index) +=
-                            source.weight * prefix * ground_albedo;
-                    }
+                    ray_interpolation.ground_weights.visit(
+                        [&](const auto sources) {
+                            for (const auto& source : sources) {
+                                transport->values()(
+                                    ray_interpolation.transport_value_offset +
+                                    source.row_inner_index()) +=
+                                    source.weight() * prefix * ground_albedo;
+                            }
+                        });
                 }
             }
-            if constexpr (LOWER_INTERPOLATION) {
-                const auto& traced_ray = rays[ray];
-                if (traced_ray.ground_is_hit && !traced_ray.layers.empty()) {
-                    const auto& ground_layer = traced_ray.layers.front();
-                    ScalarGroundGeometry ground{
-                        ground_layer.exit.position.normalized(),
-                        ground_layer.average_look_away};
+            if constexpr (WITH_FORCING) {
+                if constexpr (LOWER_INTERPOLATION) {
+                    const auto& traced_ray = rays[ray];
+                    if (traced_ray.ground_is_hit &&
+                        !traced_ray.layers.empty()) {
+                        const auto& ground_layer = traced_ray.layers.front();
+                        ScalarGroundGeometry ground{
+                            ground_layer.exit.position.normalized(),
+                            ground_layer.average_look_away};
+                        double mu_in;
+                        double mu_out;
+                        double phi;
+                        if (ground_scattering_geometry(m_solar_offsets[ray],
+                                                       ground, mu_in, mu_out,
+                                                       phi)) {
+                            const auto brdf = m_atmosphere->surface().brdf(
+                                wavelength, mu_in, mu_out, phi);
+                            radiance += prefix * solar(m_solar_offsets[ray]) *
+                                        mu_in * brdf(0, 0);
+                        }
+                    }
+                } else if (packed_ray->ground_geometry >= 0) {
+                    const auto& ground =
+                        m_scalar_ground_geometry[packed_ray->ground_geometry];
                     double mu_in;
                     double mu_out;
                     double phi;
                     if (ground_scattering_geometry(m_solar_offsets[ray], ground,
                                                    mu_in, mu_out, phi)) {
                         const auto brdf = m_atmosphere->surface().brdf(
-                            wavelength, mu_in, mu_out, phi);
+                            wavelength, mu_in, mu_out, phi,
+                            m_ground_horizontal_weights[ray]);
                         radiance += prefix * solar(m_solar_offsets[ray]) *
                                     mu_in * brdf(0, 0);
                     }
                 }
-            } else if (packed_ray->ground_geometry >= 0) {
-                const auto& ground =
-                    m_scalar_ground_geometry[packed_ray->ground_geometry];
-                double mu_in;
-                double mu_out;
-                double phi;
-                if (ground_scattering_geometry(m_solar_offsets[ray], ground,
-                                               mu_in, mu_out, phi)) {
-                    const auto brdf = m_atmosphere->surface().brdf(
-                        wavelength, mu_in, mu_out, phi,
-                        m_ground_horizontal_weights[ray]);
-                    radiance += prefix * solar(m_solar_offsets[ray]) * mu_in *
-                                brdf(0, 0);
-                }
+                forcing(ray) = radiance;
             }
-            forcing(ray) = radiance;
         }
         if (volume_cache != nullptr) {
             volume_cache->active = true;
@@ -1491,6 +1829,10 @@ namespace sasktran2::successive_orders {
         const Eigen::VectorXd* layer_state_projection,
         const Eigen::VectorXd* ground_state_projection,
         Eigen::VectorXd* direct_transport_tangent) {
+        if (scalar_cache_index(wavelength) != wavelength_thread) {
+            throw std::logic_error(
+                "Successive-orders scalar JVP requires its prepared worker");
+        }
         if (direct_transport_tangent != nullptr) {
             if (m_use_lower_interpolation) {
                 calculate_scalar_jvp_impl<true, true>(
@@ -1517,16 +1859,17 @@ namespace sasktran2::successive_orders {
     template <int NSTOKES>
     void FirstOrderProvider<NSTOKES>::calculate_scalar_jvp_uniform_proportional(
         int wavelength, Eigen::Ref<const Eigen::VectorXd> native_tangent,
-        const Eigen::VectorXd& solar_tangent, double extinction_direction_scale,
-        double albedo, double albedo_tangent,
+        Eigen::Ref<const Eigen::VectorXd> solar_tangent,
+        double extinction_direction_scale, double albedo, double albedo_tangent,
         const Eigen::VectorXd& layer_state_projection,
         const Eigen::VectorXd& ground_state_projection,
         Eigen::VectorXd& direct_transport_tangent,
         Eigen::Ref<Eigen::VectorXd> forcing_tangent) {
+        const int cache_slot = scalar_cache_index(wavelength);
         const auto& interpolation = m_source_geometry->incoming_interpolation();
-        const auto& solar = m_cached_solar_transmission[wavelength];
-        const auto& endpoint_medium = m_endpoint_medium_cache[wavelength];
-        const auto& layer_cache = m_scalar_layer_cache[wavelength];
+        const auto& solar = m_cached_solar_transmission[cache_slot];
+        const auto& endpoint_medium = m_endpoint_medium_cache[cache_slot];
+        const auto& layer_cache = m_scalar_layer_cache[cache_slot];
         if (!layer_cache.active ||
             layer_state_projection.size() != layer_cache.optical_depth.size() ||
             ground_state_projection.size() != m_num_rays ||
@@ -1540,10 +1883,7 @@ namespace sasktran2::successive_orders {
         for (int ray = 0; ray < m_num_rays; ++ray) {
             const auto& packed_ray = m_scalar_packed_rays[ray];
             const double phase_scale =
-                m_uniform_phase_values[static_cast<std::size_t>(wavelength) *
-                                           m_num_rays +
-                                       ray] *
-                inverse_four_pi;
+                m_uniform_phase_values[wavelength][ray] * inverse_four_pi;
             const auto endpoint = [&](int solar_index) {
                 ScalarValueTangent result;
                 const int slot = m_endpoint_slots[solar_index];
@@ -1678,54 +2018,60 @@ namespace sasktran2::successive_orders {
         const Eigen::VectorXd* layer_state_projection,
         const Eigen::VectorXd* ground_state_projection,
         Eigen::VectorXd* direct_transport_tangent) {
+        const int cache_slot = scalar_cache_index(wavelength);
         if constexpr (!LOWER_INTERPOLATION) {
             ensure_endpoint_medium(wavelength);
         }
         const auto& solar =
             ensure_solar_transmission(wavelength, wavelength_thread);
-        auto& solar_tangent = m_solar_product_scratch[wavelength_thread];
-        auto& table_tangent = m_solar_table_product_scratch[wavelength_thread];
+        FirstOrderScratchLease scratch(1, solar.size(),
+                                       m_solar_table->table_size());
+        auto solar_tangent = scratch.solar(0);
+        auto table_tangent = scratch.table();
         const Eigen::Index solar_columns = m_solar_table->atmosphere_size();
         m_solar_table->apply(native_tangent.head(solar_columns), table_tangent);
         m_solar_interpolation.apply(table_tangent, solar_tangent);
         solar_tangent.array() *= -solar.array();
         auto& coefficient_tangent = m_phase_product_scratch[wavelength_thread];
         auto& tangent_orders = m_phase_order_scratch[wavelength_thread];
-        coefficient_tangent.setZero();
-        std::fill(tangent_orders.begin(), tangent_orders.end(), 0);
         const auto& storage = m_atmosphere->storage();
         const int locations = storage.total_extinction.rows();
-        for (int group = 0; group < m_atmosphere->num_scattering_deriv_groups();
-             ++group) {
-            const int native_offset =
-                m_atmosphere->scat_deriv_start_index() + group * locations;
-            for (int location = 0; location < locations; ++location) {
-                const double direction =
-                    native_tangent(native_offset + location);
-                if (direction == 0.0) {
-                    continue;
-                }
-                const int order =
-                    std::min(storage.d_max_order[group](location, wavelength),
-                             m_num_phase_moments);
-                const int coefficient_offset = location * m_num_phase_moments;
-                for (int degree = 0; degree < order; ++degree) {
-                    coefficient_tangent(coefficient_offset + degree) +=
-                        direction * storage.d_leg_coeff(degree, location,
-                                                        wavelength, group);
-                }
-            }
-        }
         bool phase_tangent_active = false;
-        for (int location = 0; location < locations; ++location) {
-            int order = m_num_phase_moments;
-            const int coefficient_offset = location * m_num_phase_moments;
-            while (order > 0 &&
-                   coefficient_tangent(coefficient_offset + order - 1) == 0.0) {
-                --order;
+        if (m_atmosphere->num_scattering_deriv_groups() > 0) {
+            coefficient_tangent.setZero();
+            std::fill(tangent_orders.begin(), tangent_orders.end(), 0);
+            for (int group = 0;
+                 group < m_atmosphere->num_scattering_deriv_groups(); ++group) {
+                const int native_offset =
+                    m_atmosphere->scat_deriv_start_index() + group * locations;
+                for (int location = 0; location < locations; ++location) {
+                    const double direction =
+                        native_tangent(native_offset + location);
+                    if (direction == 0.0) {
+                        continue;
+                    }
+                    const int order = std::min(
+                        storage.d_max_order[group](location, wavelength),
+                        m_num_phase_moments);
+                    const int coefficient_offset =
+                        location * m_num_phase_moments;
+                    for (int degree = 0; degree < order; ++degree) {
+                        coefficient_tangent(coefficient_offset + degree) +=
+                            direction * storage.d_leg_coeff(degree, location,
+                                                            wavelength, group);
+                    }
+                }
             }
-            tangent_orders[location] = order;
-            phase_tangent_active = phase_tangent_active || order > 0;
+            for (int location = 0; location < locations; ++location) {
+                int order = m_num_phase_moments;
+                const int coefficient_offset = location * m_num_phase_moments;
+                while (order > 0 && coefficient_tangent(coefficient_offset +
+                                                        order - 1) == 0.0) {
+                    --order;
+                }
+                tangent_orders[location] = order;
+                phase_tangent_active = phase_tangent_active || order > 0;
+            }
         }
         const auto& rays = m_source_geometry->incoming_rays();
         const auto& interpolation = m_source_geometry->incoming_interpolation();
@@ -1795,37 +2141,46 @@ namespace sasktran2::successive_orders {
                     uniform_albedo_tangent, *layer_state_projection,
                     *ground_state_projection, *direct_transport_tangent,
                     forcing_tangent);
+                profile_product_scratch(this, scratch, "jvp", wavelength,
+                                        wavelength_thread);
                 return;
             }
         }
-        auto& endpoint_extinction_tangent =
-            m_endpoint_extinction_tangent_scratch[wavelength_thread];
-        auto& endpoint_albedo_tangent =
-            m_endpoint_albedo_tangent_scratch[wavelength_thread];
-        for (int slot = 0; slot < endpoint_extinction_tangent.size(); ++slot) {
-            double extinction_value =
-                proportional_extinction_direction
-                    ? extinction_direction_scale *
-                          m_endpoint_medium_cache[wavelength].extinction(slot)
-                    : 0.0;
-            double albedo_value = 0.0;
-            for (int index = m_unique_endpoint_offsets[slot];
-                 index < m_unique_endpoint_offsets[slot + 1]; ++index) {
-                const auto& weight = m_unique_endpoint_weights[index];
-                if (!proportional_extinction_direction) {
-                    extinction_value +=
-                        weight.weight * extinction_direction[weight.index];
+        const int endpoint_count = static_cast<int>(m_endpoint_stencils.size());
+        scratch.prepare_endpoints(endpoint_count);
+        auto endpoint_extinction_tangent = scratch.endpoint_extinction();
+        auto endpoint_albedo_tangent = scratch.endpoint_albedo();
+        profile_product_scratch(this, scratch, "jvp", wavelength,
+                                wavelength_thread);
+        m_endpoint_stencils.visit([&](const auto& stencils) {
+            for (int slot = 0; slot < endpoint_extinction_tangent.size();
+                 ++slot) {
+                double extinction_value =
+                    proportional_extinction_direction
+                        ? extinction_direction_scale *
+                              m_endpoint_medium_cache[cache_slot].extinction(
+                                  slot)
+                        : 0.0;
+                double albedo_value = 0.0;
+                const auto weights = stencils[slot];
+                for (std::size_t index = 0; index < weights.size(); ++index) {
+                    const auto [atmosphere_index, weight] =
+                        interpolation_pair(weights[index]);
+                    if (!proportional_extinction_direction) {
+                        extinction_value +=
+                            weight * extinction_direction[atmosphere_index];
+                    }
+                    if (!uniform_albedo_direction) {
+                        albedo_value +=
+                            weight * albedo_direction[atmosphere_index];
+                    }
                 }
-                if (!uniform_albedo_direction) {
-                    albedo_value +=
-                        weight.weight * albedo_direction[weight.index];
-                }
+                endpoint_extinction_tangent(slot) = extinction_value;
+                endpoint_albedo_tangent(slot) = uniform_albedo_direction
+                                                    ? uniform_albedo_tangent
+                                                    : albedo_value;
             }
-            endpoint_extinction_tangent(slot) = extinction_value;
-            endpoint_albedo_tangent(slot) = uniform_albedo_direction
-                                                ? uniform_albedo_tangent
-                                                : albedo_value;
-        }
+        });
         const double* __restrict layer_state =
             layer_state_projection == nullptr ? nullptr
                                               : layer_state_projection->data();
@@ -1838,11 +2193,11 @@ namespace sasktran2::successive_orders {
                 ? nullptr
                 : direct_transport_tangent->data();
         if (m_scalar_layer_cache.empty() ||
-            !m_scalar_layer_cache[wavelength].active) {
+            !m_scalar_layer_cache[cache_slot].active) {
             throw std::logic_error(
                 "Successive-orders scalar JVP requires a prepared primal");
         }
-        const auto& layer_cache = m_scalar_layer_cache[wavelength];
+        const auto& layer_cache = m_scalar_layer_cache[cache_slot];
         if constexpr (WITH_TRANSPORT) {
             if (layer_state_projection == nullptr ||
                 layer_state_projection->size() !=
@@ -1857,9 +2212,20 @@ namespace sasktran2::successive_orders {
             direct_transport_tangent->setZero();
         }
 
+        auto endpoint_context =
+            prepare_scalar_endpoint_context(wavelength, cache_slot);
+        endpoint_context.coefficient_tangent = coefficient_tangent.data();
+        endpoint_context.tangent_orders = tangent_orders.data();
+        endpoint_context.endpoint_extinction_tangent =
+            endpoint_extinction_tangent.data();
+        endpoint_context.endpoint_albedo_tangent =
+            endpoint_albedo_tangent.data();
+
 #pragma omp parallel for if (m_num_source_threads > 1)                         \
     num_threads(m_num_source_threads) schedule(dynamic)
         for (int ray = 0; ray < m_num_rays; ++ray) {
+            const auto ray_endpoint_context =
+                scalar_endpoint_context_for_ray(endpoint_context, ray);
             const auto& ray_interpolation = interpolation[ray];
             const ScalarPackedRay* packed_ray = nullptr;
             if constexpr (!LOWER_INTERPOLATION) {
@@ -1917,12 +2283,12 @@ namespace sasktran2::successive_orders {
                         for (const auto& weight :
                              ray_interpolation.atmosphere_for_layer(layer)) {
                             if (!uniform_albedo) {
-                                albedo +=
-                                    weight.weight * albedo_values[weight.index];
+                                albedo += weight.weight() *
+                                          albedo_values[weight.index];
                             }
                             if (!uniform_albedo_direction) {
                                 albedo_tangent +=
-                                    weight.weight *
+                                    weight.weight() *
                                     albedo_direction[weight.index];
                             }
                         }
@@ -1964,33 +2330,30 @@ namespace sasktran2::successive_orders {
                         }
                         const int exit_solar = m_solar_offsets[ray] + layer;
                         start = scalar_endpoint_jvp<false>(
-                            wavelength, wavelength_thread, ray, layer,
-                            start_entrance, exit_solar + 1, *start_weights,
+                            ray_endpoint_context, layer, start_entrance,
+                            exit_solar + 1, *start_weights,
                             extinction_direction, albedo_direction,
                             solar_direction, uniform_albedo_direction,
                             uniform_albedo_tangent, phase_tangent_active);
                         end = scalar_endpoint_jvp<false>(
-                            wavelength, wavelength_thread, ray, layer,
-                            end_entrance, exit_solar, *end_weights,
-                            extinction_direction, albedo_direction,
-                            solar_direction, uniform_albedo_direction,
-                            uniform_albedo_tangent, phase_tangent_active);
+                            ray_endpoint_context, layer, end_entrance,
+                            exit_solar, *end_weights, extinction_direction,
+                            albedo_direction, solar_direction,
+                            uniform_albedo_direction, uniform_albedo_tangent,
+                            phase_tangent_active);
                     } else {
                         const int exit_solar = m_solar_offsets[ray] + layer;
-                        start =
-                            have_shared_endpoint
-                                ? shared_endpoint
-                                : scalar_endpoint_jvp<true>(
-                                      wavelength, wavelength_thread, ray, layer,
-                                      true, exit_solar + 1,
-                                      endpoint_weights(exit_solar + 1),
-                                      extinction_direction, albedo_direction,
-                                      solar_direction, uniform_albedo_direction,
-                                      uniform_albedo_tangent,
-                                      phase_tangent_active);
+                        start = have_shared_endpoint
+                                    ? shared_endpoint
+                                    : scalar_endpoint_jvp<true>(
+                                          ray_endpoint_context, layer, true,
+                                          exit_solar + 1, extinction_direction,
+                                          albedo_direction, solar_direction,
+                                          uniform_albedo_direction,
+                                          uniform_albedo_tangent,
+                                          phase_tangent_active);
                         end = scalar_endpoint_jvp<true>(
-                            wavelength, wavelength_thread, ray, layer, false,
-                            exit_solar, endpoint_weights(exit_solar),
+                            ray_endpoint_context, layer, false, exit_solar,
                             extinction_direction, albedo_direction,
                             solar_direction, uniform_albedo_direction,
                             uniform_albedo_tangent, phase_tangent_active);
@@ -2087,6 +2450,10 @@ namespace sasktran2::successive_orders {
         const Eigen::VectorXd* transport_state,
         const Eigen::VectorXd* layer_state_projection,
         const Eigen::VectorXd* ground_state_projection) {
+        if (scalar_cache_index(wavelength) != wavelength_thread) {
+            throw std::logic_error(
+                "Successive-orders scalar VJP requires its prepared worker");
+        }
         const bool surface_only =
             m_atmosphere->storage().derivative_mappings_const().empty();
         if (transport_state != nullptr || layer_state_projection != nullptr) {
@@ -2097,7 +2464,7 @@ namespace sasktran2::successive_orders {
                         native_gradient, transport_state,
                         ground_state_projection);
                 } else {
-                    accumulate_scalar_vjp_impl<true, true>(
+                    accumulate_scalar_vjp_dispatch<true, true>(
                         wavelength, wavelength_thread, forcing_cotangent,
                         native_gradient, transport_state,
                         layer_state_projection, ground_state_projection);
@@ -2109,7 +2476,7 @@ namespace sasktran2::successive_orders {
                         native_gradient, transport_state,
                         ground_state_projection);
                 } else {
-                    accumulate_scalar_vjp_impl<true, false>(
+                    accumulate_scalar_vjp_dispatch<true, false>(
                         wavelength, wavelength_thread, forcing_cotangent,
                         native_gradient, transport_state,
                         layer_state_projection, ground_state_projection);
@@ -2121,7 +2488,7 @@ namespace sasktran2::successive_orders {
                     wavelength, wavelength_thread, forcing_cotangent,
                     native_gradient, nullptr, nullptr);
             } else {
-                accumulate_scalar_vjp_impl<false, true>(
+                accumulate_scalar_vjp_dispatch<false, true>(
                     wavelength, wavelength_thread, forcing_cotangent,
                     native_gradient, nullptr, nullptr, nullptr);
             }
@@ -2131,7 +2498,7 @@ namespace sasktran2::successive_orders {
                     wavelength, wavelength_thread, forcing_cotangent,
                     native_gradient, nullptr, nullptr);
             } else {
-                accumulate_scalar_vjp_impl<false, false>(
+                accumulate_scalar_vjp_dispatch<false, false>(
                     wavelength, wavelength_thread, forcing_cotangent,
                     native_gradient, nullptr, nullptr, nullptr);
             }
@@ -2146,6 +2513,7 @@ namespace sasktran2::successive_orders {
         Eigen::Ref<Eigen::VectorXd> native_gradient,
         const Eigen::VectorXd* transport_state,
         const Eigen::VectorXd* ground_state_projection) {
+        const int cache_slot = scalar_cache_index(wavelength);
         const int first_thread = wavelength_thread;
         const int last_thread = first_thread + m_num_source_threads;
         if (last_thread > static_cast<int>(m_gradient_scratch.size())) {
@@ -2162,14 +2530,14 @@ namespace sasktran2::successive_orders {
             ensure_solar_transmission(wavelength, wavelength_thread);
         const ScalarLayerCache* layer_cache =
             m_scalar_layer_cache.empty() ? nullptr
-                                         : &m_scalar_layer_cache[wavelength];
+                                         : &m_scalar_layer_cache[cache_slot];
         const bool use_layer_cache =
             layer_cache != nullptr && layer_cache->active;
         const ScalarVolumeCache* volume_cache = nullptr;
         if constexpr (WITH_TRANSPORT && !LOWER_INTERPOLATION) {
             if (!m_scalar_volume_cache.empty() &&
-                m_scalar_volume_cache[wavelength].active) {
-                volume_cache = &m_scalar_volume_cache[wavelength];
+                m_scalar_volume_cache[cache_slot].active) {
+                volume_cache = &m_scalar_volume_cache[cache_slot];
             }
         }
 #pragma omp parallel for if (m_num_source_threads > 1)                         \
@@ -2263,13 +2631,18 @@ namespace sasktran2::successive_orders {
                     } else {
                         const auto transport_columns =
                             m_source_geometry->transport_columns_for_ray(ray);
-                        for (const auto& source :
-                             ray_interpolation.ground_weights) {
-                            ground_value +=
-                                source.weight *
-                                (*transport_state)(
-                                    transport_columns[source.row_inner_index]);
-                        }
+                        transport_columns.visit([&](const auto& columns) {
+                            ray_interpolation.ground_weights.visit(
+                                [&](const auto sources) {
+                                    for (const auto& source : sources) {
+                                        ground_value +=
+                                            source.weight() *
+                                            (*transport_state)(
+                                                columns
+                                                    [source.row_inner_index()]);
+                                    }
+                                });
+                        });
                     }
                     accumulate_ground_transport_albedo_vjp(
                         ray, prefix * ground_value * forcing_gradient,
@@ -2284,6 +2657,31 @@ namespace sasktran2::successive_orders {
 
     template <int NSTOKES>
     template <bool WITH_TRANSPORT, bool LOWER_INTERPOLATION>
+    void FirstOrderProvider<NSTOKES>::accumulate_scalar_vjp_dispatch(
+        int wavelength, int wavelength_thread,
+        Eigen::Ref<const Eigen::VectorXd> forcing_cotangent,
+        Eigen::Ref<Eigen::VectorXd> native_gradient,
+        const Eigen::VectorXd* transport_state,
+        const Eigen::VectorXd* layer_state_projection,
+        const Eigen::VectorXd* ground_state_projection) {
+        if (m_atmosphere->num_scattering_deriv_groups() > 0) {
+            accumulate_scalar_vjp_impl<WITH_TRANSPORT, LOWER_INTERPOLATION,
+                                       true>(
+                wavelength, wavelength_thread, forcing_cotangent,
+                native_gradient, transport_state, layer_state_projection,
+                ground_state_projection);
+        } else {
+            accumulate_scalar_vjp_impl<WITH_TRANSPORT, LOWER_INTERPOLATION,
+                                       false>(
+                wavelength, wavelength_thread, forcing_cotangent,
+                native_gradient, transport_state, layer_state_projection,
+                ground_state_projection);
+        }
+    }
+
+    template <int NSTOKES>
+    template <bool WITH_TRANSPORT, bool LOWER_INTERPOLATION,
+              bool WITH_PHASE_GRADIENT>
     void FirstOrderProvider<NSTOKES>::accumulate_scalar_vjp_impl(
         int wavelength, int wavelength_thread,
         Eigen::Ref<const Eigen::VectorXd> forcing_cotangent,
@@ -2291,6 +2689,7 @@ namespace sasktran2::successive_orders {
         const Eigen::VectorXd* transport_state,
         const Eigen::VectorXd* layer_state_projection,
         const Eigen::VectorXd* ground_state_projection) {
+        const int cache_slot = scalar_cache_index(wavelength);
         const int first_thread = wavelength_thread;
         const int last_thread = first_thread + m_num_source_threads;
         if (last_thread > static_cast<int>(m_gradient_scratch.size())) {
@@ -2299,8 +2698,9 @@ namespace sasktran2::successive_orders {
         }
         for (int thread = first_thread; thread < last_thread; ++thread) {
             m_gradient_scratch[thread].setZero();
-            m_solar_product_scratch[thread].setZero();
-            m_phase_product_scratch[thread].setZero();
+            if constexpr (WITH_PHASE_GRADIENT) {
+                m_phase_product_scratch[thread].setZero();
+            }
         }
         const auto& rays = m_source_geometry->incoming_rays();
         const auto& interpolation = m_source_geometry->incoming_interpolation();
@@ -2308,18 +2708,23 @@ namespace sasktran2::successive_orders {
         const auto& ssa = m_atmosphere->storage().ssa;
         const auto& solar =
             ensure_solar_transmission(wavelength, wavelength_thread);
+        FirstOrderScratchLease product_scratch(
+            m_num_source_threads, solar.size(), m_solar_table->table_size());
+        for (int thread = 0; thread < m_num_source_threads; ++thread) {
+            product_scratch.solar(thread).setZero();
+        }
+        profile_product_scratch(this, product_scratch, "vjp", wavelength,
+                                wavelength_thread);
         ensure_endpoint_medium(wavelength);
+        const auto endpoint_context =
+            prepare_scalar_endpoint_context(wavelength, cache_slot);
         const bool uniform_phase = m_uniform_phase_active[wavelength] != 0;
         const bool uniform_albedo = m_uniform_albedo_active[wavelength] != 0;
         const double uniform_albedo_value =
             uniform_albedo ? m_uniform_albedo_values[wavelength] : 0.0;
-        const ScalarEndpointMediumCache* endpoint_medium =
-            m_endpoint_medium_cache.empty()
-                ? nullptr
-                : &m_endpoint_medium_cache[wavelength];
         const ScalarLayerCache* layer_cache =
             m_scalar_layer_cache.empty() ? nullptr
-                                         : &m_scalar_layer_cache[wavelength];
+                                         : &m_scalar_layer_cache[cache_slot];
         const bool use_layer_cache =
             layer_cache != nullptr && layer_cache->active;
         const double* __restrict layer_state =
@@ -2332,9 +2737,11 @@ namespace sasktran2::successive_orders {
 #pragma omp parallel for if (m_num_source_threads > 1)                         \
     num_threads(m_num_source_threads) schedule(dynamic)
         for (int ray = 0; ray < m_num_rays; ++ray) {
+            const auto ray_endpoint_context =
+                scalar_endpoint_context_for_ray(endpoint_context, ray);
             const int thread = ray_thread_index(wavelength_thread);
             auto thread_gradient = m_gradient_scratch[thread].col(0);
-            auto& solar_gradient = m_solar_product_scratch[thread];
+            auto solar_gradient = product_scratch.solar(thread - first_thread);
             auto& coefficient_gradient = m_phase_product_scratch[thread];
             auto& scratch = m_scalar_vjp_scratch[thread];
             const auto& ray_interpolation = interpolation[ray];
@@ -2347,331 +2754,365 @@ namespace sasktran2::successive_orders {
                                     : static_cast<int>(packed_ray->layer_begin);
             const auto transport_columns =
                 transport_state == nullptr
-                    ? InterpolationView<int>{}
+                    ? TransportColumnView{}
                     : m_source_geometry->transport_columns_for_ray(ray);
-            const int* transport_column_data = transport_columns.data();
-            const int num_layers =
-                static_cast<int>(ray_interpolation.layers.size());
-            double prefix = 1.0;
-            for (int layer = num_layers - 1; layer >= 0; --layer) {
-                double optical_depth = 0.0;
-                double attenuation = 0.0;
-                double factor = 1.0;
-                if (use_layer_cache) {
+            transport_columns.visit([&](const auto& columns) {
+                const auto* transport_column_data = columns.data();
+                const int num_layers =
+                    static_cast<int>(ray_interpolation.layers.size());
+                double prefix = 1.0;
+                for (int layer = num_layers - 1; layer >= 0; --layer) {
+                    double optical_depth = 0.0;
+                    double attenuation = 0.0;
+                    double factor = 1.0;
+                    if (use_layer_cache) {
+                        const int flat_layer = flat_layer_offset + layer;
+                        optical_depth = layer_cache->optical_depth(flat_layer);
+                        factor = layer_cache->source_factor(flat_layer);
+                        attenuation = 1.0 - factor * optical_depth;
+                    } else {
+                        const auto od_weights =
+                            ray_interpolation.optical_depth_for_layer(layer);
+                        for (std::size_t index = 0; index < od_weights.size();
+                             ++index) {
+                            const auto [atmosphere_index, weight] =
+                                od_weights[index];
+                            optical_depth +=
+                                weight *
+                                extinction(atmosphere_index, wavelength);
+                        }
+                        const auto layer_transfer =
+                            scalar_layer_transfer(optical_depth);
+                        attenuation = layer_transfer.attenuation;
+                        factor = layer_transfer.source_factor;
+                    }
+                    if (!use_layer_cache) {
+                        scratch.optical_depth(layer) = optical_depth;
+                        scratch.attenuation(layer) = attenuation;
+                        scratch.source_factor(layer) = factor;
+                    }
+                    scratch.prefix_attenuation(layer) = prefix;
+                    prefix *= attenuation;
+                }
+                if (!uniform_albedo) {
+                    for (int layer = 0; layer < num_layers; ++layer) {
+                        double albedo = 0.0;
+                        for (const auto& weight :
+                             ray_interpolation.atmosphere_for_layer(layer)) {
+                            albedo +=
+                                weight.weight() * ssa(weight.index, wavelength);
+                        }
+                        scratch.albedo(layer) = albedo;
+                    }
+                }
+                if constexpr (!LOWER_INTERPOLATION) {
+                    if (num_layers > 0) {
+                        scratch.endpoint_cotangent.head(num_layers + 1)
+                            .setZero();
+                        for (int endpoint = 0; endpoint <= num_layers;
+                             ++endpoint) {
+                            const int solar_index =
+                                m_solar_offsets[ray] + endpoint;
+                            auto& value = scratch.endpoints[endpoint];
+                            if (uniform_phase) {
+                                const int slot =
+                                    ray_endpoint_context
+                                        .endpoint_slots[solar_index];
+                                value.extinction =
+                                    ray_endpoint_context
+                                        .endpoint_extinction[slot];
+                                value.albedo =
+                                    ray_endpoint_context.endpoint_albedo[slot];
+                                value.phase =
+                                    ray_endpoint_context.uniform_phase
+                                        [ray_endpoint_context
+                                                     .endpoint_basis_stride == 0
+                                             ? 0
+                                             : solar_index];
+                            } else {
+                                value = scalar_endpoint(
+                                    ray_endpoint_context,
+                                    endpoint == 0 ? 0 : endpoint - 1,
+                                    endpoint != 0, solar_index);
+                            }
+                            value.solar_transmission = solar(solar_index);
+                            value.source = value.extinction * value.albedo *
+                                           value.solar_transmission *
+                                           value.phase * inverse_four_pi;
+                        }
+                    }
+                }
+                const double forcing_gradient = forcing_cotangent(ray);
+                double prefix_cotangent = 0.0;
+                ScalarGroundGeometry local_ground;
+                const ScalarGroundGeometry* ground = nullptr;
+                if constexpr (LOWER_INTERPOLATION) {
+                    const auto& traced_ray = rays[ray];
+                    if (traced_ray.ground_is_hit &&
+                        !traced_ray.layers.empty()) {
+                        const auto& layer = traced_ray.layers.front();
+                        local_ground = {layer.exit.position.normalized(),
+                                        layer.average_look_away};
+                        ground = &local_ground;
+                    }
+                } else if (packed_ray->ground_geometry >= 0) {
+                    ground =
+                        &m_scalar_ground_geometry[packed_ray->ground_geometry];
+                }
+                if (ground != nullptr) {
+                    double mu_in;
+                    double mu_out;
+                    double phi;
+                    if (ground_scattering_geometry(m_solar_offsets[ray],
+                                                   *ground, mu_in, mu_out,
+                                                   phi)) {
+                        const auto brdf = m_atmosphere->surface().brdf(
+                            wavelength, mu_in, mu_out, phi,
+                            m_ground_horizontal_weights[ray]);
+                        const double ground_source =
+                            solar(m_solar_offsets[ray]) * mu_in * brdf(0, 0);
+                        prefix_cotangent = forcing_gradient * ground_source;
+                        solar_gradient(m_solar_offsets[ray]) +=
+                            prefix * forcing_gradient * mu_in * brdf(0, 0);
+                        for (int derivative = 0;
+                             derivative < m_atmosphere->surface().num_deriv();
+                             ++derivative) {
+                            thread_gradient(
+                                m_atmosphere->surface_deriv_start_index() +
+                                derivative) +=
+                                prefix * forcing_gradient *
+                                solar(m_solar_offsets[ray]) * mu_in *
+                                m_atmosphere->surface().d_brdf(
+                                    wavelength, mu_in, mu_out, phi, derivative,
+                                    m_ground_horizontal_weights[ray])(0, 0);
+                        }
+                    }
+                }
+                if constexpr (WITH_TRANSPORT) {
+                    if (ray_interpolation.ground_is_hit()) {
+                        double ground_value = 0.0;
+                        if (ground_state != nullptr) {
+                            ground_value = ground_state[ray];
+                        } else {
+                            ray_interpolation.ground_weights.visit(
+                                [&](const auto sources) {
+                                    for (const auto& source : sources) {
+                                        ground_value +=
+                                            source.weight() *
+                                            (*transport_state)(
+                                                transport_column_data
+                                                    [source.row_inner_index()]);
+                                    }
+                                });
+                        }
+                        const double ground_albedo =
+                            ground_transport_albedo(wavelength, ray);
+                        prefix_cotangent +=
+                            ground_albedo * ground_value * forcing_gradient;
+                        accumulate_ground_transport_albedo_vjp(
+                            ray, prefix * ground_value * forcing_gradient,
+                            thread_gradient);
+                    }
+                }
+
+                for (int layer = 0; layer < num_layers; ++layer) {
+                    const sasktran2::raytracing::TracedLayer* traced_layer =
+                        nullptr;
+                    double layer_distance;
+                    double source_quad_start;
+                    double source_quad_end;
+                    if constexpr (LOWER_INTERPOLATION) {
+                        traced_layer = &rays[ray].layers[layer];
+                        layer_distance = traced_layer->layer_distance;
+                        source_quad_start = traced_layer->od_quad_start;
+                        source_quad_end = traced_layer->od_quad_end;
+                    } else {
+                        const auto& packed_layer =
+                            m_scalar_packed_layers[packed_ray->layer_begin +
+                                                   layer];
+                        source_quad_start = packed_layer.source_quad_start;
+                        source_quad_end = packed_layer.source_quad_end;
+                        layer_distance = source_quad_start + source_quad_end;
+                    }
                     const int flat_layer = flat_layer_offset + layer;
-                    optical_depth = layer_cache->optical_depth(flat_layer);
-                    factor = layer_cache->source_factor(flat_layer);
-                    attenuation = 1.0 - factor * optical_depth;
-                } else {
+                    const double optical_depth =
+                        use_layer_cache ? layer_cache->optical_depth(flat_layer)
+                                        : scratch.optical_depth(layer);
+                    const double factor =
+                        use_layer_cache ? layer_cache->source_factor(flat_layer)
+                                        : scratch.source_factor(layer);
+                    const double attenuation =
+                        use_layer_cache ? 1.0 - factor * optical_depth
+                                        : scratch.attenuation(layer);
+                    const double layer_prefix =
+                        scratch.prefix_attenuation(layer);
+                    double layer_prefix_cotangent = 0.0;
+                    double optical_depth_cotangent = 0.0;
+                    double attenuation_cotangent = 0.0;
+                    if constexpr (WITH_TRANSPORT) {
+                        double source_factor_cotangent = 0.0;
+                        if (layer_state != nullptr) {
+                            source_factor_cotangent =
+                                layer_state[flat_layer] * forcing_gradient;
+                        } else {
+                            ray_interpolation.source_for_layer(layer).visit(
+                                [&](const auto sources) {
+                                    for (const auto& source : sources) {
+                                        source_factor_cotangent +=
+                                            source.weight() * forcing_gradient *
+                                            (*transport_state)(
+                                                transport_column_data
+                                                    [source.row_inner_index()]);
+                                    }
+                                });
+                        }
+                        const double albedo = uniform_albedo
+                                                  ? uniform_albedo_value
+                                                  : scratch.albedo(layer);
+                        const double albedo_cotangent =
+                            source_factor_cotangent * (1.0 - attenuation) *
+                            layer_prefix;
+                        attenuation_cotangent -=
+                            source_factor_cotangent * albedo * layer_prefix;
+                        layer_prefix_cotangent += source_factor_cotangent *
+                                                  albedo * (1.0 - attenuation);
+                        for (const auto& weight :
+                             ray_interpolation.atmosphere_for_layer(layer)) {
+                            thread_gradient(
+                                m_atmosphere->ssa_deriv_start_index() +
+                                weight.index) +=
+                                weight.weight() * albedo_cotangent;
+                        }
+                    }
+                    if (layer_distance >= minimum_layer_distance_m &&
+                        forcing_gradient != 0.0) {
+                        sasktran2::raytracing::GridWeightStencilView
+                            entrance_weights;
+                        sasktran2::raytracing::GridWeightStencilView
+                            exit_weights;
+                        const auto* start_weights = &entrance_weights;
+                        const auto* end_weights = &exit_weights;
+                        bool start_entrance = true;
+                        bool end_entrance = false;
+                        if constexpr (LOWER_INTERPOLATION) {
+                            entrance_weights =
+                                rays[ray].entrance_weights(layer);
+                            exit_weights = rays[ray].exit_weights(layer);
+                            if (traced_layer->r_exit >
+                                traced_layer->r_entrance) {
+                                end_weights = &entrance_weights;
+                                end_entrance = true;
+                            } else {
+                                start_weights = &exit_weights;
+                                start_entrance = false;
+                            }
+                        }
+                        const int exit_solar = m_solar_offsets[ray] + layer;
+                        auto start = !LOWER_INTERPOLATION
+                                         ? scratch.endpoints[layer + 1]
+                                         : scalar_endpoint(
+                                               ray_endpoint_context, layer,
+                                               start_entrance, exit_solar + 1,
+                                               *start_weights);
+                        auto end =
+                            !LOWER_INTERPOLATION
+                                ? scratch.endpoints[layer]
+                                : scalar_endpoint(ray_endpoint_context, layer,
+                                                  end_entrance, exit_solar,
+                                                  *end_weights);
+                        if constexpr (LOWER_INTERPOLATION) {
+                            start.solar_transmission = solar(exit_solar + 1);
+                            start.source = start.extinction * start.albedo *
+                                           start.solar_transmission *
+                                           start.phase * inverse_four_pi;
+                            end.solar_transmission = solar(exit_solar);
+                            end.source = end.extinction * end.albedo *
+                                         end.solar_transmission * end.phase *
+                                         inverse_four_pi;
+                        }
+                        const double factor_derivative =
+                            constant_source_factor_derivative(optical_depth,
+                                                              factor);
+                        const double endpoint_value = [&]() {
+                            if constexpr (LOWER_INTERPOLATION) {
+                                return (start.source *
+                                            traced_layer
+                                                ->od_quad_start_fraction +
+                                        end.source *
+                                            traced_layer
+                                                ->od_quad_end_fraction) *
+                                       layer_distance;
+                            } else {
+                                return start.source * source_quad_start +
+                                       end.source * source_quad_end;
+                            }
+                        }();
+                        layer_prefix_cotangent +=
+                            forcing_gradient * factor * endpoint_value;
+                        optical_depth_cotangent +=
+                            forcing_gradient * layer_prefix *
+                            factor_derivative *
+                            (start.source * source_quad_start +
+                             end.source * source_quad_end);
+                        const double start_cotangent = forcing_gradient *
+                                                       layer_prefix * factor *
+                                                       source_quad_start;
+                        const double end_cotangent = forcing_gradient *
+                                                     layer_prefix * factor *
+                                                     source_quad_end;
+                        if constexpr (!LOWER_INTERPOLATION) {
+                            scratch.endpoint_cotangent(layer + 1) +=
+                                start_cotangent;
+                            scratch.endpoint_cotangent(layer) += end_cotangent;
+                        } else {
+                            accumulate_scalar_endpoint_vjp<WITH_PHASE_GRADIENT>(
+                                ray_endpoint_context, layer, start_entrance,
+                                exit_solar + 1, *start_weights, start,
+                                start_cotangent, thread_gradient,
+                                solar_gradient, coefficient_gradient);
+                            accumulate_scalar_endpoint_vjp<WITH_PHASE_GRADIENT>(
+                                ray_endpoint_context, layer, end_entrance,
+                                exit_solar, *end_weights, end, end_cotangent,
+                                thread_gradient, solar_gradient,
+                                coefficient_gradient);
+                        }
+                    }
+                    layer_prefix_cotangent += prefix_cotangent * attenuation;
+                    attenuation_cotangent += prefix_cotangent * layer_prefix;
+                    optical_depth_cotangent -=
+                        attenuation * attenuation_cotangent;
                     const auto od_weights =
                         ray_interpolation.optical_depth_for_layer(layer);
                     for (std::size_t index = 0; index < od_weights.size();
                          ++index) {
                         const auto [atmosphere_index, weight] =
                             od_weights[index];
-                        optical_depth +=
-                            weight * extinction(atmosphere_index, wavelength);
+                        thread_gradient(atmosphere_index) +=
+                            weight * optical_depth_cotangent;
                     }
-                    const auto layer_transfer =
-                        scalar_layer_transfer(optical_depth);
-                    attenuation = layer_transfer.attenuation;
-                    factor = layer_transfer.source_factor;
+                    prefix_cotangent = layer_prefix_cotangent;
                 }
-                if (!use_layer_cache) {
-                    scratch.optical_depth(layer) = optical_depth;
-                    scratch.attenuation(layer) = attenuation;
-                    scratch.source_factor(layer) = factor;
-                }
-                scratch.prefix_attenuation(layer) = prefix;
-                prefix *= attenuation;
-            }
-            if (!uniform_albedo) {
-                for (int layer = 0; layer < num_layers; ++layer) {
-                    double albedo = 0.0;
-                    for (const auto& weight :
-                         ray_interpolation.atmosphere_for_layer(layer)) {
-                        albedo += weight.weight * ssa(weight.index, wavelength);
-                    }
-                    scratch.albedo(layer) = albedo;
-                }
-            }
-            if constexpr (!LOWER_INTERPOLATION) {
-                if (num_layers > 0) {
-                    scratch.endpoint_cotangent.head(num_layers + 1).setZero();
-                    for (int endpoint = 0; endpoint <= num_layers; ++endpoint) {
-                        const int solar_index = m_solar_offsets[ray] + endpoint;
-                        auto& value = scratch.endpoints[endpoint];
-                        if (uniform_phase) {
-                            const int slot = m_endpoint_slots[solar_index];
-                            value.extinction =
-                                endpoint_medium->extinction(slot);
-                            value.albedo = endpoint_medium->albedo(slot);
-                            value.phase = m_uniform_phase_values
-                                [static_cast<std::size_t>(wavelength) *
-                                     num_phase_basis_slots() +
-                                 phase_basis_slot(ray, solar_index)];
-                        } else {
-                            const auto weights = endpoint_weights(solar_index);
-                            value = scalar_endpoint(
-                                wavelength, ray,
-                                endpoint == 0 ? 0 : endpoint - 1, endpoint != 0,
-                                solar_index, weights);
-                        }
-                        value.solar_transmission = solar(solar_index);
-                        value.source = value.extinction * value.albedo *
-                                       value.solar_transmission * value.phase *
-                                       inverse_four_pi;
-                    }
-                }
-            }
-            const double forcing_gradient = forcing_cotangent(ray);
-            double prefix_cotangent = 0.0;
-            ScalarGroundGeometry local_ground;
-            const ScalarGroundGeometry* ground = nullptr;
-            if constexpr (LOWER_INTERPOLATION) {
-                const auto& traced_ray = rays[ray];
-                if (traced_ray.ground_is_hit && !traced_ray.layers.empty()) {
-                    const auto& layer = traced_ray.layers.front();
-                    local_ground = {layer.exit.position.normalized(),
-                                    layer.average_look_away};
-                    ground = &local_ground;
-                }
-            } else if (packed_ray->ground_geometry >= 0) {
-                ground = &m_scalar_ground_geometry[packed_ray->ground_geometry];
-            }
-            if (ground != nullptr) {
-                double mu_in;
-                double mu_out;
-                double phi;
-                if (ground_scattering_geometry(m_solar_offsets[ray], *ground,
-                                               mu_in, mu_out, phi)) {
-                    const auto brdf = m_atmosphere->surface().brdf(
-                        wavelength, mu_in, mu_out, phi,
-                        m_ground_horizontal_weights[ray]);
-                    const double ground_source =
-                        solar(m_solar_offsets[ray]) * mu_in * brdf(0, 0);
-                    prefix_cotangent = forcing_gradient * ground_source;
-                    solar_gradient(m_solar_offsets[ray]) +=
-                        prefix * forcing_gradient * mu_in * brdf(0, 0);
-                    for (int derivative = 0;
-                         derivative < m_atmosphere->surface().num_deriv();
-                         ++derivative) {
-                        thread_gradient(
-                            m_atmosphere->surface_deriv_start_index() +
-                            derivative) +=
-                            prefix * forcing_gradient *
-                            solar(m_solar_offsets[ray]) * mu_in *
-                            m_atmosphere->surface().d_brdf(
-                                wavelength, mu_in, mu_out, phi, derivative,
-                                m_ground_horizontal_weights[ray])(0, 0);
-                    }
-                }
-            }
-            if constexpr (WITH_TRANSPORT) {
-                if (ray_interpolation.ground_is_hit()) {
-                    double ground_value = 0.0;
-                    if (ground_state != nullptr) {
-                        ground_value = ground_state[ray];
-                    } else {
-                        for (const auto& source :
-                             ray_interpolation.ground_weights) {
-                            ground_value += source.weight *
-                                            (*transport_state)(
-                                                transport_column_data
-                                                    [source.row_inner_index]);
-                        }
-                    }
-                    const double ground_albedo =
-                        ground_transport_albedo(wavelength, ray);
-                    prefix_cotangent +=
-                        ground_albedo * ground_value * forcing_gradient;
-                    accumulate_ground_transport_albedo_vjp(
-                        ray, prefix * ground_value * forcing_gradient,
-                        thread_gradient);
-                }
-            }
-
-            for (int layer = 0; layer < num_layers; ++layer) {
-                const sasktran2::raytracing::TracedLayer* traced_layer =
-                    nullptr;
-                double layer_distance;
-                double source_quad_start;
-                double source_quad_end;
-                if constexpr (LOWER_INTERPOLATION) {
-                    traced_layer = &rays[ray].layers[layer];
-                    layer_distance = traced_layer->layer_distance;
-                    source_quad_start = traced_layer->od_quad_start;
-                    source_quad_end = traced_layer->od_quad_end;
-                } else {
-                    const auto& packed_layer =
-                        m_scalar_packed_layers[packed_ray->layer_begin + layer];
-                    source_quad_start = packed_layer.source_quad_start;
-                    source_quad_end = packed_layer.source_quad_end;
-                    layer_distance = source_quad_start + source_quad_end;
-                }
-                const int flat_layer = flat_layer_offset + layer;
-                const double optical_depth =
-                    use_layer_cache ? layer_cache->optical_depth(flat_layer)
-                                    : scratch.optical_depth(layer);
-                const double factor =
-                    use_layer_cache ? layer_cache->source_factor(flat_layer)
-                                    : scratch.source_factor(layer);
-                const double attenuation = use_layer_cache
-                                               ? 1.0 - factor * optical_depth
-                                               : scratch.attenuation(layer);
-                const double layer_prefix = scratch.prefix_attenuation(layer);
-                double layer_prefix_cotangent = 0.0;
-                double optical_depth_cotangent = 0.0;
-                double attenuation_cotangent = 0.0;
-                if constexpr (WITH_TRANSPORT) {
-                    double source_factor_cotangent = 0.0;
-                    if (layer_state != nullptr) {
-                        source_factor_cotangent =
-                            layer_state[flat_layer] * forcing_gradient;
-                    } else {
-                        for (const auto& source :
-                             ray_interpolation.source_for_layer(layer)) {
-                            source_factor_cotangent +=
-                                source.weight * forcing_gradient *
-                                (*transport_state)(
-                                    transport_column_data
-                                        [source.row_inner_index]);
-                        }
-                    }
-                    const double albedo = uniform_albedo
-                                              ? uniform_albedo_value
-                                              : scratch.albedo(layer);
-                    const double albedo_cotangent = source_factor_cotangent *
-                                                    (1.0 - attenuation) *
-                                                    layer_prefix;
-                    attenuation_cotangent -=
-                        source_factor_cotangent * albedo * layer_prefix;
-                    layer_prefix_cotangent +=
-                        source_factor_cotangent * albedo * (1.0 - attenuation);
-                    for (const auto& weight :
-                         ray_interpolation.atmosphere_for_layer(layer)) {
-                        thread_gradient(m_atmosphere->ssa_deriv_start_index() +
-                                        weight.index) +=
-                            weight.weight * albedo_cotangent;
-                    }
-                }
-                if (layer_distance >= minimum_layer_distance_m &&
-                    forcing_gradient != 0.0) {
-                    sasktran2::raytracing::GridWeightStencilView
-                        entrance_weights;
-                    sasktran2::raytracing::GridWeightStencilView exit_weights;
-                    const auto* start_weights = &entrance_weights;
-                    const auto* end_weights = &exit_weights;
-                    bool start_entrance = true;
-                    bool end_entrance = false;
-                    if constexpr (LOWER_INTERPOLATION) {
-                        entrance_weights = rays[ray].entrance_weights(layer);
-                        exit_weights = rays[ray].exit_weights(layer);
-                        if (traced_layer->r_exit > traced_layer->r_entrance) {
-                            end_weights = &entrance_weights;
-                            end_entrance = true;
-                        } else {
-                            start_weights = &exit_weights;
-                            start_entrance = false;
-                        }
-                    }
-                    const int exit_solar = m_solar_offsets[ray] + layer;
-                    auto start =
-                        !LOWER_INTERPOLATION
-                            ? scratch.endpoints[layer + 1]
-                            : scalar_endpoint(wavelength, ray, layer,
-                                              start_entrance, exit_solar + 1,
-                                              *start_weights);
-                    auto end = !LOWER_INTERPOLATION
-                                   ? scratch.endpoints[layer]
-                                   : scalar_endpoint(wavelength, ray, layer,
-                                                     end_entrance, exit_solar,
-                                                     *end_weights);
-                    if constexpr (LOWER_INTERPOLATION) {
-                        start.solar_transmission = solar(exit_solar + 1);
-                        start.source = start.extinction * start.albedo *
-                                       start.solar_transmission * start.phase *
-                                       inverse_four_pi;
-                        end.solar_transmission = solar(exit_solar);
-                        end.source = end.extinction * end.albedo *
-                                     end.solar_transmission * end.phase *
-                                     inverse_four_pi;
-                    }
-                    const double factor_derivative =
-                        constant_source_factor_derivative(optical_depth,
-                                                          factor);
-                    const double endpoint_value = [&]() {
-                        if constexpr (LOWER_INTERPOLATION) {
-                            return (start.source *
-                                        traced_layer->od_quad_start_fraction +
-                                    end.source *
-                                        traced_layer->od_quad_end_fraction) *
-                                   layer_distance;
-                        } else {
-                            return start.source * source_quad_start +
-                                   end.source * source_quad_end;
-                        }
-                    }();
-                    layer_prefix_cotangent +=
-                        forcing_gradient * factor * endpoint_value;
-                    optical_depth_cotangent +=
-                        forcing_gradient * layer_prefix * factor_derivative *
-                        (start.source * source_quad_start +
-                         end.source * source_quad_end);
-                    const double start_cotangent = forcing_gradient *
-                                                   layer_prefix * factor *
-                                                   source_quad_start;
-                    const double end_cotangent = forcing_gradient *
-                                                 layer_prefix * factor *
-                                                 source_quad_end;
-                    if constexpr (!LOWER_INTERPOLATION) {
-                        scratch.endpoint_cotangent(layer + 1) +=
-                            start_cotangent;
-                        scratch.endpoint_cotangent(layer) += end_cotangent;
-                    } else {
-                        accumulate_scalar_endpoint_vjp(
-                            wavelength, ray, layer, start_entrance,
-                            exit_solar + 1, *start_weights, start,
-                            start_cotangent, thread_gradient, solar_gradient,
-                            coefficient_gradient);
-                        accumulate_scalar_endpoint_vjp(
-                            wavelength, ray, layer, end_entrance, exit_solar,
-                            *end_weights, end, end_cotangent, thread_gradient,
+                if constexpr (!LOWER_INTERPOLATION) {
+                    if (num_layers > 0) {
+                        accumulate_scalar_endpoint_vjp<WITH_PHASE_GRADIENT>(
+                            ray_endpoint_context, 0, false,
+                            m_solar_offsets[ray], scratch.endpoints[0],
+                            scratch.endpoint_cotangent(0), thread_gradient,
                             solar_gradient, coefficient_gradient);
+                        for (int endpoint = 1; endpoint <= num_layers;
+                             ++endpoint) {
+                            const int solar_index =
+                                m_solar_offsets[ray] + endpoint;
+                            accumulate_scalar_endpoint_vjp<WITH_PHASE_GRADIENT>(
+                                ray_endpoint_context, endpoint - 1, true,
+                                solar_index, scratch.endpoints[endpoint],
+                                scratch.endpoint_cotangent(endpoint),
+                                thread_gradient, solar_gradient,
+                                coefficient_gradient);
+                        }
                     }
                 }
-                layer_prefix_cotangent += prefix_cotangent * attenuation;
-                attenuation_cotangent += prefix_cotangent * layer_prefix;
-                optical_depth_cotangent -= attenuation * attenuation_cotangent;
-                const auto od_weights =
-                    ray_interpolation.optical_depth_for_layer(layer);
-                for (std::size_t index = 0; index < od_weights.size();
-                     ++index) {
-                    const auto [atmosphere_index, weight] = od_weights[index];
-                    thread_gradient(atmosphere_index) +=
-                        weight * optical_depth_cotangent;
-                }
-                prefix_cotangent = layer_prefix_cotangent;
-            }
-            if constexpr (!LOWER_INTERPOLATION) {
-                if (num_layers > 0) {
-                    accumulate_scalar_endpoint_vjp(
-                        wavelength, ray, 0, false, m_solar_offsets[ray],
-                        endpoint_weights(m_solar_offsets[ray]),
-                        scratch.endpoints[0], scratch.endpoint_cotangent(0),
-                        thread_gradient, solar_gradient, coefficient_gradient);
-                    for (int endpoint = 1; endpoint <= num_layers; ++endpoint) {
-                        const int solar_index = m_solar_offsets[ray] + endpoint;
-                        accumulate_scalar_endpoint_vjp(
-                            wavelength, ray, endpoint - 1, true, solar_index,
-                            endpoint_weights(solar_index),
-                            scratch.endpoints[endpoint],
-                            scratch.endpoint_cotangent(endpoint),
-                            thread_gradient, solar_gradient,
-                            coefficient_gradient);
-                    }
-                }
-            }
+            });
         }
 
         for (int thread = first_thread; thread < last_thread; ++thread) {
@@ -2679,29 +3120,33 @@ namespace sasktran2::successive_orders {
             const auto& coefficient_gradient = m_phase_product_scratch[thread];
             const int locations =
                 m_atmosphere->storage().total_extinction.rows();
-            for (int group = 0;
-                 group < m_atmosphere->num_scattering_deriv_groups(); ++group) {
-                const int native_offset =
-                    m_atmosphere->scat_deriv_start_index() + group * locations;
-                for (int location = 0; location < locations; ++location) {
-                    const int order =
-                        std::min(m_atmosphere->storage().d_max_order[group](
-                                     location, wavelength),
-                                 m_num_phase_moments);
-                    double value = 0.0;
-                    const int coefficient_offset =
-                        location * m_num_phase_moments;
-                    for (int degree = 0; degree < order; ++degree) {
-                        value +=
-                            coefficient_gradient(coefficient_offset + degree) *
-                            m_atmosphere->storage().d_leg_coeff(
-                                degree, location, wavelength, group);
+            if constexpr (WITH_PHASE_GRADIENT) {
+                for (int group = 0;
+                     group < m_atmosphere->num_scattering_deriv_groups();
+                     ++group) {
+                    const int native_offset =
+                        m_atmosphere->scat_deriv_start_index() +
+                        group * locations;
+                    for (int location = 0; location < locations; ++location) {
+                        const int order =
+                            std::min(m_atmosphere->storage().d_max_order[group](
+                                         location, wavelength),
+                                     m_num_phase_moments);
+                        double value = 0.0;
+                        const int coefficient_offset =
+                            location * m_num_phase_moments;
+                        for (int degree = 0; degree < order; ++degree) {
+                            value += coefficient_gradient(coefficient_offset +
+                                                          degree) *
+                                     m_atmosphere->storage().d_leg_coeff(
+                                         degree, location, wavelength, group);
+                        }
+                        thread_gradient(native_offset + location) += value;
                     }
-                    thread_gradient(native_offset + location) += value;
                 }
             }
-            auto& solar_gradient = m_solar_product_scratch[thread];
-            auto& table_gradient = m_solar_table_product_scratch[thread];
+            auto solar_gradient = product_scratch.solar(thread - first_thread);
+            auto table_gradient = product_scratch.table();
             solar_gradient.array() *= solar.array();
             m_solar_interpolation.apply_transpose(solar_gradient,
                                                   table_gradient);
@@ -2726,6 +3171,33 @@ namespace sasktran2::successive_orders {
     }
 
     template <int NSTOKES>
+    void FirstOrderProvider<NSTOKES>::calculate_transport_only(
+        int wavelength, int wavelength_thread, TransportOperator& transport) {
+        validate_ready(wavelength, wavelength_thread);
+        if (!m_use_compact_scalar ||
+            transport.sparsity().rows() != m_num_rays ||
+            transport.sparsity().columns() !=
+                m_source_geometry->total_num_outgoing() ||
+            transport.values().size() !=
+                m_source_geometry->transport_sparsity().nonzeros()) {
+            throw std::invalid_argument(
+                "Transport-only successive-orders assembly requires matching "
+                "compact scalar transport");
+        }
+        prepare_wavelength(wavelength, wavelength_thread);
+        // The false specialization never reads or writes this empty vector.
+        // JVP/VJP prepare solar and endpoint-medium values when needed.
+        Eigen::VectorXd unused_forcing;
+        if (m_use_lower_interpolation) {
+            calculate_scalar_impl<true, true, false>(
+                wavelength, wavelength_thread, unused_forcing, &transport);
+        } else {
+            calculate_scalar_impl<true, false, false>(
+                wavelength, wavelength_thread, unused_forcing, &transport);
+        }
+    }
+
+    template <int NSTOKES>
     void FirstOrderProvider<NSTOKES>::project_transport_state(
         Eigen::Ref<const Eigen::VectorXd> transport_state,
         Eigen::VectorXd& layer_state_projection,
@@ -2735,6 +3207,7 @@ namespace sasktran2::successive_orders {
             throw std::invalid_argument(
                 "Invalid compact scalar transport state projection");
         }
+        const double* state = transport_state.data();
         const int layer_count = m_solar_offsets.back() - m_num_rays;
         layer_state_projection.setZero(layer_count);
         ground_state_projection.setZero(m_num_rays);
@@ -2745,24 +3218,37 @@ namespace sasktran2::successive_orders {
             for (int ray = 0; ray < m_num_rays; ++ray) {
                 const auto& packed_ray = m_scalar_packed_rays[ray];
                 const auto& ray_interpolation = interpolation[ray];
-                for (std::uint32_t flat_layer = packed_ray.layer_begin;
-                     flat_layer < packed_ray.layer_end; ++flat_layer) {
-                    const auto local_layer = static_cast<std::size_t>(
-                        flat_layer - packed_ray.layer_begin);
-                    double value = 0.0;
-                    for (const auto& source :
-                         ray_interpolation.source_for_layer(local_layer)) {
-                        value += source.weight *
-                                 transport_state(source.source_index);
+                const auto transport_columns =
+                    m_source_geometry->transport_columns_for_ray(ray);
+                transport_columns.visit([&](const auto& typed_columns) {
+                    const auto* columns = typed_columns.data();
+                    for (std::uint32_t flat_layer = packed_ray.layer_begin;
+                         flat_layer < packed_ray.layer_end; ++flat_layer) {
+                        const auto local_layer = static_cast<std::size_t>(
+                            flat_layer - packed_ray.layer_begin);
+                        double value = 0.0;
+                        ray_interpolation.source_for_layer(local_layer)
+                            .visit([&](const auto sources) {
+                                for (const auto& source : sources) {
+                                    value +=
+                                        source.weight() *
+                                        state
+                                            [columns[source.row_inner_index()]];
+                                }
+                            });
+                        layer_state_projection(flat_layer) = value;
                     }
-                    layer_state_projection(flat_layer) = value;
-                }
-                double ground_value = 0.0;
-                for (const auto& source : ray_interpolation.ground_weights) {
-                    ground_value +=
-                        source.weight * transport_state(source.source_index);
-                }
-                ground_state_projection(ray) = ground_value;
+                    double ground_value = 0.0;
+                    ray_interpolation.ground_weights.visit(
+                        [&](const auto sources) {
+                            for (const auto& source : sources) {
+                                ground_value +=
+                                    source.weight() *
+                                    state[columns[source.row_inner_index()]];
+                            }
+                        });
+                    ground_state_projection(ray) = ground_value;
+                });
             }
             return;
         }
@@ -2770,29 +3256,35 @@ namespace sasktran2::successive_orders {
     num_threads(m_num_source_threads) schedule(dynamic)
         for (int ray = 0; ray < m_num_rays; ++ray) {
             const auto& ray_interpolation = interpolation[ray];
-            const int flat_layer_offset = m_solar_offsets[ray] - ray;
-            for (int layer = 0;
-                 layer < static_cast<int>(ray_interpolation.layers.size());
-                 ++layer) {
-                const auto& interpolation_layer =
-                    ray_interpolation.layers[layer];
-                const auto* source = ray_interpolation.source_weights.data() +
-                                     interpolation_layer.source_offset;
-                const auto* source_end =
-                    source + interpolation_layer.source_count;
-                double value = 0.0;
-                for (; source != source_end; ++source) {
-                    value +=
-                        source->weight * transport_state(source->source_index);
+            const auto transport_columns =
+                m_source_geometry->transport_columns_for_ray(ray);
+            transport_columns.visit([&](const auto& typed_columns) {
+                const auto* columns = typed_columns.data();
+                const int flat_layer_offset = m_solar_offsets[ray] - ray;
+                for (int layer = 0;
+                     layer < static_cast<int>(ray_interpolation.layers.size());
+                     ++layer) {
+                    double value = 0.0;
+                    ray_interpolation.source_for_layer(layer).visit(
+                        [&](const auto sources) {
+                            for (const auto& source : sources) {
+                                value +=
+                                    source.weight() *
+                                    state[columns[source.row_inner_index()]];
+                            }
+                        });
+                    layer_state_projection(flat_layer_offset + layer) = value;
                 }
-                layer_state_projection(flat_layer_offset + layer) = value;
-            }
-            double ground_value = 0.0;
-            for (const auto& source : ray_interpolation.ground_weights) {
-                ground_value +=
-                    source.weight * transport_state(source.source_index);
-            }
-            ground_state_projection(ray) = ground_value;
+                double ground_value = 0.0;
+                ray_interpolation.ground_weights.visit([&](const auto sources) {
+                    for (const auto& source : sources) {
+                        ground_value +=
+                            source.weight() *
+                            state[columns[source.row_inner_index()]];
+                    }
+                });
+                ground_state_projection(ray) = ground_value;
+            });
         }
     }
 
@@ -2987,7 +3479,8 @@ namespace sasktran2::successive_orders {
 
     template <int NSTOKES>
     std::size_t FirstOrderProvider<NSTOKES>::workspace_bytes() const {
-        std::size_t result = m_solar_interpolation.storage_bytes();
+        std::size_t result = m_solar_interpolation.storage_bytes() +
+                             m_endpoint_stencils.storage_bytes();
         if (m_solar_table != nullptr) {
             result += m_solar_table->storage_bytes();
         }
@@ -3006,29 +3499,24 @@ namespace sasktran2::successive_orders {
         for (const auto& scratch : m_vjp_cotangent_scratch) {
             result += static_cast<std::size_t>(scratch.size()) * sizeof(double);
         }
-        for (const auto& scratch : m_solar_product_scratch) {
-            result += static_cast<std::size_t>(scratch.size()) * sizeof(double);
-        }
-        for (const auto& scratch : m_solar_table_product_scratch) {
-            result += static_cast<std::size_t>(scratch.size()) * sizeof(double);
-        }
         for (const auto& scratch : m_phase_product_scratch) {
             result += static_cast<std::size_t>(scratch.size()) * sizeof(double);
         }
         for (const auto& scratch : m_phase_order_scratch) {
             result += scratch.capacity() * sizeof(int);
         }
-        for (const auto& scratch : m_endpoint_extinction_tangent_scratch) {
-            result += static_cast<std::size_t>(scratch.size()) * sizeof(double);
-        }
-        for (const auto& scratch : m_endpoint_albedo_tangent_scratch) {
-            result += static_cast<std::size_t>(scratch.size()) * sizeof(double);
-        }
         result += m_scalar_phase_orders.capacity() * sizeof(int);
         result += m_uniform_phase_active.capacity() * sizeof(unsigned char);
-        result += m_uniform_phase_values.capacity() * sizeof(double);
+        result +=
+            m_uniform_phase_values.capacity() * sizeof(std::vector<double>);
+        for (const auto& values : m_uniform_phase_values) {
+            result += values.capacity() * sizeof(double);
+        }
         result += m_uniform_albedo_active.capacity() * sizeof(unsigned char);
         result += m_uniform_albedo_values.capacity() * sizeof(double);
+        result += (m_scalar_cache_wavelength.capacity() +
+                   m_scalar_cache_index.capacity()) *
+                  sizeof(int);
         result +=
             m_scalar_packed_rays.capacity() * sizeof(ScalarPackedRay) +
             m_scalar_packed_layers.capacity() * sizeof(ScalarPackedLayer) +
@@ -3049,9 +3537,7 @@ namespace sasktran2::successive_orders {
                       sizeof(double);
         }
         for (const auto& cache : m_scalar_volume_cache) {
-            result += static_cast<std::size_t>(cache.forcing.size() +
-                                               cache.transport_values.size() +
-                                               cache.ground_prefix.size()) *
+            result += static_cast<std::size_t>(cache.ground_prefix.size()) *
                       sizeof(double);
         }
         for (const auto& scratch : m_scalar_vjp_scratch) {

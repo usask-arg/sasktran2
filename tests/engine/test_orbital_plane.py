@@ -7,6 +7,7 @@ import pytest
 import sasktran2 as sk
 import xarray as xr
 from sasktran2._core_rust import PyKokhanovsky, orbital_ciddor_index
+from sasktran2.constituent.base import Constituent
 from sasktran2.optical.refraction import ciddor_index_of_refraction
 
 EARTH_RADIUS_M = 6_372_000.0
@@ -1996,6 +1997,7 @@ def test_resident_group_workspaces_contain_only_selected_derivative_mappings():
     ]
     for diagnostics in engine.group_diagnostics:
         assert diagnostics["resident_volume_derivative_mappings"] == ["wf_extinction"]
+        assert diagnostics["resident_scattering_derivative_mappings"] == []
         assert diagnostics["resident_surface_derivative_mappings"] == []
 
     linearization.vjp(cotangent, parameters=["extinction"])
@@ -2027,10 +2029,143 @@ def test_resident_group_workspaces_contain_only_selected_derivative_mappings():
     ]
 
 
+def test_selected_orbital_phase_mapping_presence_survives_updates():
+    geometry = orbital_geometry()
+    viewing = limb_viewing(geometry, np.array([-0.1, 0.1]))
+    config = sk.Config()
+    config.num_threads = 1
+    config.num_streams = 4
+    config.num_singlescatter_moments = 4
+    config.single_scatter_source = sk.SingleScatterSource.Exact
+    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
+    config.num_sza = 2
+    config.successive_orders_altitude_grid_m = np.array([5_000.0, 25_000.0, 55_000.0])
+    config.num_successive_orders_incoming = 6
+    config.num_successive_orders_outgoing = 6
+    config.num_successive_orders_iterations = 2
+    config.successive_orders_relative_tolerance = 0.0
+    config.successive_orders_absolute_tolerance = 0.0
+    config.successive_orders_reduced_horizon_quadrature = True
+    wavelengths = np.array([410.0, 530.0, 690.0])
+    extinction = np.full((*geometry.shape, 3), 1.0e-5) * np.array([0.8, 1.1, 1.5])
+    ssa = np.full_like(extinction, 0.85)
+    moments = np.zeros((4, *extinction.shape))
+    moments[0] = 1.0
+    moments[2] = 0.3
+    optics = sk.constituent.Manual(extinction, ssa, moments)
+
+    class PhaseMappingProbe(Constituent):
+        phase_mode = "absent"
+
+        @property
+        def volume_spatial_mode(self):
+            return "native_2d"
+
+        def add_to_atmosphere(self, atmosphere):
+            optics.add_to_atmosphere(atmosphere)
+
+        def register_derivative(self, atmosphere, _name):
+            mapping = atmosphere.storage.get_derivative_mapping("wf_probe")
+            mapping.d_extinction[:] = 1.0e-6
+            mapping.d_ssa[:] = 0.01
+            mapping.interp_dim = "location"
+            if self.phase_mode != "absent":
+                mapping.d_leg_coeff[2] = 0.04 if self.phase_mode == "nonzero" else 0.0
+                mapping.scat_factor[:] = 1.0
+            # An unrequested phase mapping must never enter the local groups.
+            fixed = atmosphere.storage.get_derivative_mapping("wf_fixed_phase")
+            fixed.d_leg_coeff[2] = 0.02
+            fixed.scat_factor[:] = 1.0
+            fixed.interp_dim = "location"
+
+    def make_atmosphere(phase_mode):
+        atmosphere = sk.Atmosphere(
+            geometry, config, wavelengths_nm=wavelengths, legendre_derivative=False
+        )
+        probe = PhaseMappingProbe()
+        probe.phase_mode = phase_mode
+        atmosphere["optics"] = probe
+        atmosphere["surface"] = sk.constituent.LambertianSurface2D(
+            np.full(geometry.shape[0], 0.2)
+        )
+        return atmosphere, probe
+
+    def make_engine():
+        return sk.OrbitalPlaneEngine(
+            config,
+            geometry,
+            viewing,
+            time_group_duration_s=20,
+            sun_vectors_ecef=np.tile([0.0, 0.0, 1.0], (2, 1)),
+        )
+
+    engine = make_engine()
+    atmosphere, probe = make_atmosphere("absent")
+    engine_identities = [item["engine_identity"] for item in engine.group_diagnostics]
+    absent_gradient = None
+    for evaluation, phase_mode in enumerate(("absent", "nonzero", "absent")):
+        if evaluation == 2:
+            # Resetting values preserves allocated optional mappings. Use a
+            # new absent-phase master to test clearing the resident groups.
+            atmosphere, probe = make_atmosphere("absent")
+        probe.phase_mode = phase_mode
+        linearization = engine.linearize(atmosphere, prepare_parameters=["probe"])
+        tangent = linearization.tangent_template[["probe"]]
+        tangent.probe.values[:] = np.linspace(-0.2, 0.3, tangent.probe.size).reshape(
+            tangent.probe.shape
+        )
+        cotangent = xr.ones_like(linearization.value)
+        cotangent.values[:] = np.linspace(0.35, 1.1, cotangent.size).reshape(
+            cotangent.shape
+        )
+        gradient = linearization.vjp(cotangent, parameters=["probe"])
+        jvp = linearization.jvp(tangent)
+        xr.testing.assert_identical(
+            linearization.vjp(cotangent, parameters=["probe"]), gradient
+        )
+        xr.testing.assert_identical(linearization.jvp(tangent), jvp)
+        expected_phase = [] if phase_mode == "absent" else ["wf_probe"]
+        for diagnostics in engine.group_diagnostics:
+            assert diagnostics["resident_volume_derivative_mappings"] == ["wf_probe"]
+            assert (
+                diagnostics["resident_scattering_derivative_mappings"] == expected_phase
+            )
+        assert [
+            item["engine_identity"] for item in engine.group_diagnostics
+        ] == engine_identities
+
+        # Explicit zero phase storage exercises the full VJP path and is an
+        # arithmetic reference for the absence-based input-only shortcut.
+        reference_atmosphere, _ = make_atmosphere(
+            "zero" if phase_mode == "absent" else "nonzero"
+        )
+        reference = make_engine().linearize(
+            reference_atmosphere, prepare_parameters=["probe"]
+        )
+        reference_gradient = reference.vjp(cotangent, parameters=["probe"])
+        reference_jvp = reference.jvp(tangent)
+        for actual, expected in (
+            (linearization.value, reference.value),
+            (gradient.probe, reference_gradient.probe),
+            (jvp, reference_jvp),
+        ):
+            np.testing.assert_array_equal(
+                np.asarray(actual).view(np.uint64), np.asarray(expected).view(np.uint64)
+            )
+        if phase_mode == "absent":
+            if absent_gradient is None:
+                absent_gradient = gradient.probe.values.copy()
+            else:
+                np.testing.assert_array_equal(gradient.probe.values, absent_gradient)
+        else:
+            assert not np.array_equal(gradient.probe.values, absent_gradient)
+
+
 def test_surface_only_update_preserves_group_volume_state():
     geometry = orbital_geometry()
     viewing = limb_viewing(geometry, np.array([-0.1, 0.1]))
     config = sk.Config()
+    config.num_threads = 1
     config.single_scatter_source = sk.SingleScatterSource.Exact
     config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
     config.num_sza = 2
@@ -2041,16 +2176,20 @@ def test_surface_only_update_preserves_group_volume_state():
     config.successive_orders_relative_tolerance = 1.0e-11
     config.successive_orders_absolute_tolerance = 1.0e-13
 
+    wavelengths_nm = np.array([410.0, 530.0, 690.0])
     atmosphere = sk.Atmosphere(
         geometry,
         config,
-        wavelengths_nm=np.array([600.0]),
+        wavelengths_nm=wavelengths_nm,
         legendre_derivative=False,
     )
-    extinction = np.full((*geometry.shape, 1), 1.0e-5)
-    ssa = np.full_like(extinction, 0.9)
+    extinction = np.full((*geometry.shape, 3), 1.0e-5) * np.array([0.8, 1.1, 1.5])
+    ssa = np.full_like(extinction, 0.9) - np.array([0.0, 0.03, 0.07])
     legendre = np.zeros((atmosphere.storage.leg_coeff.shape[0], *extinction.shape))
     legendre[0] = 1.0
+    legendre[2] = np.linspace(0.15, 0.3, geometry.shape[0])[
+        :, np.newaxis, np.newaxis
+    ] + np.array([0.0, 0.05, 0.1])
     optics = sk.constituent.Manual(extinction, ssa, legendre)
     atmosphere["optics"] = optics
     surface = sk.constituent.LambertianSurface2D(
@@ -2065,7 +2204,60 @@ def test_surface_only_update_preserves_group_volume_state():
         sun_vectors_ecef=np.array([[0.0, 0.0, 1.0]]),
     )
 
+    def check_products_against_fresh(linearization):
+        # Every group processes three wavelengths on one worker. A surface
+        # update must refresh boundary physics without invalidating volume
+        # state, even after both derivative sweeps evict spectral caches.
+        tangent = linearization.tangent_template[["surface_albedo"]]
+        tangent.surface_albedo.values[:] = np.linspace(
+            -0.02, 0.03, tangent.surface_albedo.size
+        )
+        cotangent = xr.ones_like(linearization.value)
+        cotangent.values[:] = np.linspace(0.35, 1.1, cotangent.size).reshape(
+            cotangent.shape
+        )
+        gradient = linearization.vjp(cotangent, parameters=("surface_albedo",))
+        jvp = linearization.jvp(tangent)
+        xr.testing.assert_allclose(
+            linearization.vjp(cotangent, parameters=("surface_albedo",)),
+            gradient,
+            rtol=2.0e-12,
+            atol=2.0e-13,
+        )
+        xr.testing.assert_allclose(
+            linearization.jvp(tangent), jvp, rtol=2.0e-12, atol=2.0e-14
+        )
+        fresh_engine = sk.OrbitalPlaneEngine(
+            config,
+            geometry,
+            viewing,
+            time_group_duration_s=60,
+            sun_vectors_ecef=np.array([[0.0, 0.0, 1.0]]),
+        )
+        reference = fresh_engine.linearize(
+            atmosphere, prepare_parameters=("surface_albedo",)
+        )
+        xr.testing.assert_allclose(
+            linearization.value, reference.value, rtol=2.0e-11, atol=2.0e-13
+        )
+        xr.testing.assert_allclose(
+            gradient,
+            reference.vjp(cotangent, parameters=("surface_albedo",)),
+            rtol=2.0e-10,
+            atol=2.0e-13,
+        )
+        xr.testing.assert_allclose(
+            jvp, reference.jvp(tangent), rtol=2.0e-10, atol=2.0e-13
+        )
+        np.testing.assert_allclose(
+            float((jvp * cotangent).sum()),
+            float((tangent.surface_albedo * gradient.surface_albedo).sum()),
+            rtol=3.0e-8,
+            atol=3.0e-11,
+        )
+
     first = engine.linearize(atmosphere, prepare_parameters=("surface_albedo",))
+    check_products_against_fresh(first)
     first_diagnostics = engine.group_diagnostics
     assert all(item["volume_update_count"] == 1 for item in first_diagnostics)
     assert all(item["surface_only_update_count"] == 0 for item in first_diagnostics)
@@ -2080,6 +2272,7 @@ def test_surface_only_update_preserves_group_volume_state():
         item["surface_only_update_count"] + 1 for item in first_diagnostics
     ]
     assert not np.array_equal(first.value.values, second.value.values)
+    check_products_against_fresh(second)
 
     optics.extinction[...] *= 1.2
     third = engine.linearize(atmosphere, prepare_parameters=("surface_albedo",))
@@ -2091,18 +2284,7 @@ def test_surface_only_update_preserves_group_volume_state():
         item["surface_only_update_count"] for item in second_diagnostics
     ]
     assert not np.array_equal(second.value.values, third.value.values)
-
-    fresh_engine = sk.OrbitalPlaneEngine(
-        config,
-        geometry,
-        viewing,
-        time_group_duration_s=60,
-        sun_vectors_ecef=np.array([[0.0, 0.0, 1.0]]),
-    )
-    fresh_third = fresh_engine.linearize(
-        atmosphere, prepare_parameters=("surface_albedo",)
-    )
-    xr.testing.assert_allclose(third.value, fresh_third.value, rtol=2.0e-11)
+    check_products_against_fresh(third)
 
 
 def test_parallel_group_construction_and_scheduler_match_serial_products_repeatedly():

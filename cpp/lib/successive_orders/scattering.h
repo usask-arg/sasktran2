@@ -91,13 +91,18 @@ namespace sasktran2::successive_orders {
       private:
         friend class ScatteringOperator<1>;
         void prepare(int atmospheric_blocks, int input_directions,
-                     int output_directions, int modes);
+                     int output_directions);
 
         Eigen::MatrixXd m_atmospheric_input;
         Eigen::MatrixXd m_atmospheric_output;
         Eigen::MatrixXd m_auxiliary_input;
         Eigen::MatrixXd m_moments;
         Eigen::MatrixXd m_auxiliary_moments;
+        // Point-local products use contiguous results, then copy into the
+        // full scratch batch before caller-owned outputs can be overwritten.
+        Eigen::MatrixXd m_point_input_result;
+        Eigen::MatrixXd m_point_output_result;
+        Eigen::MatrixXd m_point_coefficient_gradient;
     };
 
     /** Scalar scattering with coefficient-space atmospheric blocks.
@@ -188,6 +193,13 @@ namespace sasktran2::successive_orders {
                        Eigen::Ref<Eigen::MatrixXd> coefficient_gradient,
                        Eigen::Ref<Eigen::VectorXd> ground_value_gradient,
                        ScatteringWorkspace<1>& workspace) const;
+
+        // The input part of apply_vjp uses every configured angular mode,
+        // even when the primal and fixed-point transpose have zero tails.
+        void
+        apply_input_vjp(Eigen::Ref<const Eigen::VectorXd> outgoing_cotangent,
+                        Eigen::Ref<Eigen::VectorXd> incoming_cotangent,
+                        ScatteringWorkspace<1>& workspace) const;
 
       private:
         void prepare_workspace(ScatteringWorkspace<1>& workspace) const;

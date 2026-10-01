@@ -123,8 +123,13 @@ namespace sasktran2::successive_orders {
         Eigen::Ref<const Eigen::VectorXd> incoming,
         Eigen::Ref<const Eigen::VectorXd> state_cotangent,
         Eigen::Ref<Eigen::VectorXd> incoming_cotangent,
-        ProblemParameterData<1>& gradient,
-        ProblemWorkspace<1>& workspace) const {
+        ProblemParameterData<1>& gradient, ProblemWorkspace<1>& workspace,
+        bool skip_parameters) const {
+        if (skip_parameters) {
+            m_scattering->apply_input_vjp(state_cotangent, incoming_cotangent,
+                                          workspace.scattering);
+            return;
+        }
         m_scattering->apply_vjp(incoming, state_cotangent, incoming_cotangent,
                                 gradient.atmospheric_coefficients,
                                 gradient.ground_values, workspace.scattering);
@@ -135,8 +140,8 @@ namespace sasktran2::successive_orders {
         Eigen::Ref<const Eigen::VectorXd> incoming,
         Eigen::Ref<const Eigen::VectorXd> state_cotangent,
         Eigen::Ref<Eigen::VectorXd> incoming_cotangent,
-        ProblemParameterData<3>& gradient,
-        ProblemWorkspace<3>& workspace) const {
+        ProblemParameterData<3>& gradient, ProblemWorkspace<3>& workspace,
+        bool) const {
         m_scattering->apply_vjp(incoming, state_cotangent, incoming_cotangent,
                                 gradient.atmospheric_coefficients,
                                 gradient.ground_values, workspace.scattering);

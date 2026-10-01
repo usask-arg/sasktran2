@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <limits>
 #include <stdexcept>
@@ -590,7 +592,7 @@ namespace sasktran2::successive_orders {
             std::size_t write = 0;
             for (const auto& value : result) {
                 if (write != 0 && result[write - 1].index == value.index) {
-                    result[write - 1].weight += value.weight;
+                    result[write - 1].add_weight(value.weight());
                 } else {
                     result[write++] = value;
                 }
@@ -598,7 +600,7 @@ namespace sasktran2::successive_orders {
             result.resize(write);
             result.erase(std::remove_if(result.begin(), result.end(),
                                         [](const auto& value) {
-                                            return value.weight == 0.0;
+                                            return value.weight() == 0.0;
                                         }),
                          result.end());
             return result;
@@ -881,13 +883,19 @@ namespace sasktran2::successive_orders {
         }
     }
 
-    void SourceGeometry1D::trace_and_compile_incoming() {
+    void SourceGeometry1D::trace_and_compile_incoming(
+        bool capture_endpoint_factors) {
         const int num_rays = total_num_incoming();
         m_incoming_viewing.traced_rays.clear();
         m_incoming_viewing.flux_observers.clear();
         m_incoming_viewing.traced_rays.resize(num_rays);
         m_incoming_interpolation.clear();
         m_incoming_interpolation.resize(num_rays);
+        decltype(m_incoming_endpoint_factors)().swap(
+            m_incoming_endpoint_factors);
+        if (capture_endpoint_factors && m_geometry_2d != nullptr) {
+            m_incoming_endpoint_factors.resize(num_rays);
+        }
 
         std::vector<sasktran2::viewinggeometry::ViewingRay> viewing_rays(
             m_settings.num_threads);
@@ -923,7 +931,11 @@ namespace sasktran2::successive_orders {
                         point.incoming_offset() + direction_index;
                     auto& traced_ray =
                         m_incoming_viewing.traced_rays[ray_index];
-                    trace_ray(viewing_ray, traced_ray);
+                    auto* endpoint_factors =
+                        m_incoming_endpoint_factors.empty()
+                            ? nullptr
+                            : &m_incoming_endpoint_factors[ray_index];
+                    trace_ray(viewing_ray, traced_ray, endpoint_factors);
                     compile_ray_interpolation(
                         traced_ray, m_geometry, *m_location_interpolator,
                         m_source_points, m_incoming_interpolation[ray_index],
@@ -937,9 +949,41 @@ namespace sasktran2::successive_orders {
 
         for (const auto& exception : thread_exceptions) {
             if (exception) {
+                decltype(m_incoming_endpoint_factors)().swap(
+                    m_incoming_endpoint_factors);
                 std::rethrow_exception(exception);
             }
         }
+        profile_endpoint_factors("constructed");
+    }
+
+    void SourceGeometry1D::profile_endpoint_factors(
+        const char* stage, std::size_t released_bytes) const {
+        if (std::getenv("SASKTRAN2_PROFILE_MEMORY") == nullptr) {
+            return;
+        }
+        std::size_t layers = 0;
+        std::size_t payload_bytes = 0;
+        for (const auto& factors : m_incoming_endpoint_factors) {
+            layers += factors.size();
+            payload_bytes +=
+                factors.capacity() *
+                sizeof(sasktran2::raytracing::LayerEndpointFactors2D);
+        }
+        const auto header_bytes =
+            m_incoming_endpoint_factors.capacity() *
+            sizeof(std::vector<sasktran2::raytracing::LayerEndpointFactors2D>);
+        std::fprintf(
+            stderr,
+            "SASKTRAN2_MEMORY {\"kind\":\"incoming_endpoint_factor_capture\","
+            "\"provider\":\"%p\",\"stage\":\"%s\",\"rays\":%zu,"
+            "\"layers\":%zu,\"factor_pairs\":%zu,"
+            "\"payload_bytes\":%zu,\"header_bytes\":%zu,"
+            "\"allocated_bytes\":%zu,\"released_bytes\":%zu}\n",
+            static_cast<const void*>(this), stage,
+            m_incoming_endpoint_factors.size(), layers, 2 * layers,
+            payload_bytes, header_bytes, payload_bytes + header_bytes,
+            released_bytes);
     }
 
     void SourceGeometry1D::compile_los_interpolation(
@@ -984,16 +1028,18 @@ namespace sasktran2::successive_orders {
         }
     }
 
-    void SourceGeometry1D::compile_transport_topology(
-        std::vector<RayInterpolation>& interpolation,
-        std::vector<int>& row_offsets, std::vector<int>& column_indices) {
-        row_offsets.assign(interpolation.size() + 1, 0);
+    TransportSparsity SourceGeometry1D::compile_transport_topology(
+        std::vector<RayInterpolation>& interpolation) {
+        const bool profile_memory =
+            std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr;
+        std::vector<int> row_offsets(interpolation.size() + 1, 0);
+        std::vector<int> column_indices;
         std::vector<int> columns;
         std::size_t num_columns = 0;
         for (std::size_t ray_index = 0; ray_index < interpolation.size();
              ++ray_index) {
             auto& ray = interpolation[ray_index];
-            compile_transport_row(ray, columns);
+            collect_transport_row(ray, columns);
             ray.transport_value_offset = num_columns;
             num_columns += columns.size();
             if (num_columns >
@@ -1005,36 +1051,275 @@ namespace sasktran2::successive_orders {
             row_offsets[ray_index + 1] = static_cast<int>(num_columns);
         }
 
-        column_indices.clear();
         column_indices.reserve(num_columns);
+        std::size_t released_capacity_bytes = 0;
+        std::size_t interpolation_weight_count = 0;
+        std::size_t source_weight_count = 0;
+        std::size_t source_weight_bytes = 0;
+        std::size_t source_weight_capacity_bytes = 0;
+        std::size_t source_weight_record_bytes = 0;
+        std::size_t source_weight_escape_bytes = 0;
+        std::size_t source_encoded_storage_count = 0;
+        std::size_t source_encoded_record_count = 0;
+        std::size_t source_encoded_escape_count = 0;
+        std::size_t source_encoded_capacity_bytes = 0;
+        std::array<std::size_t, 4> source_width_counts{};
+        std::uint32_t maximum_row_nonzeros = 0;
         for (auto& ray : interpolation) {
             compile_transport_row(ray, columns);
             column_indices.insert(column_indices.end(), columns.begin(),
                                   columns.end());
+            // A multi-column layer can double a ray's source-weight capacity
+            // even when most other layers use the smaller boundary stencil.
+            // The completed topology is immutable, so retain only its data.
+            const auto compacted_bytes = compact_ray_interpolation(ray);
+            if (profile_memory) {
+                released_capacity_bytes += compacted_bytes;
+                interpolation_weight_count += ray.atmosphere_weights.size();
+                source_weight_count +=
+                    ray.source_weights.size() + ray.ground_weights.size();
+                const auto record_source_width = [&](const auto& weights) {
+                    const auto record_bytes =
+                        weights.size() * weights.element_bytes();
+                    const auto escape_bytes =
+                        weights.encoded_escape_count() * sizeof(std::uint64_t);
+                    source_weight_record_bytes += record_bytes;
+                    source_weight_escape_bytes += escape_bytes;
+                    source_weight_bytes += record_bytes + escape_bytes;
+                    source_weight_capacity_bytes += weights.capacity_bytes();
+                    const std::size_t slot = weights.element_bytes() == 8   ? 0
+                                             : weights.element_bytes() == 9 ? 1
+                                             : weights.element_bytes() == 10
+                                                 ? 2
+                                                 : 3;
+                    source_width_counts[slot] += weights.size();
+                    if (weights.is_encoded()) {
+                        ++source_encoded_storage_count;
+                        source_encoded_record_count +=
+                            weights.encoded_record_count();
+                        source_encoded_escape_count +=
+                            weights.encoded_escape_count();
+                        source_encoded_capacity_bytes +=
+                            weights.encoded_storage_bytes();
+                    }
+                };
+                record_source_width(ray.source_weights);
+                record_source_width(ray.ground_weights);
+                maximum_row_nonzeros =
+                    std::max(maximum_row_nonzeros, ray.transport_row_nnz);
+            }
         }
+        const auto transport_nonzeros = column_indices.size();
+        TransportSparsity topology(total_num_outgoing(), std::move(row_offsets),
+                                   std::move(column_indices));
+        if (profile_memory) {
+            const auto source_storage_count = interpolation.size() * 2;
+            const auto source_storage_header_bytes =
+                source_storage_count * sizeof(SourceInterpolationStorage);
+            const auto source_storage_header_growth_bytes =
+                source_storage_count *
+                SourceInterpolationStorage::encoded_header_growth_bytes();
+            const auto source_index_narrowing_bytes_saved =
+                (source_width_counts[0] + source_width_counts[1]) *
+                    (sizeof(SourceInterpolationWeight) - 9) +
+                source_width_counts[2] *
+                    (sizeof(SourceInterpolationWeight) - 10);
+            const auto source_weight_encoding_payload_bytes_saved =
+                source_encoded_record_count - source_weight_escape_bytes;
+            std::fprintf(
+                stderr,
+                "SASKTRAN2_MEMORY {\"kind\":\"interpolation_compaction\","
+                "\"rays\":%zu,\"released_capacity_bytes\":%zu,"
+                "\"interpolation_weight_count\":%zu,"
+                "\"interpolation_weight_bytes\":%zu,"
+                "\"alignment_padding_bytes_saved\":%zu,"
+                "\"source_weight_count\":%zu,\"source_weight_bytes\":%zu,"
+                "\"source_weight_record_bytes\":%zu,"
+                "\"source_weight_escape_bytes\":%zu,"
+                "\"source_weight_capacity_bytes\":%zu,"
+                "\"source_storage_count\":%zu,"
+                "\"source_storage_header_bytes\":%zu,"
+                "\"source_storage_header_growth_bytes\":%zu,"
+                "\"source_encoded_storage_count\":%zu,"
+                "\"source_encoded_record_count\":%zu,"
+                "\"source_encoded_escape_count\":%zu,"
+                "\"source_encoded_capacity_bytes\":%zu,"
+                "\"source_weight_encoding_payload_bytes_saved\":%zu,"
+                "\"duplicate_index_bytes_saved\":%zu,"
+                "\"source_index_narrowing_bytes_saved\":%zu,"
+                "\"source_8byte_count\":%zu,\"source_9byte_count\":%zu,"
+                "\"source_10byte_count\":%zu,\"source_12byte_count\":%zu,"
+                "\"maximum_row_nonzeros\":%u,"
+                "\"ray_descriptor_bytes\":%zu,"
+                "\"transport_nonzeros\":%zu,"
+                "\"transport_topology_bytes\":%zu,"
+                "\"transport_column_index_element_bytes\":%zu,"
+                "\"transport_column_index_bytes\":%zu,"
+                "\"transport_column_index_narrowing_bytes_saved\":%zu}\n",
+                interpolation.size(), released_capacity_bytes,
+                interpolation_weight_count,
+                interpolation_weight_count * sizeof(InterpolationWeight),
+                interpolation_weight_count * 4, source_weight_count,
+                source_weight_bytes, source_weight_record_bytes,
+                source_weight_escape_bytes, source_weight_capacity_bytes,
+                source_storage_count, source_storage_header_bytes,
+                source_storage_header_growth_bytes,
+                source_encoded_storage_count, source_encoded_record_count,
+                source_encoded_escape_count, source_encoded_capacity_bytes,
+                source_weight_encoding_payload_bytes_saved,
+                source_weight_count * 4, source_index_narrowing_bytes_saved,
+                source_width_counts[0], source_width_counts[1],
+                source_width_counts[2], source_width_counts[3],
+                maximum_row_nonzeros,
+                interpolation.size() * sizeof(RayInterpolation),
+                transport_nonzeros, topology.storage_bytes(),
+                topology.column_indices().element_bytes(),
+                topology.column_index_bytes(),
+                transport_nonzeros *
+                    (sizeof(int) - topology.column_indices().element_bytes()));
+        }
+        return topology;
     }
 
     void SourceGeometry1D::release_incoming_traced_rays() {
+        const bool profile_memory =
+            std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr;
         if (m_incoming_viewing.traced_rays.size() !=
             m_incoming_interpolation.size()) {
             throw std::logic_error(
                 "Successive-orders incoming geometry is inconsistent");
         }
+        std::size_t released_capacity_bytes = 0;
+        std::size_t structured_rays = 0;
+        std::size_t layer_count = 0;
+        std::size_t structured_layer_count = 0;
+        std::size_t structured_midpoint_weight_count = 0;
+        std::size_t structured_payload_bytes_saved = 0;
+        std::size_t layer_metadata_bytes = 0;
+        std::size_t compact_structured_rays = 0;
+        std::size_t compact_structured_layer_count = 0;
+        std::size_t full_structured_rays = 0;
+        std::size_t full_structured_layer_count = 0;
+        std::size_t compact_descriptor_bytes_saved = 0;
+        std::size_t maximum_structured_atmosphere_offset = 0;
+        std::size_t midpoint_weight_bytes = 0;
+        std::size_t optical_depth_index_bytes = 0;
         for (std::size_t ray = 0; ray < m_incoming_viewing.traced_rays.size();
              ++ray) {
             adopt_optical_depth_storage(m_incoming_viewing.traced_rays[ray],
                                         m_incoming_interpolation[ray]);
+            const auto compacted_bytes =
+                compact_ray_interpolation(m_incoming_interpolation[ray]);
+            if (profile_memory) {
+                released_capacity_bytes += compacted_bytes;
+                const auto& interpolation = m_incoming_interpolation[ray];
+                layer_count += interpolation.layers.size();
+                layer_metadata_bytes += interpolation.layers.capacity_bytes();
+                midpoint_weight_bytes +=
+                    interpolation.atmosphere_weights.capacity() *
+                        sizeof(InterpolationWeight) +
+                    interpolation.structured_atmosphere_weights.capacity() *
+                        sizeof(double);
+                optical_depth_index_bytes +=
+                    interpolation.optical_depth_indices.capacity() *
+                    sizeof(int);
+                if (interpolation.layers.is_structured()) {
+                    ++structured_rays;
+                    structured_layer_count += interpolation.layers.size();
+                    if (interpolation.layers.is_compact_structured()) {
+                        ++compact_structured_rays;
+                        compact_structured_layer_count +=
+                            interpolation.layers.size();
+                        compact_descriptor_bytes_saved +=
+                            interpolation.layers.size() *
+                            (sizeof(StructuredLayerInterpolation) -
+                             sizeof(CompactStructuredLayerInterpolation));
+                    } else {
+                        ++full_structured_rays;
+                        full_structured_layer_count +=
+                            interpolation.layers.size();
+                    }
+                    // Verified structured offsets are cumulative. The final
+                    // layer therefore supplies the maximum without scanning the
+                    // ray.
+                    if (!interpolation.layers.empty()) {
+                        maximum_structured_atmosphere_offset = std::max(
+                            maximum_structured_atmosphere_offset,
+                            static_cast<std::size_t>(
+                                interpolation.layers
+                                    .structured_layer(
+                                        interpolation.layers.size() - 1)
+                                    .atmosphere_offset));
+                    }
+                    structured_midpoint_weight_count +=
+                        interpolation.structured_atmosphere_weights.size();
+                    structured_payload_bytes_saved +=
+                        interpolation.layers.size() *
+                            (sizeof(LayerInterpolation) -
+                             interpolation.layers.element_bytes() +
+                             4 * sizeof(int)) +
+                        interpolation.structured_atmosphere_weights.size() *
+                            (sizeof(InterpolationWeight) - sizeof(double));
+                }
+            }
+        }
+        if (profile_memory) {
+            std::fprintf(
+                stderr,
+                "SASKTRAN2_MEMORY {\"kind\":\"od_compaction\","
+                "\"rays\":%zu,\"released_capacity_bytes\":%zu,"
+                "\"layer_count\":%zu,\"structured_rays\":%zu,"
+                "\"structured_layer_count\":%zu,"
+                "\"structured_midpoint_weight_count\":%zu,"
+                "\"structured_payload_bytes_saved\":%zu,"
+                "\"layer_metadata_bytes\":%zu,"
+                "\"compact_structured_rays\":%zu,"
+                "\"compact_structured_layer_count\":%zu,"
+                "\"full_structured_rays\":%zu,"
+                "\"full_structured_layer_count\":%zu,"
+                "\"compact_descriptor_bytes_saved\":%zu,"
+                "\"maximum_structured_atmosphere_offset\":%zu,"
+                "\"midpoint_weight_bytes\":%zu,"
+                "\"optical_depth_index_bytes\":%zu}\n",
+                m_incoming_interpolation.size(), released_capacity_bytes,
+                layer_count, structured_rays, structured_layer_count,
+                structured_midpoint_weight_count,
+                structured_payload_bytes_saved, layer_metadata_bytes,
+                compact_structured_rays, compact_structured_layer_count,
+                full_structured_rays, full_structured_layer_count,
+                compact_descriptor_bytes_saved,
+                maximum_structured_atmosphere_offset, midpoint_weight_bytes,
+                optical_depth_index_bytes);
         }
         m_incoming_viewing.traced_rays.clear();
         m_incoming_viewing.traced_rays.shrink_to_fit();
         m_incoming_viewing.flux_observers.clear();
         m_incoming_viewing.flux_observers.shrink_to_fit();
+        std::size_t released_factor_bytes = 0;
+        if (profile_memory) {
+            released_factor_bytes =
+                m_incoming_endpoint_factors.capacity() *
+                sizeof(
+                    std::vector<sasktran2::raytracing::LayerEndpointFactors2D>);
+            for (const auto& factors : m_incoming_endpoint_factors) {
+                released_factor_bytes +=
+                    factors.capacity() *
+                    sizeof(sasktran2::raytracing::LayerEndpointFactors2D);
+            }
+        }
+        decltype(m_incoming_endpoint_factors)().swap(
+            m_incoming_endpoint_factors);
+        profile_endpoint_factors("released", released_factor_bytes);
     }
 
     void SourceGeometry1D::initialize(
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing,
-        const SourceGeometrySettings& settings) {
+        const SourceGeometrySettings& settings, bool capture_endpoint_factors) {
+        // These construction-only captures never survive a new initialization,
+        // including failures before source points or rays are rebuilt.
+        decltype(m_incoming_endpoint_factors)().swap(
+            m_incoming_endpoint_factors);
         settings.validate();
         if (m_geometry_2d != nullptr && settings.include_refraction) {
             throw std::invalid_argument(
@@ -1075,15 +1360,19 @@ namespace sasktran2::successive_orders {
             m_location_interpolator = std::move(interpolator);
         }
 
-        construct_source_points();
-        trace_and_compile_incoming();
-        compile_los_interpolation(internal_viewing);
-        compile_transport_topology(m_incoming_interpolation,
-                                   m_transport_row_offsets,
-                                   m_transport_column_indices);
-        compile_transport_topology(m_los_interpolation,
-                                   m_los_transport_row_offsets,
-                                   m_los_transport_column_indices);
+        try {
+            construct_source_points();
+            trace_and_compile_incoming(capture_endpoint_factors);
+            compile_los_interpolation(internal_viewing);
+            m_transport_sparsity =
+                compile_transport_topology(m_incoming_interpolation);
+            m_los_transport_sparsity =
+                compile_transport_topology(m_los_interpolation);
+        } catch (...) {
+            decltype(m_incoming_endpoint_factors)().swap(
+                m_incoming_endpoint_factors);
+            throw;
+        }
     }
 
     void SourceGeometry1D::refresh_los(
@@ -1094,14 +1383,15 @@ namespace sasktran2::successive_orders {
                                    "geometry before initialization");
         }
         compile_los_interpolation(internal_viewing);
-        compile_transport_topology(m_los_interpolation,
-                                   m_los_transport_row_offsets,
-                                   m_los_transport_column_indices);
+        m_los_transport_sparsity =
+            compile_transport_topology(m_los_interpolation);
     }
 
     void SourceGeometry1D::trace_ray(
         const sasktran2::viewinggeometry::ViewingRay& viewing_ray,
-        sasktran2::raytracing::TracedRay& traced_ray) const {
+        sasktran2::raytracing::TracedRay& traced_ray,
+        std::vector<sasktran2::raytracing::LayerEndpointFactors2D>*
+            endpoint_factors) const {
         if (m_raytracer_1d != nullptr) {
             m_raytracer_1d->trace_ray(viewing_ray, traced_ray,
                                       m_settings.include_refraction);
@@ -1109,7 +1399,12 @@ namespace sasktran2::successive_orders {
         }
 #ifdef SKTRAN_RUST_SUPPORT
         if (m_raytracer_2d != nullptr) {
-            m_raytracer_2d->trace_ray(viewing_ray, traced_ray);
+            if (endpoint_factors == nullptr) {
+                m_raytracer_2d->trace_ray(viewing_ray, traced_ray);
+            } else {
+                m_raytracer_2d->trace_ray_with_endpoint_factors(
+                    viewing_ray, traced_ray, *endpoint_factors);
+            }
             return;
         }
 #endif

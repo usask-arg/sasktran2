@@ -4,7 +4,9 @@
 #include "fixed_point.h"
 #include "geometry.h"
 #include "problem.h"
+#include "problem_scratch.h"
 #include "ray_transport.h"
+#include "ray_transport_scratch.h"
 #include "scattering_assembler.h"
 
 #include <sasktran2/geometry.h>
@@ -12,6 +14,8 @@
 #include <spdlog/spdlog.h>
 
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -237,26 +241,22 @@ namespace sasktran2::successive_orders {
         using Assembler = typename Adapter::Assembler;
         using Atmosphere = sasktran2::atmosphere::Atmosphere<NSTOKES>;
 
-        struct WavelengthState {
-            WavelengthState(const RayTransportMap& transport_map,
-                            const RayTransportMap& los_map,
-                            const Assembler& assembler)
+        struct WorkerState {
+            WorkerState(const RayTransportMap& transport_map,
+                        const RayTransportMap& los_map,
+                        const Assembler& assembler)
                 : transport(transport_map.sparsity()),
                   los_transport(los_map.sparsity()),
                   scattering(assembler.create_operator()),
                   problem(transport, scattering) {
-                workspace.resize(transport, scattering);
+                if constexpr (NSTOKES != 1) {
+                    workspace.resize(transport, scattering);
+                }
                 forcing.resize(scattering.input_size());
                 state.resize(scattering.output_size());
-                state_tangent.resize(scattering.output_size());
-                direct_transport_tangent.resize(scattering.input_size());
                 const int los_size = los_transport.sparsity().rows() * NSTOKES;
                 los_value.resize(los_size);
-                los_tangent.resize(los_size);
                 los_cotangent.resize(los_size);
-                state_cotangent.resize(scattering.output_size());
-                los_value_gradient.resize(los_transport.values().size());
-                los_transport_tangent.resize(los_transport.values().size());
             }
 
             TransportOperator transport;
@@ -283,8 +283,17 @@ namespace sasktran2::successive_orders {
             Eigen::VectorXd adjoint;
             Eigen::MatrixXd jacobian;
             int active_wavelength = -1;
-            int state_wavelength = -1;
+            int profiled_parameter_vjp_case = -1;
             bool transport_state_projected = false;
+        };
+
+        struct ScalarPrimalCache {
+            Eigen::VectorXd state;
+            // Exact forcing for this same atmosphere revision. Its small
+            // snapshot avoids reconstructing direct sources when a native
+            // product revisits a wavelength evicted from a worker.
+            Eigen::VectorXd forcing;
+            bool current = false;
         };
 
       public:
@@ -345,17 +354,15 @@ namespace sasktran2::successive_orders {
                     "geometry");
             }
             invalidate_geometry();
-            m_source_geometry.initialize(internal_viewing, m_geometry_settings);
+            m_source_geometry.initialize(
+                internal_viewing, m_geometry_settings,
+                m_first_order.requests_endpoint_factors());
             m_transport_map = std::make_unique<RayTransportMap>(
                 m_source_geometry.incoming_interpolation(),
-                m_source_geometry.total_num_outgoing(),
-                m_source_geometry.transport_row_offsets(),
-                m_source_geometry.transport_column_indices());
+                m_source_geometry.transport_sparsity());
             m_los_map = std::make_unique<RayTransportMap>(
                 m_source_geometry.los_interpolation(),
-                m_source_geometry.total_num_outgoing(),
-                m_source_geometry.los_transport_row_offsets(),
-                m_source_geometry.los_transport_column_indices());
+                m_source_geometry.los_transport_sparsity());
             m_scattering_assembler = std::make_unique<Assembler>(
                 m_source_geometry, m_config->num_do_streams());
 
@@ -381,14 +388,13 @@ namespace sasktran2::successive_orders {
 
             m_atmosphere = nullptr;
             m_has_atmosphere_revision = false;
-            m_wavelength_state.clear();
+            m_worker_state.clear();
             m_vector_state_cache.clear();
+            m_scalar_primal_cache.clear();
             m_source_geometry.refresh_los(internal_viewing);
             m_los_map = std::make_unique<RayTransportMap>(
                 m_source_geometry.los_interpolation(),
-                m_source_geometry.total_num_outgoing(),
-                m_source_geometry.los_transport_row_offsets(),
-                m_source_geometry.los_transport_column_indices());
+                m_source_geometry.los_transport_sparsity());
 
             const int output_size = m_los_map->num_rays() * NSTOKES;
             m_thread_los_cotangent.resize(m_config->num_threads());
@@ -418,28 +424,31 @@ namespace sasktran2::successive_orders {
                 !tracked_atmosphere ||
                 m_atmosphere_volume_revision != atmosphere.volume_revision();
             m_atmosphere = nullptr;
-            // Scalar workspaces are compact enough to retain one complete
-            // state per wavelength. Vector workspaces stay thread-local, but
-            // their converged solution is cached separately below so native
-            // products do not have to repeat the primal solve.
+            // Transport values and derivative/solver scratch are only needed
+            // by the active wavelength on each worker. Retain scalar primal
+            // solutions separately for exact reuse by native products and for
+            // the existing warm start after an atmosphere update.
+            if (static_cast<int>(m_worker_state.size()) !=
+                m_config->num_wavelength_threads()) {
+                create_worker_states(m_config->num_wavelength_threads());
+            }
             if constexpr (NSTOKES == 1) {
-                if (static_cast<int>(m_wavelength_state.size()) !=
+                if (static_cast<int>(m_scalar_primal_cache.size()) !=
                     atmosphere.num_wavel()) {
-                    create_wavelength_states(atmosphere.num_wavel());
+                    m_scalar_primal_cache.clear();
+                    m_scalar_primal_cache.resize(atmosphere.num_wavel());
+                }
+                for (auto& cache : m_scalar_primal_cache) {
+                    cache.current = false;
                 }
             } else {
-                if (static_cast<int>(m_wavelength_state.size()) !=
-                    m_config->num_wavelength_threads()) {
-                    create_wavelength_states(
-                        m_config->num_wavelength_threads());
-                }
                 if (static_cast<int>(m_vector_state_cache.size()) !=
                     atmosphere.num_wavel()) {
                     m_vector_state_cache.clear();
                     m_vector_state_cache.resize(atmosphere.num_wavel());
                 }
             }
-            for (auto& state : m_wavelength_state) {
+            for (auto& state : m_worker_state) {
                 state->active_wavelength = -1;
             }
             m_first_order.initialize_atmosphere(atmosphere, volume_changed);
@@ -470,20 +479,21 @@ namespace sasktran2::successive_orders {
                 throw std::invalid_argument(
                     "Invalid C++ successive-orders native tangent size");
             }
-            auto& work = wavelength_state(block.start, threadidx);
+            auto& work = worker_state(threadidx);
             const bool compact_scalar =
                 m_first_order.uses_compact_scalar_kernel();
             work.tangent.resize(work.transport, work.scattering,
                                 !compact_scalar);
             work.tangent.set_zero();
             prepare_primal(block.start, threadidx);
+            work.los_tangent.setZero(work.los_value.size());
             if (native_tangent.isZero(0.0)) {
-                work.state_tangent.setZero();
-                work.los_tangent.setZero();
+                work.state_tangent.setZero(work.state.size());
             } else {
                 warn_if_implicit_derivative_is_unchecked(m_solver_settings,
                                                          block.start, "JVP");
                 if (compact_scalar) {
+                    work.direct_transport_tangent.resize(work.forcing.size());
                     if (!work.transport_state_projected) {
                         m_first_order.project_transport_state(
                             work.state, work.layer_state_projection,
@@ -509,18 +519,26 @@ namespace sasktran2::successive_orders {
                 Adapter::assemble_jvp(*m_scattering_assembler, *m_atmosphere,
                                       block.start, native_tangent,
                                       work.tangent);
-                const auto jvp_diagnostics = work.problem.solve_jvp(
-                    work.forcing, work.state, work.tangent, work.state_tangent,
-                    m_solver_settings, work.workspace,
-                    compact_scalar ? &work.direct_transport_tangent : nullptr);
+                const auto jvp_diagnostics = solve_with_workspace(
+                    work, block.start, threadidx, "jvp", [&](auto& workspace) {
+                        return work.problem.solve_jvp(
+                            work.forcing, work.state, work.tangent,
+                            work.state_tangent, m_solver_settings, workspace,
+                            compact_scalar ? &work.direct_transport_tangent
+                                           : nullptr);
+                    });
                 warn_if_not_converged(jvp_diagnostics, m_solver_settings,
                                       block.start, "JVP solve");
-                m_los_map->assemble_jvp(*m_atmosphere, block.start,
-                                        native_tangent,
-                                        work.los_transport_tangent);
-                work.los_transport.template apply_jvp_stokes<NSTOKES>(
-                    work.state, work.state_tangent, work.los_transport_tangent,
-                    work.los_tangent);
+                with_los_derivative_workspace(
+                    work, work.los_transport_tangent, block.start, threadidx,
+                    "jvp", [&](auto& values, auto&) {
+                        values.resize(work.los_transport.values().size());
+                        m_los_map->assemble_jvp(*m_atmosphere, block.start,
+                                                native_tangent, values);
+                        work.los_transport.template apply_jvp_stokes<NSTOKES>(
+                            work.state, work.state_tangent, values,
+                            work.los_tangent);
+                    });
             }
             work.jacobian.resize(0, 0);
             work.active_wavelength = block.start;
@@ -530,7 +548,7 @@ namespace sasktran2::successive_orders {
                            int threadidx) {
             validate_single_wavelength_block(block);
             prepare_primal(block.start, threadidx);
-            wavelength_state(block.start, threadidx).jacobian.resize(0, 0);
+            worker_state(threadidx).jacobian.resize(0, 0);
             reset_vjp_cotangents(threadidx);
         }
 
@@ -544,7 +562,7 @@ namespace sasktran2::successive_orders {
                 throw std::invalid_argument(
                     "Invalid C++ successive-orders native VJP storage");
             }
-            auto& work = wavelength_state(block.start, threadidx);
+            auto& work = worker_state(threadidx);
             work.los_cotangent.setZero();
             const auto [first_thread, last_thread] =
                 source_thread_range(threadidx);
@@ -564,7 +582,7 @@ namespace sasktran2::successive_orders {
             validate_single_wavelength_block(block);
             validate_active(block.start, wavel_threadidx);
             validate_los(losidx);
-            const auto& work = wavelength_state(block.start, wavel_threadidx);
+            const auto& work = worker_state(wavel_threadidx);
             const int output_offset = losidx * NSTOKES;
             source.value.col(0) +=
                 work.los_value.template segment<NSTOKES>(output_offset);
@@ -587,7 +605,7 @@ namespace sasktran2::successive_orders {
                                 sasktran2::RadianceJVP<NSTOKES>& source) const {
             validate_active(wavelength, wavel_threadidx);
             validate_los(losidx);
-            const auto& work = wavelength_state(wavelength, wavel_threadidx);
+            const auto& work = worker_state(wavel_threadidx);
             const int output_offset = losidx * NSTOKES;
             source.value +=
                 work.los_value.template segment<NSTOKES>(output_offset);
@@ -614,56 +632,131 @@ namespace sasktran2::successive_orders {
         }
 
       private:
-        void create_wavelength_states(int count) {
+        /** Only temporary LOS value derivatives and layer scratch are leased;
+         * state cotangents and ray products remain with the worker.
+         */
+        template <typename Operation>
+        void with_los_derivative_workspace(WorkerState& work,
+                                           Eigen::VectorXd& owned_values,
+                                           int wavelength, int worker,
+                                           const char* operation,
+                                           Operation&& calculate) {
+            if constexpr (NSTOKES == 1) {
+                ScalarRayTransportWorkspaceLease scratch;
+                scratch.prepare_values(work.los_transport.values().size());
+                std::forward<Operation>(calculate)(scratch.values(),
+                                                   scratch.workspace());
+                if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
+                    std::fprintf(
+                        stderr,
+                        "SASKTRAN2_MEMORY "
+                        "{\"kind\":\"successive_orders_los_workspace\","
+                        "\"provider\":\"%p\",\"worker_storage\":\"%p\","
+                        "\"allocation_id\":%llu,\"shared\":%s,"
+                        "\"operation\":\"%s\",\"wavelength\":%d,"
+                        "\"worker\":%d,\"instance_id\":%llu,"
+                        "\"value_bytes\":%zu,\"workspace_bytes\":%zu,"
+                        "\"storage_bytes\":%zu}\n",
+                        static_cast<void*>(this), static_cast<void*>(&work),
+                        static_cast<unsigned long long>(
+                            scratch.allocation_id()),
+                        scratch.shared() ? "true" : "false", operation,
+                        wavelength, worker,
+                        static_cast<unsigned long long>(
+                            m_atmosphere_instance_id),
+                        scratch.value_bytes(), scratch.workspace_bytes(),
+                        scratch.storage_bytes());
+                }
+            } else {
+                std::forward<Operation>(calculate)(owned_values,
+                                                   work.los_vjp_workspace);
+            }
+        }
+
+        /** Each invocation completes synchronously and returns scalar
+         * diagnostics. No workspace reference can escape into ray callbacks or
+         * caches.
+         */
+        template <typename Solve>
+        FixedPointDiagnostics
+        solve_with_workspace(WorkerState& work, int wavelength, int worker,
+                             const char* operation, Solve&& solve) {
+            if constexpr (NSTOKES == 1) {
+                ScalarProblemWorkspaceLease scratch;
+                const auto diagnostics =
+                    std::forward<Solve>(solve)(scratch.workspace());
+                if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
+                    std::fprintf(
+                        stderr,
+                        "SASKTRAN2_MEMORY "
+                        "{\"kind\":\"successive_orders_ephemeral_workspace\","
+                        "\"provider\":\"%p\",\"worker_storage\":\"%p\","
+                        "\"allocation_id\":%llu,\"shared\":%s,"
+                        "\"operation\":\"%s\",\"wavelength\":%d,"
+                        "\"worker\":%d,\"instance_id\":%llu,"
+                        "\"input_size\":%d,\"output_size\":%d,"
+                        "\"anderson_depth\":%d,"
+                        "\"problem_bytes\":%zu,\"fixed_point_bytes\":%zu,"
+                        "\"storage_bytes\":%zu}\n",
+                        static_cast<void*>(this), static_cast<void*>(&work),
+                        static_cast<unsigned long long>(
+                            scratch.allocation_id()),
+                        scratch.shared() ? "true" : "false", operation,
+                        wavelength, worker,
+                        static_cast<unsigned long long>(
+                            m_atmosphere_instance_id),
+                        work.problem.incoming_size(), work.problem.state_size(),
+                        m_solver_settings.anderson_depth,
+                        scratch.problem_bytes(), scratch.fixed_point_bytes(),
+                        scratch.storage_bytes());
+                }
+                return diagnostics;
+            } else {
+                return std::forward<Solve>(solve)(work.workspace);
+            }
+        }
+
+        void create_worker_states(int count) {
             if (count < 1 || m_transport_map == nullptr ||
                 m_los_map == nullptr || m_scattering_assembler == nullptr) {
                 throw std::logic_error(
                     "Cannot allocate C++ successive-orders wavelength state");
             }
-            m_wavelength_state.clear();
+            m_worker_state.clear();
             m_vector_state_cache.clear();
-            m_wavelength_state.reserve(count);
+            m_scalar_primal_cache.clear();
+            m_worker_state.reserve(count);
             for (int index = 0; index < count; ++index) {
-                m_wavelength_state.emplace_back(
-                    std::make_unique<WavelengthState>(
-                        *m_transport_map, *m_los_map, *m_scattering_assembler));
+                m_worker_state.emplace_back(std::make_unique<WorkerState>(
+                    *m_transport_map, *m_los_map, *m_scattering_assembler));
             }
         }
 
-        int wavelength_state_index(int wavelength, int threadidx) const {
-            if constexpr (NSTOKES == 1) {
-                return wavelength;
-            } else {
-                return threadidx;
-            }
-        }
-
-        WavelengthState& wavelength_state(int wavelength, int threadidx) {
-            const int index = wavelength_state_index(wavelength, threadidx);
-            if (index < 0 ||
-                index >= static_cast<int>(m_wavelength_state.size())) {
+        WorkerState& worker_state(int threadidx) {
+            const int index = threadidx;
+            if (index < 0 || index >= static_cast<int>(m_worker_state.size())) {
                 throw std::logic_error(
                     "C++ successive-orders wavelength cache is invalid");
             }
-            return *m_wavelength_state[index];
+            return *m_worker_state[index];
         }
 
-        const WavelengthState& wavelength_state(int wavelength,
-                                                int threadidx) const {
-            const int index = wavelength_state_index(wavelength, threadidx);
-            if (index < 0 ||
-                index >= static_cast<int>(m_wavelength_state.size())) {
+        const WorkerState& worker_state(int threadidx) const {
+            const int index = threadidx;
+            if (index < 0 || index >= static_cast<int>(m_worker_state.size())) {
                 throw std::logic_error(
                     "C++ successive-orders wavelength cache is invalid");
             }
-            return *m_wavelength_state[index];
+            return *m_worker_state[index];
         }
 
         void invalidate_geometry() {
             m_geometry_initialized = false;
             m_atmosphere = nullptr;
             m_has_atmosphere_revision = false;
-            m_wavelength_state.clear();
+            m_worker_state.clear();
+            m_scalar_primal_cache.clear();
+            m_vector_state_cache.clear();
             m_thread_los_cotangent.clear();
             m_scattering_assembler.reset();
             m_los_map.reset();
@@ -693,8 +786,7 @@ namespace sasktran2::successive_orders {
 
         void validate_active(int wavelength, int threadidx) const {
             validate_calculation(wavelength, threadidx);
-            if (wavelength_state(wavelength, threadidx).active_wavelength !=
-                wavelength) {
+            if (worker_state(threadidx).active_wavelength != wavelength) {
                 throw std::logic_error(
                     "C++ successive-orders wavelength state is not active");
             }
@@ -707,7 +799,7 @@ namespace sasktran2::successive_orders {
             }
         }
 
-        void assemble_values(int wavelength, WavelengthState& work) {
+        void assemble_values(int wavelength, WorkerState& work) {
             if (!m_first_order.uses_compact_scalar_kernel()) {
                 m_transport_map->assemble_values(*m_atmosphere, wavelength,
                                                  work.transport);
@@ -718,18 +810,38 @@ namespace sasktran2::successive_orders {
                                                     work.scattering);
         }
 
-        WavelengthState& prepare_primal(int wavelength, int threadidx) {
+        WorkerState& prepare_primal(int wavelength, int threadidx) {
             validate_calculation(wavelength, threadidx);
-            auto& work = wavelength_state(wavelength, threadidx);
+            auto& work = worker_state(threadidx);
+            m_first_order.prepare_wavelength(wavelength, threadidx);
             if (work.active_wavelength == wavelength) {
                 return work;
             }
             work.active_wavelength = -1;
             work.transport_state_projected = false;
+            bool reuse_primal = false;
+            bool reuse_forcing = false;
+            if constexpr (NSTOKES == 1) {
+                const auto& cache = m_scalar_primal_cache[wavelength];
+                reuse_primal = cache.current &&
+                               cache.state.size() == work.problem.state_size();
+                reuse_forcing = reuse_primal &&
+                                cache.forcing.size() == work.forcing.size() &&
+                                m_first_order.uses_compact_scalar_kernel();
+            }
             assemble_values(wavelength, work);
             if (m_first_order.uses_compact_scalar_kernel()) {
-                m_first_order.calculate_with_transport(
-                    wavelength, threadidx, work.transport, work.forcing);
+                if (reuse_forcing) {
+                    if constexpr (NSTOKES == 1) {
+                        work.forcing =
+                            m_scalar_primal_cache[wavelength].forcing;
+                    }
+                    m_first_order.calculate_transport_only(
+                        wavelength, threadidx, work.transport);
+                } else {
+                    m_first_order.calculate_with_transport(
+                        wavelength, threadidx, work.transport, work.forcing);
+                }
             } else {
                 m_first_order.calculate(wavelength, threadidx, work.forcing);
             }
@@ -740,9 +852,13 @@ namespace sasktran2::successive_orders {
             // the historical zero-state semantics when no iterations are
             // requested as well.
             if constexpr (NSTOKES == 1) {
-                if (work.state_wavelength != wavelength ||
-                    m_solver_settings.maximum_iterations == 0 ||
-                    !m_solver_settings.convergence_enabled()) {
+                const auto& cache = m_scalar_primal_cache[wavelength];
+                if (cache.state.size() == work.problem.state_size() &&
+                    (reuse_primal ||
+                     (m_solver_settings.maximum_iterations > 0 &&
+                      m_solver_settings.convergence_enabled()))) {
+                    work.state = cache.state;
+                } else {
                     work.state.setZero();
                 }
             } else {
@@ -755,18 +871,43 @@ namespace sasktran2::successive_orders {
                     work.state.setZero();
                 }
             }
-            const auto diagnostics = work.problem.solve(
-                work.forcing, work.state, m_solver_settings, work.workspace);
+            if (!reuse_primal) {
+                const auto diagnostics = solve_with_workspace(
+                    work, wavelength, threadidx, "primal",
+                    [&](auto& workspace) {
+                        return work.problem.solve(work.forcing, work.state,
+                                                  m_solver_settings, workspace);
+                    });
+                warn_if_not_converged(diagnostics, m_solver_settings,
+                                      wavelength, "primal solve");
+            }
+            if constexpr (NSTOKES == 1) {
+                auto& cache = m_scalar_primal_cache[wavelength];
+                cache.state = work.state;
+                if (m_first_order.uses_compact_scalar_kernel()) {
+                    const bool new_entry =
+                        cache.forcing.size() != work.forcing.size();
+                    cache.forcing = work.forcing;
+                    if (new_entry &&
+                        std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
+                        std::fprintf(
+                            stderr,
+                            "SASKTRAN2_MEMORY "
+                            "{\"kind\":\"scalar_forcing_cache_entry\","
+                            "\"wavelength\":%d,\"bytes\":%zu}\n",
+                            wavelength,
+                            static_cast<std::size_t>(cache.forcing.size()) *
+                                sizeof(double));
+                    }
+                }
+                cache.current = true;
+            }
             if constexpr (NSTOKES == 3) {
                 if (m_solver_settings.maximum_iterations > 0 &&
                     m_solver_settings.convergence_enabled()) {
                     m_vector_state_cache[wavelength] = work.state;
                 }
             }
-            work.state_wavelength =
-                m_solver_settings.maximum_iterations == 0 ? -1 : wavelength;
-            warn_if_not_converged(diagnostics, m_solver_settings, wavelength,
-                                  "primal solve");
             work.los_transport.template apply_stokes<NSTOKES>(work.state,
                                                               work.los_value);
             work.los_tangent.setZero();
@@ -775,20 +916,60 @@ namespace sasktran2::successive_orders {
             return work;
         }
 
-        void reverse(int wavelength, int threadidx, WavelengthState& work,
+        void reverse(int wavelength, int threadidx, WorkerState& work,
                      Eigen::Ref<const Eigen::VectorXd> los_cotangent,
                      Eigen::Ref<Eigen::VectorXd> native_gradient,
-                     bool emit_convergence_warning = true) {
-            work.los_transport.template apply_vjp_stokes<NSTOKES>(
-                work.state, los_cotangent, work.state_cotangent,
-                work.los_value_gradient);
-            m_los_map->accumulate_vjp(*m_atmosphere, wavelength,
-                                      work.los_value_gradient, native_gradient,
-                                      work.los_vjp_workspace);
-            const auto diagnostics = work.problem.solve_vjp(
-                work.forcing, work.state, work.state_cotangent, work.gradient,
-                m_solver_settings, work.workspace, work.adjoint,
-                !m_first_order.uses_compact_scalar_kernel());
+                     bool emit_convergence_warning = true,
+                     bool use_projected_transport = false) {
+            work.state_cotangent.resize(work.state.size());
+            with_los_derivative_workspace(
+                work, work.los_value_gradient, wavelength, threadidx, "vjp",
+                [&](auto& values, auto& workspace) {
+                    values.resize(work.los_transport.values().size());
+                    work.los_transport.template apply_vjp_stokes<NSTOKES>(
+                        work.state, los_cotangent, work.state_cotangent,
+                        values);
+                    m_los_map->accumulate_vjp(*m_atmosphere, wavelength, values,
+                                              native_gradient, workspace);
+                });
+            bool skip_scattering_parameter_vjp = false;
+            if constexpr (NSTOKES == 1) {
+                // Spatial Lambertian albedo derivatives are carried by the
+                // ray transport and first-order kernels. With no phase
+                // groups, the scattering assembler discards both parameter
+                // gradients, while its input cotangent is still required.
+                skip_scattering_parameter_vjp =
+                    m_atmosphere->num_scattering_deriv_groups() == 0 &&
+                    m_atmosphere->surface().has_spatial_lambertian_albedo();
+                const int parameter_vjp_case =
+                    static_cast<int>(skip_scattering_parameter_vjp);
+                if (work.profiled_parameter_vjp_case != parameter_vjp_case &&
+                    std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
+                    std::fprintf(
+                        stderr,
+                        "SASKTRAN2_MEMORY "
+                        "{\"kind\":\"scalar_vjp_parameter_path\","
+                        "\"worker\":\"%p\",\"thread\":%d,\"wavelength\":%d,"
+                        "\"native_phase_groups\":%d,"
+                        "\"spatial_lambertian\":%s,\"skip\":%s}\n",
+                        static_cast<void*>(&work), threadidx, wavelength,
+                        m_atmosphere->num_scattering_deriv_groups(),
+                        m_atmosphere->surface().has_spatial_lambertian_albedo()
+                            ? "true"
+                            : "false",
+                        skip_scattering_parameter_vjp ? "true" : "false");
+                    work.profiled_parameter_vjp_case = parameter_vjp_case;
+                }
+            }
+            const auto diagnostics = solve_with_workspace(
+                work, wavelength, threadidx, "vjp", [&](auto& workspace) {
+                    return work.problem.solve_vjp(
+                        work.forcing, work.state, work.state_cotangent,
+                        work.gradient, m_solver_settings, workspace,
+                        work.adjoint,
+                        !m_first_order.uses_compact_scalar_kernel(),
+                        skip_scattering_parameter_vjp);
+                });
             if (emit_convergence_warning) {
                 warn_if_not_converged(diagnostics, m_solver_settings,
                                       wavelength, "VJP solve");
@@ -798,15 +979,20 @@ namespace sasktran2::successive_orders {
                     *m_atmosphere, wavelength, work.gradient.transport_values,
                     native_gradient, work.transport_vjp_workspace);
             }
-            Adapter::accumulate_vjp(*m_scattering_assembler, *m_atmosphere,
-                                    wavelength, work.gradient, native_gradient);
+            if (!skip_scattering_parameter_vjp) {
+                Adapter::accumulate_vjp(*m_scattering_assembler, *m_atmosphere,
+                                        wavelength, work.gradient,
+                                        native_gradient);
+            }
             if (m_first_order.uses_compact_scalar_kernel()) {
-                if (work.transport_state_projected) {
+                if (use_projected_transport) {
                     m_first_order.accumulate_vjp_with_projected_transport(
                         wavelength, threadidx, work.layer_state_projection,
                         work.ground_state_projection, work.gradient.forcing,
                         native_gradient);
                 } else {
+                    // Keep the native VJP's multiplication order independent of
+                    // whether an earlier JVP prepared state projections.
                     m_first_order.accumulate_vjp_with_transport(
                         wavelength, threadidx, work.state,
                         work.gradient.forcing, native_gradient);
@@ -819,7 +1005,7 @@ namespace sasktran2::successive_orders {
         }
 
         void calculate_jacobian(int wavelength, int threadidx,
-                                WavelengthState& work) {
+                                WorkerState& work) {
             const int outputs = m_los_map->num_rays() * NSTOKES;
             const int derivatives = m_atmosphere->num_deriv();
             work.jacobian.resize(outputs, derivatives);
@@ -836,7 +1022,7 @@ namespace sasktran2::successive_orders {
                 work.los_cotangent(output) = 1.0;
                 native_gradient.setZero();
                 reverse(wavelength, threadidx, work, work.los_cotangent,
-                        native_gradient, output == 0);
+                        native_gradient, output == 0, true);
                 work.jacobian.row(output) = native_gradient.transpose();
                 work.los_cotangent(output) = 0.0;
             }
@@ -863,7 +1049,8 @@ namespace sasktran2::successive_orders {
         std::unique_ptr<RayTransportMap> m_transport_map;
         std::unique_ptr<RayTransportMap> m_los_map;
         std::unique_ptr<Assembler> m_scattering_assembler;
-        std::vector<std::unique_ptr<WavelengthState>> m_wavelength_state;
+        std::vector<std::unique_ptr<WorkerState>> m_worker_state;
+        std::vector<ScalarPrimalCache> m_scalar_primal_cache;
         std::vector<Eigen::VectorXd> m_vector_state_cache;
         mutable std::vector<Eigen::VectorXd> m_thread_los_cotangent;
         bool m_geometry_initialized = false;
