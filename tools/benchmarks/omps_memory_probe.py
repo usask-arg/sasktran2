@@ -16,6 +16,7 @@ import os
 import signal
 import subprocess
 import sys
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -80,6 +81,57 @@ def package_manifest(package: Path) -> dict[str, str]:
         for path in sorted((package / "sasktran2").rglob("*"))
         if path.is_file() and "__pycache__" not in path.parts
     }
+
+
+def validate_candidate_provenance(
+    identity: dict,
+    candidate: Path | None,
+    build_provenance: dict | None,
+    wheel: Path | None,
+) -> dict:
+    """Bind supplied build and wheel evidence to the package actually imported."""
+    verified = {
+        "build_binary_matches_runtime": None,
+        "wheel_binary_matches_runtime": None,
+        "wheel_package_matches_extracted_package": None,
+    }
+    if build_provenance is not None:
+        if not build_provenance.get("build_completed_utc"):
+            msg = "Supplied build provenance does not record a completed build"
+            raise ValueError(msg)
+        if build_provenance.get("binary_sha256") != identity["binary_sha256"]:
+            msg = "Supplied build provenance does not match the imported runtime binary"
+            raise ValueError(msg)
+        verified["build_binary_matches_runtime"] = True
+    if wheel is not None:
+        if build_provenance is not None and build_provenance.get(
+            "wheel_sha256"
+        ) != sha256(wheel):
+            msg = "Supplied wheel does not match the build provenance"
+            raise ValueError(msg)
+        with zipfile.ZipFile(wheel) as archive:
+            entries = [
+                entry
+                for entry in archive.infolist()
+                if entry.filename.startswith("sasktran2/") and not entry.is_dir()
+            ]
+            if len({entry.filename for entry in entries}) != len(entries):
+                msg = "Supplied wheel contains duplicate package entries"
+                raise ValueError(msg)
+            wheel_files = {
+                entry.filename: hashlib.sha256(archive.read(entry)).hexdigest()
+                for entry in entries
+            }
+        if wheel_files.get("sasktran2/_core_rust.abi3.so") != identity["binary_sha256"]:
+            msg = "Supplied wheel does not contain the imported runtime binary"
+            raise ValueError(msg)
+        verified["wheel_binary_matches_runtime"] = True
+        if candidate is not None:
+            if package_manifest(candidate) != wheel_files:
+                msg = "Extracted candidate package differs from the supplied wheel"
+                raise ValueError(msg)
+            verified["wheel_package_matches_extracted_package"] = True
+    return verified
 
 
 def source_manifest() -> dict[str, str | None]:
@@ -275,6 +327,15 @@ def main() -> int:
         parser.error(
             "Pinned Python did not import the requested candidate package and binary"
         )
+    try:
+        verified_provenance = validate_candidate_provenance(
+            identity,
+            candidate,
+            build_provenance,
+            args.wheel.resolve() if args.wheel else None,
+        )
+    except ValueError as error:
+        parser.error(str(error))
     guard = root / "scripts/run_omps_memory_guard.py"
     lock = root / "outputs/omps_paper_5113/investigation/retrieval.lock"
     guarded = [
@@ -332,6 +393,7 @@ def main() -> int:
             package_manifest(candidate) if candidate else None
         ),
         "runtime": identity,
+        "verified_candidate_provenance": verified_provenance,
         "reference_summary": str(summary_path),
         "reference_summary_sha256": sha256(summary_path),
         "runner": str(runner),

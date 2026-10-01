@@ -128,7 +128,9 @@ namespace sasktran2::successive_orders {
         }
         static void grow(Eigen::VectorXd& values, Eigen::Index size) {
             if (values.size() < size) {
-                values.resize(size);
+                // VectorXd reallocation keeps the old allocation and shape
+                // on failure, and can extend an existing block on success.
+                values.conservativeResize(size);
             }
         }
         static std::size_t bytes(const Eigen::VectorXd& values) {

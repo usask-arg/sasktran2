@@ -643,6 +643,7 @@ namespace sasktran2::successive_orders {
                                            Operation&& calculate) {
             if constexpr (NSTOKES == 1) {
                 ScalarRayTransportWorkspaceLease scratch;
+                scratch.prepare_values(work.los_transport.values().size());
                 std::forward<Operation>(calculate)(scratch.values(),
                                                    scratch.workspace());
                 if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {

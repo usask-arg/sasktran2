@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <stdexcept>
 
 namespace sasktran2::successive_orders {
 
@@ -43,6 +44,22 @@ namespace sasktran2::successive_orders {
         operator=(ScalarRayTransportWorkspaceLease&&) = delete;
 
         Eigen::VectorXd& values() { return m_storage->values; }
+        void prepare_values(Eigen::Index size) {
+            if (size < 0) {
+                throw std::invalid_argument(
+                    "invalid successive-orders LOS value workspace size");
+            }
+            if (m_storage->values.size() != size) {
+                if (size == 0) {
+                    // Free without relying on zero-sized aligned realloc.
+                    m_storage->values.resize(0);
+                } else {
+                    // VectorXd commits its new allocation and shape only
+                    // after successful reallocation.
+                    m_storage->values.conservativeResize(size);
+                }
+            }
+        }
         RayTransportWorkspace& workspace() { return m_storage->workspace; }
         bool shared() const { return m_shared; }
         std::uint64_t allocation_id() const { return m_storage->id; }

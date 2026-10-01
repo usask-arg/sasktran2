@@ -200,33 +200,6 @@ impl Drop for DerivativeMapping {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::bindings::atmosphere_storage::AtmosphereStorage;
-    use crate::bindings::prelude::Stokes;
-
-    #[test]
-    fn scattering_presence_query_does_not_allocate_phase_storage() {
-        let mut storage = AtmosphereStorage::new(2, 3, 4, Stokes::Stokes1);
-        {
-            let mapping = storage.get_derivative_mapping("probe").unwrap();
-            mapping.d_extinction().fill(1.0);
-            mapping.d_ssa().fill(0.0);
-            assert!(!mapping.is_scattering_derivative());
-            assert!(!mapping.is_scattering_derivative());
-            mapping.d_leg_coeff()[[2, 0, 0]] = 0.04;
-            assert!(mapping.is_scattering_derivative());
-        }
-        storage.set_zero();
-        let mapping = storage.get_derivative_mapping("probe").unwrap();
-        // Resetting values preserves optional allocations, including phase.
-        assert!(mapping.is_scattering_derivative());
-        let fresh_storage = AtmosphereStorage::new(2, 3, 4, Stokes::Stokes1);
-        let fresh_mapping = fresh_storage.get_derivative_mapping("probe").unwrap();
-        assert!(!fresh_mapping.is_scattering_derivative());
-    }
-}
-
 pub struct SurfaceDerivativeMapping {
     pub mapping: *mut ffi::SurfaceDerivativeMapping,
 }
@@ -341,5 +314,32 @@ impl SurfaceDerivativeMapping {
             ffi::sk_surface_deriv_mapping_get_d_brdf(self.mapping, &mut d_brdf);
             ArrayViewMut2::from_shape_ptr((self.num_wavel(), self.num_brdf_args()).f(), d_brdf)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::bindings::atmosphere_storage::AtmosphereStorage;
+    use crate::bindings::prelude::Stokes;
+
+    #[test]
+    fn scattering_presence_query_does_not_allocate_phase_storage() {
+        let mut storage = AtmosphereStorage::new(2, 3, 4, Stokes::Stokes1);
+        {
+            let mapping = storage.get_derivative_mapping("probe").unwrap();
+            mapping.d_extinction().fill(1.0);
+            mapping.d_ssa().fill(0.0);
+            assert!(!mapping.is_scattering_derivative());
+            assert!(!mapping.is_scattering_derivative());
+            mapping.d_leg_coeff()[[2, 0, 0]] = 0.04;
+            assert!(mapping.is_scattering_derivative());
+        }
+        storage.set_zero();
+        let mapping = storage.get_derivative_mapping("probe").unwrap();
+        // Resetting values preserves optional allocations, including phase.
+        assert!(mapping.is_scattering_derivative());
+        let fresh_storage = AtmosphereStorage::new(2, 3, 4, Stokes::Stokes1);
+        let fresh_mapping = fresh_storage.get_derivative_mapping("probe").unwrap();
+        assert!(!fresh_mapping.is_scattering_derivative());
     }
 }

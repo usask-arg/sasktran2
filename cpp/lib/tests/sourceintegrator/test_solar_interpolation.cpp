@@ -142,6 +142,37 @@ TEST_CASE("Solar interpolation validates original columns before narrowing",
     check_solar_products(interpolation, sparse_rows, 65536);
 }
 
+TEST_CASE("Solar interpolation finalization retries without partial formats",
+          "[solar_interpolation][compact_indices]") {
+    SolarTableInterpolation interpolation;
+    for (const int count : {16, 256}) {
+        for (const bool wide_span : {false, true}) {
+            Rows rows(2);
+            for (int entry = 0; entry < count; ++entry) {
+                const int column = wide_span && entry % 2 != 0 ? 65536 : 0;
+                rows[1].emplace_back(column, entry % 2 != 0 ? -0.25 : 0.125);
+            }
+            interpolation.initialize(rows.size(), 65537, count);
+            interpolation.append_row(rows[0]);
+            const auto before_retry_bytes = interpolation.storage_bytes();
+            REQUIRE_THROWS_AS(interpolation.finalize(), std::logic_error);
+            REQUIRE(interpolation.storage_bytes() == before_retry_bytes);
+            REQUIRE_FALSE(interpolation.relative_column_indices());
+            REQUIRE_FALSE(interpolation.compact_row_counts());
+            REQUIRE_FALSE(interpolation.interned_column_patterns());
+            interpolation.append_row(rows[1]);
+            interpolation.finalize();
+            REQUIRE(interpolation.relative_column_indices() == !wide_span);
+            REQUIRE(interpolation.compact_row_counts() == (count == 16));
+            REQUIRE_FALSE(interpolation.interned_column_patterns());
+            const auto finalized_bytes = interpolation.storage_bytes();
+            interpolation.finalize();
+            REQUIRE(interpolation.storage_bytes() == finalized_bytes);
+            check_solar_products(interpolation, rows, 65537);
+        }
+    }
+}
+
 TEST_CASE("Solar interpolation interns ordered indices without sharing weights",
           "[solar_interpolation][interned_indices]") {
     SolarTableInterpolation interpolation;

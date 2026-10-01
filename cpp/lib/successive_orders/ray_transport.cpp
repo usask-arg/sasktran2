@@ -98,11 +98,28 @@ namespace sasktran2::successive_orders {
     } // namespace
 
     void RayTransportWorkspace::resize(int maximum_layers) {
-        optical_depth.resize(maximum_layers);
-        albedo.resize(maximum_layers);
-        transmission_before.resize(maximum_layers);
-        source_fraction.resize(maximum_layers);
-        factor_cotangent.resize(maximum_layers);
+        if (maximum_layers < 0) {
+            throw std::invalid_argument(
+                "invalid successive-orders ray transport workspace size");
+        }
+        if (optical_depth.size() == maximum_layers &&
+            albedo.size() == maximum_layers &&
+            transmission_before.size() == maximum_layers &&
+            source_fraction.size() == maximum_layers &&
+            factor_cotangent.size() == maximum_layers) {
+            return;
+        }
+        RayTransportWorkspace replacement;
+        replacement.optical_depth.resize(maximum_layers);
+        replacement.albedo.resize(maximum_layers);
+        replacement.transmission_before.resize(maximum_layers);
+        replacement.source_fraction.resize(maximum_layers);
+        replacement.factor_cotangent.resize(maximum_layers);
+        optical_depth.swap(replacement.optical_depth);
+        albedo.swap(replacement.albedo);
+        transmission_before.swap(replacement.transmission_before);
+        source_fraction.swap(replacement.source_fraction);
+        factor_cotangent.swap(replacement.factor_cotangent);
     }
 
     std::size_t RayTransportWorkspace::storage_bytes() const {
@@ -347,7 +364,11 @@ namespace sasktran2::successive_orders {
             throw std::invalid_argument(
                 "invalid successive-orders ray transport VJP dimensions");
         }
-        if (workspace.optical_depth.size() < m_maximum_layers) {
+        if (workspace.optical_depth.size() < m_maximum_layers ||
+            workspace.albedo.size() < m_maximum_layers ||
+            workspace.transmission_before.size() < m_maximum_layers ||
+            workspace.source_fraction.size() < m_maximum_layers ||
+            workspace.factor_cotangent.size() < m_maximum_layers) {
             workspace.resize(m_maximum_layers);
         }
         const auto extinction =

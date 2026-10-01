@@ -44,13 +44,10 @@ not set, the source uses the midpoints of the atmosphere layers.
 
 ## Memory Use
 
-Scalar calculations keep transport values and solver workspace per wavelength
-worker. The compact scalar first-order caches also use one reusable slot per
-worker, so their storage scales with active wavelength concurrency. Geometry
-and transport topology are shared across wavelengths. Derivative-only buffers
-are allocated when needed. Completed geometry arrays release unused capacity,
-and compact interpolation weight records omit alignment padding while
-preserving all 64 bits of each double.
+Scalar calculations keep wavelength-dependent transport values and compact
+first-order caches in reusable wavelength-worker slots. Geometry and transport
+topology are shared across wavelengths. Derivative-only buffers are allocated
+when needed. These changes preserve the configured angular and spatial grids.
 
 Each wavelength retains its forward diffuse solution and compact scalar direct
 forcing. Native JVP/VJP products reuse these values, and tolerance-controlled
@@ -61,16 +58,17 @@ after updates.
 Reusing a worker for another wavelength recomputes the wavelength-dependent
 transport and first-order derivative quantities. Forcing is reused only while
 the atmosphere revision and geometry remain current. This trades repeated
-assembly for lower
-resident memory while preserving the angular and spatial grids and each
-wavelength's physical values. Surface-only updates also recompute volume
+assembly for lower resident memory while preserving each wavelength's physical
+values. Surface-only updates also recompute volume
 transport and first-order forcing instead of retaining duplicate volume
 buffers.
 
 Finalized source interpolation uses byte or 16-bit CSR slots when the row fits,
-with a 32-bit fallback for larger rows. Verified structured 2D ray cells reconstruct
-their original corner indices from a compact descriptor, retaining every original
-double coefficient and its order. Other ray stencils keep explicit indices.
+with a 32-bit fallback for larger rows. Compact weight records reconstruct every
+original double bit pattern; weights that cannot use the compact representation
+retain all eight bytes. Verified structured 2D ray cells reconstruct their original
+corner indices from a compact descriptor. Other ray stencils keep explicit
+indices. Neither representation combines or reorders contributions.
 
 Orbital native products preserve absent phase derivative mappings when copying
 requested parameters into local atmospheres. Changes in phase-mapping presence
@@ -85,10 +83,15 @@ mappings are present; ozone-only native products omit those unused phase sums.
 Changes in atmosphere volume and mapping presence refresh these buffers before
 reuse.
 
-Finalized endpoint stencils retain the original four double-precision weights
-and one verified 2D cell base, with implicit corner indices and offsets. Generic
-stencils keep their original explicit representation. Shared transport CSR
-columns use 16 bits when the complete source grid fits. Solar interpolation uses
+For eligible scalar 2D calculations with one thread, finalized endpoint stencils
+store two original interpolation coordinates and one verified cell base.
+Factoring is adopted only when expanding those coordinates reproduces every
+original weight bit for the entire provider. Ineligible providers retain their
+four original weights or explicit stencils. If the floating-point rounding mode
+changes, the provider materializes the original weights before reuse.
+
+Shared transport CSR columns use 16 bits when the complete source grid fits.
+Solar interpolation uses
 one-byte row counts when each row has at most 255 entries, and row-relative
 16-bit column indices when every span fits and the representation saves memory.
 Wider rows and indices retain their original forms. Each product selects its
@@ -102,14 +105,16 @@ Pattern IDs use 16 bits when possible, with wider IDs or the existing row
 representations as fallbacks. Pattern storage is selected only when it reduces
 retained memory; it does not combine or reorder floating-point contributions.
 
-Scalar first-order products lease temporary solar and endpoint tangent buffers
-from a calling-thread arena. Resident local engines can reuse this scratch
-because no product retains a view after its call returns. The backing arrays
-grow to the largest requested size and products use only their active ranges.
-Source threads receive separate solar cotangent ranges, and nested calls use
-private scratch while the thread's arena is busy. Physical transmission and
-medium caches, derivative lifetimes, and each wavelength's warm-start state
-remain owned by their engines.
+Scalar first-order products, diffuse solves and line-of-sight derivative
+products lease temporary workspace from calling-thread arenas. Resident local
+engines can reuse this scratch because no product retains a view after its call
+returns. First-order arrays grow to the largest requested size and products use
+only their active ranges. Line-of-sight arrays follow the active transport shape;
+solver history is reset for each solve. Source threads receive separate solar
+cotangent ranges, and nested calls
+use private scratch while the arena is busy. Physical transmission and medium
+caches, derivative lifetimes, and each wavelength's warm-start state remain
+owned by their engines.
 
 Geometry and ray transport maps share immutable CSR generations rather than
 copying their index arrays. A geometry refresh creates a new generation;
@@ -117,7 +122,8 @@ existing handles keep the old generation alive until their users release it.
 Point-specific scalar incoming transforms also share the outgoing transform
 when their outgoing sphere is the same object. Scattering reads contiguous
 point inputs directly, and angular routines size temporary moment arrays to
-the batch they actually use.
+the batch they actually use. Finalization releases unused construction capacity
+and the temporary endpoint-coordinate capture used to verify factoring.
 
 ## Structured 2D Geometry
 

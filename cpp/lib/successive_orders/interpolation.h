@@ -292,13 +292,18 @@ namespace sasktran2::successive_orders {
         void
         assign_structured(std::vector<StructuredLayerInterpolation>&& values,
                           std::uint32_t source_weight_count) {
-            const bool compact = std::all_of(
-                values.begin(), values.end(), [](const auto& layer) {
-                    return layer.atmosphere_offset <=
-                               CompactStructuredLayerInterpolation::
-                                   maximum_atmosphere_offset &&
-                           layer.atmosphere_mask <= 15 && layer.reserved == 0;
-                });
+            bool compact = true;
+            for (const auto& layer : values) {
+                if (layer.atmosphere_mask > 15) {
+                    throw std::out_of_range("Structured layer atmosphere mask "
+                                            "exceeds four corners");
+                }
+                compact = compact &&
+                          layer.atmosphere_offset <=
+                              CompactStructuredLayerInterpolation::
+                                  maximum_atmosphere_offset &&
+                          layer.reserved == 0;
+            }
             if (compact) {
                 std::vector<CompactStructuredLayerInterpolation> compact_values;
                 compact_values.reserve(values.size());

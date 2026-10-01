@@ -7,6 +7,9 @@ as different numerical resolutions, even when their arrays are close.
 --initial-only compares the complete saved initial objective, state, gradient,
 and captured radiances, including artifacts saved before additional validation
 was interrupted. It does not certify successful completion of the whole probe.
+Use --require-updates to require both probes' complete atmosphere-update and
+native JVP/VJP artifacts. Numerical agreement with the reference is reported
+separately from each probe's internal convergence and adjoint checks.
 """
 
 from __future__ import annotations
@@ -31,6 +34,9 @@ def array_comparison(
     trial = np.asarray(trial)
     if reference.shape != trial.shape:
         msg = f"Different array shapes: {reference.shape} versus {trial.shape}"
+        raise ValueError(msg)
+    if not reference.size:
+        msg = "A comparison array is empty"
         raise ValueError(msg)
     if not np.all(np.isfinite(reference)) or not np.all(np.isfinite(trial)):
         msg = "A comparison array contains nonfinite values"
@@ -69,6 +75,15 @@ def array_comparison(
 
 def memory_record(path: Path) -> dict:
     record = read_json(path)
+    for name in (
+        "elapsed_s",
+        "peak_physical_footprint_gib",
+        "peak_rss_gib",
+        "sample_interval_s",
+    ):
+        if not np.isfinite(record[name]) or record[name] < 0:
+            msg = f"Invalid memory guard measurement {name}: {path}"
+            raise ValueError(msg)
     return {
         "summary": str(path),
         "child_exit_code": record["child_exit_code"],
@@ -175,7 +190,12 @@ def update_comparisons(reference: Path, trial: Path, rtol: float, atol: float) -
             "trial_has_update_validation": paths[1].is_file(),
         }
     ref_report, trial_report = [read_json(path) for path in paths]
-    report = {"available": True, "evaluations": {}, "operational_products": {}}
+    report = {
+        "available": True,
+        "evaluations": {},
+        "operational_products": {},
+        "compared_array_count": 0,
+    }
     passed = True
     for label in ("initial", "perturbed", "restored"):
         ref = ref_report["evaluations"][label]
@@ -193,10 +213,14 @@ def update_comparisons(reference: Path, trial: Path, rtol: float, atol: float) -
                 if name == "state"
                 else result[name]["allclose"]
             )
+            report["compared_array_count"] += 1
         ref_files = {item["key"]: item["file"] for item in ref["radiance_files"]}
         trial_files = {item["key"]: item["file"] for item in test["radiance_files"]}
         if set(ref_files) != set(trial_files):
             msg = f"Validation radiance keys changed in {label}"
+            raise ValueError(msg)
+        if not ref_files:
+            msg = f"No validation radiances recorded in {label}"
             raise ValueError(msg)
         result["radiances"] = {}
         for key, filename in ref_files.items():
@@ -215,6 +239,10 @@ def update_comparisons(reference: Path, trial: Path, rtol: float, atol: float) -
                 )
             result["radiances"][key] = comparison
             passed &= comparison["allclose"]
+            report["compared_array_count"] += 1
+        if not np.isfinite([ref["objective"], test["objective"]]).all():
+            msg = f"Nonfinite validation objective in {label}"
+            raise ValueError(msg)
         result["objective"] = {
             "reference": ref["objective"],
             "trial": test["objective"],
@@ -239,6 +267,7 @@ def update_comparisons(reference: Path, trial: Path, rtol: float, atol: float) -
             )
             report["operational_products"][label][name] = comparison
             passed &= comparison["allclose"]
+            report["compared_array_count"] += 1
     report["all_complete_arrays_and_objectives_close"] = bool(passed)
     report["reference_internal_checks"] = ref_report
     report["trial_internal_checks"] = trial_report
@@ -256,6 +285,11 @@ def main() -> int:
     parser.add_argument("--atol", type=float, default=1e-12)
     parser.add_argument("--report-only", action="store_true")
     parser.add_argument(
+        "--require-updates",
+        action="store_true",
+        help="Fail comparison unless both probes include complete update and JVP/VJP artifacts",
+    )
+    parser.add_argument(
         "--initial-only",
         action="store_true",
         help=(
@@ -264,6 +298,8 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
+    if args.initial_only and args.require_updates:
+        parser.error("--require-updates cannot be combined with --initial-only")
     if args.rtol < 0 or args.atol < 0 or not np.isfinite([args.rtol, args.atol]).all():
         parser.error("Comparison tolerances must be finite and nonnegative")
     reference = args.reference.resolve()
@@ -273,6 +309,11 @@ def main() -> int:
         completed(trial)
     ref_evaluation = read_json(reference / "fixed_initial_evaluation.json")
     trial_evaluation = read_json(trial / "fixed_initial_evaluation.json")
+    if not np.isfinite(
+        [ref_evaluation["objective"], trial_evaluation["objective"]]
+    ).all():
+        msg = "A saved initial objective is nonfinite"
+        raise ValueError(msg)
     ref_parameters = read_json(reference / "parameters.json")
     trial_parameters = read_json(trial / "parameters.json")
     settings = {
@@ -347,20 +388,27 @@ def main() -> int:
         else update_comparisons(reference, trial, args.rtol, args.atol)
     )
     radiance_name = "modeled_radiance" if args.initial_only else "modeled_reflectance"
-    equivalent = bool(
-        not settings
-        and not input_differences
-        and comparisons["state"]["bitwise_identical"]
+    saved_arrays_close = bool(
+        comparisons["state"]["bitwise_identical"]
         and (args.initial_only or comparisons["ozone_vmr"]["bitwise_identical"])
         and comparisons["gradient"]["allclose"]
         and comparisons[radiance_name]["allclose"]
         and objective_close
-        and (args.initial_only or ref_memory["successful"])
-        and (args.initial_only or trial_memory["successful"])
+    )
+    arrays_close = bool(
+        saved_arrays_close
         and (
             not updates["available"]
             or updates["all_complete_arrays_and_objectives_close"]
         )
+    )
+    equivalent = bool(
+        not settings
+        and not input_differences
+        and arrays_close
+        and (args.initial_only or ref_memory["successful"])
+        and (args.initial_only or trial_memory["successful"])
+        and (not args.require_updates or updates["available"])
     )
     report = {
         "reference": str(reference),
@@ -372,6 +420,13 @@ def main() -> int:
         "prescribed_scene_identical": scene_identical,
         "complete_array_comparisons": comparisons,
         "atmosphere_update_comparisons": updates,
+        "compared_array_count": len(comparisons)
+        + updates.get("compared_array_count", 0),
+        "all_compared_arrays_and_objectives_close": arrays_close,
+        "complete_update_validation_available": updates["available"],
+        "equivalent_across_atmosphere_updates_and_products": bool(
+            equivalent and updates["available"]
+        ),
         "objective": {
             "reference": ref_evaluation["objective"],
             "trial": trial_evaluation["objective"],
@@ -409,7 +464,14 @@ def main() -> int:
     else:
         report["equivalent_at_saved_state"] = equivalent
         report["scope"] = (
-            "Complete saved fixed-state reflectances and ozone gradient; no RT executed."
+            "Complete saved fixed-state reflectances, ozone state and gradient"
+            + (
+                "; initial, perturbed and restored evaluations and initial/restored native JVP/VJP products. "
+                "Agreement with the reference does not imply that inherited internal convergence or adjoint checks pass."
+                if updates["available"]
+                else "; complete atmosphere-update and native JVP/VJP comparison unavailable."
+            )
+            + " No RT executed."
         )
     text = json.dumps(report, indent=2) + "\n"
     if args.output:

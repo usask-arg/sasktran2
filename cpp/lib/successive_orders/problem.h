@@ -7,6 +7,7 @@
 #include <Eigen/Core>
 
 #include <cstddef>
+#include <utility>
 
 namespace sasktran2::successive_orders {
 
@@ -48,11 +49,50 @@ namespace sasktran2::successive_orders {
 
         void resize(const TransportOperator&,
                     const ScatteringOperator<NSTOKES>& scattering_operator) {
-            incoming.resize(scattering_operator.input_size());
-            auxiliary_incoming.resize(scattering_operator.input_size());
-            auxiliary_state.resize(scattering_operator.output_size());
-            direct_state.resize(scattering_operator.output_size());
-            scattering = scattering_operator.make_workspace();
+            const auto input_size = scattering_operator.input_size();
+            const auto state_size = scattering_operator.output_size();
+            const bool resize_incoming = incoming.size() != input_size;
+            const bool resize_auxiliary_incoming =
+                auxiliary_incoming.size() != input_size;
+            const bool resize_auxiliary_state =
+                auxiliary_state.size() != state_size;
+            const bool resize_direct_state = direct_state.size() != state_size;
+            if (!resize_incoming && !resize_auxiliary_incoming &&
+                !resize_auxiliary_state && !resize_direct_state) {
+                // Preserve explicit resize's original scattering reset even
+                // when different layouts happen to have the same total sizes.
+                scattering = scattering_operator.make_workspace();
+                return;
+            }
+
+            // Construct new owning storage before modifying a retained pool.
+            ProblemWorkspace replacement;
+            if (resize_incoming) {
+                replacement.incoming.resize(input_size);
+            }
+            if (resize_auxiliary_incoming) {
+                replacement.auxiliary_incoming.resize(input_size);
+            }
+            if (resize_auxiliary_state) {
+                replacement.auxiliary_state.resize(state_size);
+            }
+            if (resize_direct_state) {
+                replacement.direct_state.resize(state_size);
+            }
+            replacement.scattering = scattering_operator.make_workspace();
+            if (resize_incoming) {
+                incoming.swap(replacement.incoming);
+            }
+            if (resize_auxiliary_incoming) {
+                auxiliary_incoming.swap(replacement.auxiliary_incoming);
+            }
+            if (resize_auxiliary_state) {
+                auxiliary_state.swap(replacement.auxiliary_state);
+            }
+            if (resize_direct_state) {
+                direct_state.swap(replacement.direct_state);
+            }
+            scattering = std::move(replacement.scattering);
         }
 
         std::size_t storage_bytes() const {
@@ -263,6 +303,8 @@ namespace sasktran2::successive_orders {
       private:
         void prepare_workspace(ProblemWorkspace<NSTOKES>& workspace) const {
             if (workspace.incoming.size() != incoming_size() ||
+                workspace.auxiliary_incoming.size() != incoming_size() ||
+                workspace.auxiliary_state.size() != state_size() ||
                 workspace.direct_state.size() != state_size()) {
                 workspace.resize(*m_transport, *m_scattering);
             }

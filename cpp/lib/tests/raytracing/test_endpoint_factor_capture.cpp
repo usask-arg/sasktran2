@@ -274,6 +274,50 @@ TEST_CASE("Source endpoint sidecars survive LOS refresh and release with "
     require_factor_sidecar_equal(source.incoming_endpoint_factors(), saved);
 }
 
+TEST_CASE("Invalid source settings release captured endpoint factors before "
+          "geometry construction",
+          "[successive_orders][geometry2d][endpoint_factors]") {
+    auto geo = geometry();
+    sasktran2::raytracing::RustRayTracer2D tracer(geo);
+    sasktran2::successive_orders::SourceGeometrySettings settings;
+    settings.num_incoming = 6;
+    settings.num_outgoing = 6;
+    settings.num_sza = 2;
+    const sasktran2::viewinggeometry::InternalViewingGeometry empty_viewing;
+    sasktran2::successive_orders::SourceGeometry1D source(tracer, geo);
+    source.initialize(empty_viewing, settings, true);
+    const auto saved_factors = source.incoming_endpoint_factors();
+    REQUIRE(!saved_factors.empty());
+    REQUIRE(source.incoming_endpoint_factors().capacity() > 0);
+
+    auto invalid_settings = settings;
+    invalid_settings.num_threads = 0;
+    REQUIRE_THROWS_AS(source.initialize(empty_viewing, invalid_settings, true),
+                      std::invalid_argument);
+    REQUIRE(source.incoming_endpoint_factors().empty());
+    REQUIRE(source.incoming_endpoint_factors().capacity() == 0);
+
+    source.initialize(empty_viewing, settings, true);
+    sasktran2::successive_orders::SourceGeometry1D reference(tracer, geo);
+    reference.initialize(empty_viewing, settings, true);
+    require_factor_sidecar_equal(source.incoming_endpoint_factors(),
+                                 saved_factors);
+    require_factor_sidecar_equal(source.incoming_endpoint_factors(),
+                                 reference.incoming_endpoint_factors());
+    REQUIRE(source.incoming_rays().size() == reference.incoming_rays().size());
+    for (std::size_t ray_index = 0; ray_index < source.incoming_rays().size();
+         ++ray_index) {
+        require_trace_equal(source.incoming_rays()[ray_index],
+                            reference.incoming_rays()[ray_index]);
+        require_capture(geo, source.incoming_rays()[ray_index],
+                        source.incoming_endpoint_factors()[ray_index]);
+    }
+    REQUIRE(source.transport_row_offsets() ==
+            reference.transport_row_offsets());
+    REQUIRE(source.transport_column_indices().to_vector() ==
+            reference.transport_column_indices().to_vector());
+}
+
 TEST_CASE("1D source geometry ignores the optional 2D factor capture",
           "[successive_orders][geometry][endpoint_factors]") {
     sasktran2::Geometry1D geo(0.6, 0.3, 6372000.0,

@@ -151,13 +151,38 @@ TEST_CASE("Successive-orders structured descriptor overflow keeps the whole "
             require_structured_descriptor(storage.structured_layer(index),
                                           original[index]);
         }
+        unsigned count = 0;
+        for (unsigned bit = 0; bit < 4; ++bit) {
+            count += (boundary.atmosphere_mask >> bit) & 1;
+        }
+        require_layer_descriptor(storage[1],
+                                 {boundary.atmosphere_offset, count,
+                                  boundary.source_offset,
+                                  65536U - boundary.source_offset, 4, 4});
         REQUIRE_THROWS_AS(CompactStructuredLayerInterpolation(boundary),
                           std::out_of_range);
     };
     check_fallback({4096, 65535, 65535, 15, 0});
     check_fallback({65535, 65535, 65535, 0, 0});
     check_fallback({4095, 65535, 65535, 15, 1});
-    check_fallback({4095, 65535, 65535, 16, 0});
+}
+
+TEST_CASE("Successive-orders invalid structured corner masks preserve the "
+          "previous decodable storage",
+          "[successive_orders][layer_storage]") {
+    LayerInterpolationStorage storage;
+    const StructuredLayerInterpolation original{4096, 65535, 65535, 15, 0};
+    storage.assign_structured({original}, 65536);
+    for (const std::uint8_t mask : {16, 255}) {
+        REQUIRE_THROWS_AS(
+            storage.assign_structured(
+                {{0, 0, 0, 0, 0}, {4095, 65535, 65535, mask, 0}}, 65535),
+            std::out_of_range);
+        REQUIRE(storage.size() == 1);
+        REQUIRE_FALSE(storage.is_compact_structured());
+        require_structured_descriptor(storage.structured_layer(0), original);
+        require_layer_descriptor(storage[0], {4096, 4, 65535, 1, 0, 4});
+    }
 }
 
 TEST_CASE("Successive-orders structured descriptors retain immutable values "

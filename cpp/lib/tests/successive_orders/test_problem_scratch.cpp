@@ -9,7 +9,9 @@
 #include <cstdint>
 #include <cstring>
 #include <future>
+#include <limits>
 #include <mutex>
+#include <new>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -152,6 +154,74 @@ TEST_CASE("Scalar problem leases retain owning workspace between calls",
     REQUIRE(lease.workspace().auxiliary_incoming.isConstant(-0.375));
     REQUIRE(lease.workspace().direct_state.isConstant(0.625));
     REQUIRE(lease.storage_bytes() == bytes);
+}
+
+TEST_CASE("Fixed-point workspace replacement preserves storage on failure",
+          "[successive_orders][problem_scratch]") {
+    const auto overflow_size = std::numeric_limits<Eigen::Index>::max();
+    REQUIRE(static_cast<std::size_t>(overflow_size) >
+            std::numeric_limits<std::size_t>::max() / sizeof(double));
+    FixedPointWorkspace workspace;
+    workspace.resize(7, 3);
+    workspace.mapped().setConstant(0.25);
+    workspace.residual().setConstant(-0.375);
+    const auto* mapped = workspace.mapped().data();
+    const auto* residual = workspace.residual().data();
+    const auto bytes = workspace.storage_bytes();
+    REQUIRE_THROWS_AS(workspace.resize(overflow_size, 0), std::bad_alloc);
+    REQUIRE(workspace.storage_bytes() == bytes);
+    REQUIRE(workspace.mapped().data() == mapped);
+    REQUIRE(workspace.residual().data() == residual);
+    REQUIRE(workspace.mapped().isConstant(0.25));
+    REQUIRE(workspace.residual().isConstant(-0.375));
+    workspace.resize(7, 3);
+    REQUIRE(workspace.mapped().data() == mapped);
+    REQUIRE(workspace.residual().data() == residual);
+
+    // Repair one companion while the previously guarded mapped shape agrees.
+    workspace.residual().resize(2);
+    workspace.resize(7, 3);
+    REQUIRE(workspace.mapped().size() == 7);
+    REQUIRE(workspace.residual().size() == 7);
+    REQUIRE(workspace.storage_bytes() == bytes);
+
+    Eigen::VectorXd state = Eigen::VectorXd::Constant(7, 0.125);
+    Eigen::VectorXd independent_state = state;
+    FixedPointWorkspace independent;
+    const auto map = [](const Eigen::VectorXd& input, Eigen::VectorXd& output) {
+        output = 0.3 * input.array() + 0.2;
+    };
+    const auto actual =
+        FixedPointSolver::solve(state, map, pooled_settings(150, 3), workspace);
+    const auto expected = FixedPointSolver::solve(
+        independent_state, map, pooled_settings(150, 3), independent);
+    pooled_require_bits(state, independent_state);
+    pooled_require_diagnostics(actual, expected);
+}
+
+TEST_CASE("Problem preparation repairs all companion vector dimensions",
+          "[successive_orders][problem_scratch]") {
+    PooledProblemFixture fixture(2, 3);
+    ScalarProblemWorkspaceLease lease;
+    auto& workspace = lease.workspace();
+    workspace.resize(fixture.transport, fixture.scattering);
+    workspace.auxiliary_incoming.resize(0);
+    workspace.auxiliary_state.resize(0);
+    const auto settings = pooled_settings(150, 3);
+    Eigen::VectorXd state = Eigen::VectorXd::Zero(fixture.problem.state_size());
+    Eigen::VectorXd independent_state = state;
+    ProblemWorkspace<1> independent;
+    const auto actual =
+        fixture.problem.solve(fixture.forcing, state, settings, workspace);
+    const auto expected = fixture.problem.solve(
+        fixture.forcing, independent_state, settings, independent);
+    REQUIRE(workspace.incoming.size() == fixture.problem.incoming_size());
+    REQUIRE(workspace.auxiliary_incoming.size() ==
+            fixture.problem.incoming_size());
+    REQUIRE(workspace.auxiliary_state.size() == fixture.problem.state_size());
+    REQUIRE(workspace.direct_state.size() == fixture.problem.state_size());
+    pooled_require_bits(state, independent_state);
+    pooled_require_diagnostics(actual, expected);
 }
 
 TEST_CASE("Scalar problem workspace reuse preserves complete native products",

@@ -4,7 +4,9 @@
 
 #include <condition_variable>
 #include <future>
+#include <limits>
 #include <mutex>
+#include <new>
 #include <stdexcept>
 
 namespace {
@@ -115,6 +117,45 @@ TEST_CASE("First-order scratch leases release occupancy during unwinding",
     FirstOrderScratchLease scratch(1, 1, 1);
     REQUIRE(scratch.shared());
     REQUIRE(scratch.allocation_id() == original_id);
+}
+
+TEST_CASE(
+    "Failed first-order growth preserves retained buffers and lease reuse",
+    "[successive_orders][first_order_scratch]") {
+    const auto overflow_size = std::numeric_limits<Eigen::Index>::max();
+    // Eigen rejects this byte-size overflow before attempting an allocation.
+    REQUIRE(static_cast<std::size_t>(overflow_size) >
+            std::numeric_limits<std::size_t>::max() / sizeof(double));
+    std::uint64_t id;
+    const double* solar_address;
+    const double* table_address;
+    {
+        FirstOrderScratchLease scratch(1, 3, 5);
+        id = scratch.allocation_id();
+        scratch.solar(0).setConstant(0.25);
+        scratch.table().setConstant(-0.375);
+        solar_address = scratch.solar(0).data();
+        table_address = scratch.table().data();
+    }
+    REQUIRE_THROWS_AS(FirstOrderScratchLease(1, overflow_size, 5),
+                      std::bad_alloc);
+    FirstOrderScratchLease scratch(1, 3, 5);
+    REQUIRE(scratch.shared());
+    REQUIRE(scratch.allocation_id() == id);
+    REQUIRE(scratch.solar(0).data() == solar_address);
+    REQUIRE(scratch.table().data() == table_address);
+    REQUIRE(scratch.solar(0).isConstant(0.25));
+    REQUIRE(scratch.table().isConstant(-0.375));
+    scratch.prepare_endpoints(7);
+    scratch.endpoint_extinction().setConstant(0.625);
+    scratch.endpoint_albedo().setConstant(0.875);
+    const auto* endpoint_address = scratch.endpoint_extinction().data();
+    REQUIRE_THROWS_AS(scratch.prepare_endpoints(overflow_size), std::bad_alloc);
+    REQUIRE(scratch.endpoint_extinction().size() == 7);
+    REQUIRE(scratch.endpoint_albedo().size() == 7);
+    REQUIRE(scratch.endpoint_extinction().data() == endpoint_address);
+    REQUIRE(scratch.endpoint_extinction().isConstant(0.625));
+    REQUIRE(scratch.endpoint_albedo().isConstant(0.875));
 }
 
 TEST_CASE("Concurrent calling threads own distinct first-order scratch arenas",

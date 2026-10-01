@@ -7,7 +7,9 @@
 #include <cstdint>
 #include <cstring>
 #include <future>
+#include <limits>
 #include <mutex>
+#include <new>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -134,6 +136,68 @@ TEST_CASE("Scalar LOS transport leases reuse owning scratch between calls",
     REQUIRE(lease.workspace().optical_depth.isConstant(-0.375));
     REQUIRE(lease.workspace().albedo.isConstant(0.625));
     REQUIRE(lease.storage_bytes() == bytes);
+}
+
+TEST_CASE("LOS pooled values survive failed growth and remain reusable",
+          "[successive_orders][ray_transport_scratch]") {
+    const auto overflow_size = std::numeric_limits<Eigen::Index>::max();
+    REQUIRE(static_cast<std::size_t>(overflow_size) >
+            std::numeric_limits<std::size_t>::max() / sizeof(double));
+    ScalarRayTransportWorkspaceLease lease;
+    lease.prepare_values(7);
+    lease.values().setConstant(0.625);
+    const auto* values = lease.values().data();
+    REQUIRE_THROWS_AS(lease.prepare_values(overflow_size), std::bad_alloc);
+    REQUIRE(lease.values().size() == 7);
+    REQUIRE(lease.values().data() == values);
+    REQUIRE(lease.values().isConstant(0.625));
+    lease.prepare_values(7);
+    REQUIRE(lease.values().data() == values);
+    lease.prepare_values(0);
+    REQUIRE(lease.values().size() == 0);
+    lease.prepare_values(3);
+    lease.values().setConstant(-0.375);
+    REQUIRE(lease.values().isConstant(-0.375));
+}
+
+TEST_CASE("Ray transport repairs every retained companion before VJP",
+          "[successive_orders][ray_transport_scratch]") {
+    LeasedRayFixture fixture(2, 3);
+    const auto map = fixture.make_map();
+    ScalarRayTransportWorkspaceLease lease;
+    lease.workspace().resize(3);
+    lease.workspace().optical_depth.setConstant(0.625);
+    const auto* optical_depth = lease.workspace().optical_depth.data();
+    const auto bytes = lease.workspace_bytes();
+    REQUIRE_THROWS_AS(lease.workspace().resize(-1), std::invalid_argument);
+    REQUIRE(lease.workspace_bytes() == bytes);
+    REQUIRE(lease.workspace().optical_depth.data() == optical_depth);
+    REQUIRE(lease.workspace().optical_depth.isConstant(0.625));
+    lease.workspace().resize(3);
+    REQUIRE(lease.workspace().optical_depth.data() == optical_depth);
+
+    // The old single-vector guard did not repair these missing companions.
+    lease.workspace().albedo.resize(0);
+    lease.workspace().transmission_before.resize(0);
+    lease.workspace().source_fraction.resize(0);
+    lease.workspace().factor_cotangent.resize(0);
+    const Eigen::VectorXd cotangent =
+        Eigen::VectorXd::LinSpaced(map.sparsity().nonzeros(), -0.125, 0.375);
+    Eigen::VectorXd gradient =
+        Eigen::VectorXd::Zero(fixture.atmosphere.num_deriv());
+    Eigen::VectorXd independent_gradient = gradient;
+    RayTransportWorkspace independent;
+    map.accumulate_vjp(fixture.atmosphere, 0, cotangent, gradient,
+                       lease.workspace());
+    map.accumulate_vjp(fixture.atmosphere, 0, cotangent, independent_gradient,
+                       independent);
+    REQUIRE(lease.workspace_bytes() == bytes);
+    leased_ray_require_bits(gradient, independent_gradient);
+    const auto actual_buffers = leased_ray_snapshot(lease.workspace());
+    const auto expected_buffers = leased_ray_snapshot(independent);
+    for (std::size_t index = 0; index < actual_buffers.size(); ++index) {
+        leased_ray_require_bits(actual_buffers[index], expected_buffers[index]);
+    }
 }
 
 TEST_CASE("Scalar LOS scratch reuse preserves complete native ray products",

@@ -98,21 +98,57 @@ namespace sasktran2::successive_orders {
                 throw std::invalid_argument(
                     "invalid successive-orders solver workspace dimensions");
             }
-            if (m_mapped.size() != state_size) {
-                m_mapped.resize(state_size);
-                m_residual.resize(state_size);
-                m_previous_state.resize(state_size);
-                m_previous_residual.resize(state_size);
+            const bool resize_state = m_mapped.size() != state_size ||
+                                      m_residual.size() != state_size ||
+                                      m_previous_state.size() != state_size ||
+                                      m_previous_residual.size() != state_size;
+            const bool resize_history =
+                m_delta_states.rows() != state_size ||
+                m_delta_states.cols() != depth ||
+                m_delta_residuals.rows() != state_size ||
+                m_delta_residuals.cols() != depth;
+            const bool resize_coefficients =
+                m_gram.rows() != depth || m_gram.cols() != depth ||
+                m_rhs.size() != depth || m_coefficients.size() != depth;
+            if (!resize_state && !resize_history && !resize_coefficients) {
+                m_depth = depth;
+                reset_history();
+                return;
             }
-            if (m_delta_states.rows() != state_size ||
-                m_delta_states.cols() != depth) {
-                m_delta_states.resize(state_size, depth);
-                m_delta_residuals.resize(state_size, depth);
+
+            // Prepare changed companion groups before committing any of them.
+            // A failed allocation must not poison scratch retained by a pool.
+            FixedPointWorkspace replacement;
+            if (resize_state) {
+                replacement.m_mapped.resize(state_size);
+                replacement.m_residual.resize(state_size);
+                replacement.m_previous_state.resize(state_size);
+                replacement.m_previous_residual.resize(state_size);
             }
-            if (m_gram.rows() != depth) {
-                m_gram.resize(depth, depth);
-                m_rhs.resize(depth);
-                m_coefficients.resize(depth);
+            if (resize_history) {
+                replacement.m_delta_states.resize(state_size, depth);
+                replacement.m_delta_residuals.resize(state_size, depth);
+            }
+            if (resize_coefficients) {
+                replacement.m_gram.resize(depth, depth);
+                replacement.m_rhs.resize(depth);
+                replacement.m_coefficients.resize(depth);
+            }
+
+            if (resize_state) {
+                m_mapped.swap(replacement.m_mapped);
+                m_residual.swap(replacement.m_residual);
+                m_previous_state.swap(replacement.m_previous_state);
+                m_previous_residual.swap(replacement.m_previous_residual);
+            }
+            if (resize_history) {
+                m_delta_states.swap(replacement.m_delta_states);
+                m_delta_residuals.swap(replacement.m_delta_residuals);
+            }
+            if (resize_coefficients) {
+                m_gram.swap(replacement.m_gram);
+                m_rhs.swap(replacement.m_rhs);
+                m_coefficients.swap(replacement.m_coefficients);
             }
             m_depth = depth;
             reset_history();

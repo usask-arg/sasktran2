@@ -233,7 +233,7 @@ namespace sasktran2::solartransmission {
         }
         // Every relative row must fit. Keep the wide format when the added
         // bases would outweigh the saved column-index bytes.
-        m_relative_indices =
+        bool relative_indices =
             wide_span_rows == 0 &&
             m_inner.size() * sizeof(std::uint16_t) >
                 static_cast<std::size_t>(m_rows) * sizeof(std::uint32_t);
@@ -242,19 +242,24 @@ namespace sasktran2::solartransmission {
                  ? static_cast<std::size_t>(m_rows) * sizeof(std::uint8_t)
                  : (static_cast<std::size_t>(m_rows) + 1) *
                        sizeof(std::uint32_t)) +
-            (m_relative_indices
+            (relative_indices
                  ? m_inner.size() * sizeof(std::uint16_t) +
                        static_cast<std::size_t>(m_rows) * sizeof(std::uint32_t)
                  : m_inner.size() * sizeof(std::uint32_t));
-        m_interned_indices =
+        const bool interned_indices =
             maximum_row_nonzeros <= 15 &&
             try_intern_column_patterns(best_existing_index_bytes);
-        if (m_interned_indices) {
-            m_relative_indices = false;
+        if (interned_indices) {
+            relative_indices = false;
         }
-        if (m_relative_indices) {
-            m_row_bases.resize(static_cast<std::size_t>(m_rows));
-            m_relative_inner.resize(m_inner.size());
+        // Allocate every replacement before discarding the wide arrays so a
+        // failed allocation leaves finalize() safely retryable.
+        std::vector<std::uint32_t> row_bases;
+        std::vector<std::uint16_t> relative_inner;
+        std::vector<std::uint8_t> row_counts;
+        if (relative_indices) {
+            row_bases.resize(static_cast<std::size_t>(m_rows));
+            relative_inner.resize(m_inner.size());
             for (Eigen::Index row = 0; row < m_rows; ++row) {
                 const auto begin = m_outer[static_cast<std::size_t>(row)];
                 const auto end = m_outer[static_cast<std::size_t>(row) + 1];
@@ -262,29 +267,39 @@ namespace sasktran2::solartransmission {
                     begin == end ? 0
                                  : *std::min_element(m_inner.begin() + begin,
                                                      m_inner.begin() + end);
-                m_row_bases[static_cast<std::size_t>(row)] = base;
+                row_bases[static_cast<std::size_t>(row)] = base;
                 for (std::uint32_t entry = begin; entry < end; ++entry) {
-                    m_relative_inner[entry] =
+                    relative_inner[entry] =
                         static_cast<std::uint16_t>(m_inner[entry] - base);
                 }
             }
-            std::vector<std::uint32_t>().swap(m_inner);
         }
         // Products consume complete rows in their original sequence; no
         // random row lookup needs the prefix array after construction.
-        m_compact_rows =
-            !m_interned_indices &&
+        const bool compact_rows =
+            !interned_indices &&
             maximum_row_nonzeros <= std::numeric_limits<std::uint8_t>::max();
-        if (m_compact_rows) {
-            m_row_counts.resize(static_cast<std::size_t>(m_rows));
+        if (compact_rows) {
+            row_counts.resize(static_cast<std::size_t>(m_rows));
             for (Eigen::Index row = 0; row < m_rows; ++row) {
-                m_row_counts[static_cast<std::size_t>(row)] =
+                row_counts[static_cast<std::size_t>(row)] =
                     static_cast<std::uint8_t>(
                         m_outer[static_cast<std::size_t>(row) + 1] -
                         m_outer[static_cast<std::size_t>(row)]);
             }
+        }
+        if (relative_indices) {
+            m_row_bases.swap(row_bases);
+            m_relative_inner.swap(relative_inner);
+            std::vector<std::uint32_t>().swap(m_inner);
+        }
+        if (compact_rows) {
+            m_row_counts.swap(row_counts);
             std::vector<std::uint32_t>().swap(m_outer);
         }
+        m_relative_indices = relative_indices;
+        m_interned_indices = interned_indices;
+        m_compact_rows = compact_rows;
         m_finalized = true;
         if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
             std::fprintf(
