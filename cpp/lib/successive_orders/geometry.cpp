@@ -883,13 +883,19 @@ namespace sasktran2::successive_orders {
         }
     }
 
-    void SourceGeometry1D::trace_and_compile_incoming() {
+    void SourceGeometry1D::trace_and_compile_incoming(
+        bool capture_endpoint_factors) {
         const int num_rays = total_num_incoming();
         m_incoming_viewing.traced_rays.clear();
         m_incoming_viewing.flux_observers.clear();
         m_incoming_viewing.traced_rays.resize(num_rays);
         m_incoming_interpolation.clear();
         m_incoming_interpolation.resize(num_rays);
+        decltype(m_incoming_endpoint_factors)().swap(
+            m_incoming_endpoint_factors);
+        if (capture_endpoint_factors && m_geometry_2d != nullptr) {
+            m_incoming_endpoint_factors.resize(num_rays);
+        }
 
         std::vector<sasktran2::viewinggeometry::ViewingRay> viewing_rays(
             m_settings.num_threads);
@@ -925,7 +931,11 @@ namespace sasktran2::successive_orders {
                         point.incoming_offset() + direction_index;
                     auto& traced_ray =
                         m_incoming_viewing.traced_rays[ray_index];
-                    trace_ray(viewing_ray, traced_ray);
+                    auto* endpoint_factors =
+                        m_incoming_endpoint_factors.empty()
+                            ? nullptr
+                            : &m_incoming_endpoint_factors[ray_index];
+                    trace_ray(viewing_ray, traced_ray, endpoint_factors);
                     compile_ray_interpolation(
                         traced_ray, m_geometry, *m_location_interpolator,
                         m_source_points, m_incoming_interpolation[ray_index],
@@ -939,9 +949,41 @@ namespace sasktran2::successive_orders {
 
         for (const auto& exception : thread_exceptions) {
             if (exception) {
+                decltype(m_incoming_endpoint_factors)().swap(
+                    m_incoming_endpoint_factors);
                 std::rethrow_exception(exception);
             }
         }
+        profile_endpoint_factors("constructed");
+    }
+
+    void SourceGeometry1D::profile_endpoint_factors(
+        const char* stage, std::size_t released_bytes) const {
+        if (std::getenv("SASKTRAN2_PROFILE_MEMORY") == nullptr) {
+            return;
+        }
+        std::size_t layers = 0;
+        std::size_t payload_bytes = 0;
+        for (const auto& factors : m_incoming_endpoint_factors) {
+            layers += factors.size();
+            payload_bytes +=
+                factors.capacity() *
+                sizeof(sasktran2::raytracing::LayerEndpointFactors2D);
+        }
+        const auto header_bytes =
+            m_incoming_endpoint_factors.capacity() *
+            sizeof(std::vector<sasktran2::raytracing::LayerEndpointFactors2D>);
+        std::fprintf(
+            stderr,
+            "SASKTRAN2_MEMORY {\"kind\":\"incoming_endpoint_factor_capture\","
+            "\"provider\":\"%p\",\"stage\":\"%s\",\"rays\":%zu,"
+            "\"layers\":%zu,\"factor_pairs\":%zu,"
+            "\"payload_bytes\":%zu,\"header_bytes\":%zu,"
+            "\"allocated_bytes\":%zu,\"released_bytes\":%zu}\n",
+            static_cast<const void*>(this), stage,
+            m_incoming_endpoint_factors.size(), layers, 2 * layers,
+            payload_bytes, header_bytes, payload_bytes + header_bytes,
+            released_bytes);
     }
 
     void SourceGeometry1D::compile_los_interpolation(
@@ -1238,12 +1280,27 @@ namespace sasktran2::successive_orders {
         m_incoming_viewing.traced_rays.shrink_to_fit();
         m_incoming_viewing.flux_observers.clear();
         m_incoming_viewing.flux_observers.shrink_to_fit();
+        std::size_t released_factor_bytes = 0;
+        if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
+            released_factor_bytes =
+                m_incoming_endpoint_factors.capacity() *
+                sizeof(
+                    std::vector<sasktran2::raytracing::LayerEndpointFactors2D>);
+            for (const auto& factors : m_incoming_endpoint_factors) {
+                released_factor_bytes +=
+                    factors.capacity() *
+                    sizeof(sasktran2::raytracing::LayerEndpointFactors2D);
+            }
+        }
+        decltype(m_incoming_endpoint_factors)().swap(
+            m_incoming_endpoint_factors);
+        profile_endpoint_factors("released", released_factor_bytes);
     }
 
     void SourceGeometry1D::initialize(
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing,
-        const SourceGeometrySettings& settings) {
+        const SourceGeometrySettings& settings, bool capture_endpoint_factors) {
         settings.validate();
         if (m_geometry_2d != nullptr && settings.include_refraction) {
             throw std::invalid_argument(
@@ -1284,13 +1341,19 @@ namespace sasktran2::successive_orders {
             m_location_interpolator = std::move(interpolator);
         }
 
-        construct_source_points();
-        trace_and_compile_incoming();
-        compile_los_interpolation(internal_viewing);
-        m_transport_sparsity =
-            compile_transport_topology(m_incoming_interpolation);
-        m_los_transport_sparsity =
-            compile_transport_topology(m_los_interpolation);
+        try {
+            construct_source_points();
+            trace_and_compile_incoming(capture_endpoint_factors);
+            compile_los_interpolation(internal_viewing);
+            m_transport_sparsity =
+                compile_transport_topology(m_incoming_interpolation);
+            m_los_transport_sparsity =
+                compile_transport_topology(m_los_interpolation);
+        } catch (...) {
+            decltype(m_incoming_endpoint_factors)().swap(
+                m_incoming_endpoint_factors);
+            throw;
+        }
     }
 
     void SourceGeometry1D::refresh_los(
@@ -1307,7 +1370,9 @@ namespace sasktran2::successive_orders {
 
     void SourceGeometry1D::trace_ray(
         const sasktran2::viewinggeometry::ViewingRay& viewing_ray,
-        sasktran2::raytracing::TracedRay& traced_ray) const {
+        sasktran2::raytracing::TracedRay& traced_ray,
+        std::vector<sasktran2::raytracing::LayerEndpointFactors2D>*
+            endpoint_factors) const {
         if (m_raytracer_1d != nullptr) {
             m_raytracer_1d->trace_ray(viewing_ray, traced_ray,
                                       m_settings.include_refraction);
@@ -1315,7 +1380,12 @@ namespace sasktran2::successive_orders {
         }
 #ifdef SKTRAN_RUST_SUPPORT
         if (m_raytracer_2d != nullptr) {
-            m_raytracer_2d->trace_ray(viewing_ray, traced_ray);
+            if (endpoint_factors == nullptr) {
+                m_raytracer_2d->trace_ray(viewing_ray, traced_ray);
+            } else {
+                m_raytracer_2d->trace_ray_with_endpoint_factors(
+                    viewing_ray, traced_ray, *endpoint_factors);
+            }
             return;
         }
 #endif

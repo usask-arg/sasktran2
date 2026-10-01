@@ -60,6 +60,12 @@ namespace sasktran2::successive_orders {
         bool can_release_incoming_geometry() const {
             return m_use_compact_scalar && !m_use_lower_interpolation;
         }
+        /** Factored coefficients must be decoded on the calling OS thread. */
+        bool requests_endpoint_factors() const {
+            return m_compact_scalar_requested && m_geometry_1d == nullptr &&
+                   m_num_threads == 1 && m_num_source_threads == 1 &&
+                   m_num_wavelength_threads == 1;
+        }
 
         void calculate_with_transport(int wavelength, int wavelength_thread,
                                       TransportOperator& transport,
@@ -115,7 +121,7 @@ namespace sasktran2::successive_orders {
       private:
         using ExactSource = sasktran2::solartransmission::SingleScatterSource<
             sasktran2::solartransmission::SolarTransmissionExact, NSTOKES>;
-        void validate_ready(int wavelength, int wavelength_thread) const;
+        void validate_ready(int wavelength, int wavelength_thread);
         int ray_thread_index(int wavelength_thread) const;
         int scalar_cache_index(int wavelength) const;
         const Eigen::VectorXd& ensure_solar_transmission(int wavelength,
@@ -306,10 +312,10 @@ namespace sasktran2::successive_orders {
             Eigen::Ref<Eigen::VectorXd> solar_gradient,
             Eigen::Ref<Eigen::VectorXd> coefficient_gradient) const;
 
-        EIGEN_STRONG_INLINE ScalarEndpoint scalar_endpoint(
-            const ScalarEndpointContext& context, int layer, bool entrance,
-            int solar_index, const EndpointStencilView& weights) const {
-            return weights.visit([&](const auto& values) {
+        EIGEN_STRONG_INLINE ScalarEndpoint
+        scalar_endpoint(const ScalarEndpointContext& context, int layer,
+                        bool entrance, int solar_index) const {
+            return visit_endpoint_weights(solar_index, [&](const auto& values) {
                 return scalar_endpoint(context, layer, entrance, solar_index,
                                        values);
             });
@@ -318,11 +324,11 @@ namespace sasktran2::successive_orders {
         template <bool USE_ENDPOINT_MEDIUM>
         EIGEN_STRONG_INLINE ScalarValueTangent scalar_endpoint_jvp(
             const ScalarEndpointContext& context, int layer, bool entrance,
-            int solar_index, const EndpointStencilView& weights,
-            const double* extinction_direction, const double* albedo_direction,
-            const double* solar_tangent, bool uniform_albedo_direction,
-            double uniform_albedo_tangent, bool phase_tangent_active) const {
-            return weights.visit([&](const auto& values) {
+            int solar_index, const double* extinction_direction,
+            const double* albedo_direction, const double* solar_tangent,
+            bool uniform_albedo_direction, double uniform_albedo_tangent,
+            bool phase_tangent_active) const {
+            return visit_endpoint_weights(solar_index, [&](const auto& values) {
                 return scalar_endpoint_jvp<USE_ENDPOINT_MEDIUM>(
                     context, layer, entrance, solar_index, values,
                     extinction_direction, albedo_direction, solar_tangent,
@@ -334,12 +340,12 @@ namespace sasktran2::successive_orders {
         template <bool WITH_PHASE_GRADIENT>
         EIGEN_STRONG_INLINE void accumulate_scalar_endpoint_vjp(
             const ScalarEndpointContext& context, int layer, bool entrance,
-            int solar_index, const EndpointStencilView& weights,
-            const ScalarEndpoint& endpoint, double source_cotangent,
+            int solar_index, const ScalarEndpoint& endpoint,
+            double source_cotangent,
             Eigen::Ref<Eigen::VectorXd> native_gradient,
             Eigen::Ref<Eigen::VectorXd> solar_gradient,
             Eigen::Ref<Eigen::VectorXd> coefficient_gradient) const {
-            weights.visit([&](const auto& values) {
+            visit_endpoint_weights(solar_index, [&](const auto& values) {
                 accumulate_scalar_endpoint_vjp<WITH_PHASE_GRADIENT>(
                     context, layer, entrance, solar_index, values, endpoint,
                     source_cotangent, native_gradient, solar_gradient,
@@ -347,9 +353,13 @@ namespace sasktran2::successive_orders {
             });
         }
 
-        EndpointStencilView endpoint_weights(int solar_index) const {
+        template <typename Callback>
+        EIGEN_STRONG_INLINE decltype(auto)
+        visit_endpoint_weights(int solar_index, Callback&& callback) const {
             const int slot = m_endpoint_slots[solar_index];
-            return m_endpoint_stencils.view(static_cast<std::size_t>(slot));
+            return m_endpoint_stencils.visit_view(
+                static_cast<std::size_t>(slot),
+                std::forward<Callback>(callback));
         }
 
         int phase_basis_slot(int ray, int solar_index) const {

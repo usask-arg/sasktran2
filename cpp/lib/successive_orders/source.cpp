@@ -354,7 +354,9 @@ namespace sasktran2::successive_orders {
                     "geometry");
             }
             invalidate_geometry();
-            m_source_geometry.initialize(internal_viewing, m_geometry_settings);
+            m_source_geometry.initialize(
+                internal_viewing, m_geometry_settings,
+                m_first_order.requests_endpoint_factors());
             m_transport_map = std::make_unique<RayTransportMap>(
                 m_source_geometry.incoming_interpolation(),
                 m_source_geometry.transport_sparsity());

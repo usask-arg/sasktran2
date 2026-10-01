@@ -132,6 +132,17 @@ namespace sasktran2::raytracing {
     // now independent of atmosphere dimensionality.
     using SphericalLayer = TracedLayer;
 
+    /** Construction-only factors used by the structured 2D endpoint stencil.
+     *
+     * Each pair contains the original altitude and horizontal upper fractions,
+     * before the four corner products are evaluated. Captures are owned by the
+     * requesting geometry builder, independently of retained traced rays.
+     */
+    struct LayerEndpointFactors2D {
+        std::array<double, 2> entrance{};
+        std::array<double, 2> exit{};
+    };
+
     /** The geometry information of a fully traced ray.
      */
     struct TracedRay {
@@ -1003,6 +1014,17 @@ namespace sasktran2::raytracing {
         void trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
                        TracedRay& tracedray) const;
 
+        /** Trace a straight ray and capture the original endpoint factors.
+         *
+         * The output is indexed by traced layer and cleared before each call,
+         * including a failed trace. Ordinary LOS and optical-depth-only traces
+         * do not allocate this construction-only sidecar.
+         */
+        void trace_ray_with_endpoint_factors(
+            const sasktran2::viewinggeometry::ViewingRay& ray,
+            TracedRay& tracedray,
+            std::vector<LayerEndpointFactors2D>& endpoint_factors) const;
+
         /** Trace only the integrated atmosphere-grid optical-depth stencil.
          *
          * Endpoint geometry and solar-angle metadata are omitted. This is used
@@ -1025,8 +1047,9 @@ namespace sasktran2::raytracing {
       private:
         void trace_ray_impl(const sasktran2::viewinggeometry::ViewingRay& ray,
                             const Eigen::VectorXd* refractive_index,
-                            TracedRay& tracedray,
-                            bool optical_depth_only) const;
+                            TracedRay& tracedray, bool optical_depth_only,
+                            std::vector<LayerEndpointFactors2D>*
+                                endpoint_factors = nullptr) const;
 
         const sasktran2::Geometry2D& m_geometry;
         std::unique_ptr<RustRayTracer2DImpl> m_impl;

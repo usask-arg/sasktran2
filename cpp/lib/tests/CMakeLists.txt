@@ -15,6 +15,7 @@ add_executable(
   raytracing/test_od_weights.cpp
   raytracing/test_rust_raytracer_parity.cpp
   raytracing/test_rust_raytracer2d.cpp
+  raytracing/test_endpoint_factor_capture.cpp
   sourceintegrator/test_occultation2d.cpp
   sourceintegrator/test_singlescatter2d.cpp
   sourceintegrator/test_solar_interpolation.cpp
@@ -24,6 +25,8 @@ add_executable(
   engine/hr/test_hr_basic.cpp
   successive_orders/test_angular_basis.cpp
   successive_orders/test_endpoint_stencil_storage.cpp
+  successive_orders/test_endpoint_factors.cpp
+  successive_orders/test_first_order_endpoint_factors.cpp
   successive_orders/test_first_order_scratch.cpp
   successive_orders/test_fixed_point.cpp
   successive_orders/test_geometry.cpp

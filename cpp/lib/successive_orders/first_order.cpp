@@ -436,14 +436,31 @@ namespace sasktran2::successive_orders {
             }
             std::vector<int> unique_endpoint_offsets;
             std::vector<InterpolationWeight> unique_endpoint_weights;
+            std::vector<std::array<double, 2>> unique_endpoint_factors;
             if (!m_use_lower_interpolation) {
+                const auto& captured_factors =
+                    source_geometry.incoming_endpoint_factors();
+                bool factors_available =
+                    requests_endpoint_factors() &&
+                    captured_factors.size() == viewing.traced_rays.size();
+                for (int ray = 0; factors_available && ray < m_num_rays;
+                     ++ray) {
+                    factors_available = captured_factors[ray].size() ==
+                                        viewing.traced_rays[ray].layers.size();
+                }
+                if (factors_available) {
+                    // The number of solar endpoints bounds the deduplicated
+                    // factor count, avoiding repeated large staging copies.
+                    unique_endpoint_factors.reserve(solar_offset);
+                }
                 m_endpoint_slots.assign(solar_offset, -1);
                 unique_endpoint_offsets.push_back(0);
                 std::unordered_map<EndpointKey, int, EndpointKeyHash> slots;
                 const auto assign_endpoint =
                     [&](int solar_index,
                         const sasktran2::raytracing::GridWeightStencilView&
-                            weights) {
+                            weights,
+                        const std::array<double, 2>* factors) {
                         auto key = endpoint_key(weights);
                         const auto [position, inserted] = slots.emplace(
                             std::move(key), static_cast<int>(slots.size()));
@@ -461,20 +478,28 @@ namespace sasktran2::successive_orders {
                         }
                         unique_endpoint_offsets.push_back(
                             static_cast<int>(unique_endpoint_weights.size()));
+                        if (factors != nullptr) {
+                            unique_endpoint_factors.push_back(*factors);
+                        }
                     };
                 for (int ray = 0; ray < m_num_rays; ++ray) {
                     const auto& traced_ray = viewing.traced_rays[ray];
                     if (traced_ray.layers.empty()) {
                         continue;
                     }
-                    assign_endpoint(m_solar_offsets[ray],
-                                    traced_ray.exit_weights(0));
+                    assign_endpoint(
+                        m_solar_offsets[ray], traced_ray.exit_weights(0),
+                        factors_available ? &captured_factors[ray][0].exit
+                                          : nullptr);
                     for (int endpoint = 1;
                          endpoint <= static_cast<int>(traced_ray.layers.size());
                          ++endpoint) {
                         assign_endpoint(
                             m_solar_offsets[ray] + endpoint,
-                            traced_ray.entrance_weights(endpoint - 1));
+                            traced_ray.entrance_weights(endpoint - 1),
+                            factors_available
+                                ? &captured_factors[ray][endpoint - 1].entrance
+                                : nullptr);
                     }
                 }
             }
@@ -514,6 +539,7 @@ namespace sasktran2::successive_orders {
             m_endpoint_slots.shrink_to_fit();
             unique_endpoint_offsets.shrink_to_fit();
             unique_endpoint_weights.shrink_to_fit();
+            unique_endpoint_factors.shrink_to_fit();
             if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
                 std::fprintf(stderr,
                              "SASKTRAN2_MEMORY "
@@ -612,20 +638,29 @@ namespace sasktran2::successive_orders {
                 endpoint_altitude_stride = geometry2d->num_altitudes();
             }
 #endif
-            m_endpoint_stencils.assign(std::move(unique_endpoint_offsets),
-                                       std::move(unique_endpoint_weights),
-                                       endpoint_altitude_stride,
-                                       m_geometry.size());
+            const std::size_t factor_staging_bytes =
+                unique_endpoint_factors.capacity() *
+                sizeof(std::array<double, 2>);
+            m_endpoint_stencils.assign(
+                std::move(unique_endpoint_offsets),
+                std::move(unique_endpoint_weights), endpoint_altitude_stride,
+                m_geometry.size(), std::move(unique_endpoint_factors));
             if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
                 std::fprintf(
                     stderr,
                     "SASKTRAN2_MEMORY {\"kind\":\"endpoint_stencil_storage\","
                     "\"provider\":\"%p\",\"stencils\":%zu,\"weights\":%zu,"
-                    "\"base_bits\":%d,\"storage_bytes\":%zu}\n",
+                    "\"base_bits\":%d,\"storage_bytes\":%zu,"
+                    "\"is_factored\":%s,\"owner_bytes\":%zu,"
+                    "\"view_bytes\":%zu,\"source_geometry_owner_bytes\":%zu,"
+                    "\"factor_staging_bytes\":%zu}\n",
                     static_cast<const void*>(this), m_endpoint_stencils.size(),
                     m_endpoint_stencils.weight_count(),
                     m_endpoint_stencils.base_bits(),
-                    m_endpoint_stencils.storage_bytes());
+                    m_endpoint_stencils.storage_bytes(),
+                    m_endpoint_stencils.is_factored() ? "true" : "false",
+                    sizeof(EndpointStencilStorage), sizeof(EndpointStencilView),
+                    sizeof(SourceGeometry1D), factor_staging_bytes);
             }
             for (int thread = 0; thread < m_num_threads; ++thread) {
                 auto& vjp = m_scalar_vjp_scratch[thread];
@@ -935,9 +970,8 @@ namespace sasktran2::successive_orders {
     }
 
     template <int NSTOKES>
-    void
-    FirstOrderProvider<NSTOKES>::validate_ready(int wavelength,
-                                                int wavelength_thread) const {
+    void FirstOrderProvider<NSTOKES>::validate_ready(int wavelength,
+                                                     int wavelength_thread) {
         if (!m_geometry_initialized || m_atmosphere == nullptr ||
             wavelength < 0 || wavelength >= m_atmosphere->num_wavel() ||
             wavelength_thread < 0 ||
@@ -945,6 +979,7 @@ namespace sasktran2::successive_orders {
             throw std::invalid_argument(
                 "Invalid successive-orders first-order calculation");
         }
+        m_endpoint_stencils.prepare_for_current_rounding();
     }
 
     template <int NSTOKES>
@@ -1692,16 +1727,13 @@ namespace sasktran2::successive_orders {
                                          end.source * source_quad_end);
                         } else {
                             const int exit_solar = m_solar_offsets[ray] + layer;
-                            auto start =
-                                have_shared_endpoint
-                                    ? shared_endpoint
-                                    : scalar_endpoint(
-                                          ray_endpoint_context, layer, true,
-                                          exit_solar + 1,
-                                          endpoint_weights(exit_solar + 1));
+                            auto start = have_shared_endpoint
+                                             ? shared_endpoint
+                                             : scalar_endpoint(
+                                                   ray_endpoint_context, layer,
+                                                   true, exit_solar + 1);
                             auto end = scalar_endpoint(
-                                ray_endpoint_context, layer, false, exit_solar,
-                                endpoint_weights(exit_solar));
+                                ray_endpoint_context, layer, false, exit_solar);
                             if (!have_shared_endpoint) {
                                 start.solar_transmission =
                                     solar(exit_solar + 1);
@@ -2311,23 +2343,20 @@ namespace sasktran2::successive_orders {
                             phase_tangent_active);
                     } else {
                         const int exit_solar = m_solar_offsets[ray] + layer;
-                        start =
-                            have_shared_endpoint
-                                ? shared_endpoint
-                                : scalar_endpoint_jvp<true>(
-                                      ray_endpoint_context, layer, true,
-                                      exit_solar + 1,
-                                      endpoint_weights(exit_solar + 1),
-                                      extinction_direction, albedo_direction,
-                                      solar_direction, uniform_albedo_direction,
-                                      uniform_albedo_tangent,
-                                      phase_tangent_active);
+                        start = have_shared_endpoint
+                                    ? shared_endpoint
+                                    : scalar_endpoint_jvp<true>(
+                                          ray_endpoint_context, layer, true,
+                                          exit_solar + 1, extinction_direction,
+                                          albedo_direction, solar_direction,
+                                          uniform_albedo_direction,
+                                          uniform_albedo_tangent,
+                                          phase_tangent_active);
                         end = scalar_endpoint_jvp<true>(
                             ray_endpoint_context, layer, false, exit_solar,
-                            endpoint_weights(exit_solar), extinction_direction,
-                            albedo_direction, solar_direction,
-                            uniform_albedo_direction, uniform_albedo_tangent,
-                            phase_tangent_active);
+                            extinction_direction, albedo_direction,
+                            solar_direction, uniform_albedo_direction,
+                            uniform_albedo_tangent, phase_tangent_active);
                     }
                     const double factor_tangent =
                         constant_source_factor_derivative(optical_depth,
@@ -2801,12 +2830,10 @@ namespace sasktran2::successive_orders {
                                              ? 0
                                              : solar_index];
                             } else {
-                                const auto weights =
-                                    endpoint_weights(solar_index);
                                 value = scalar_endpoint(
                                     ray_endpoint_context,
                                     endpoint == 0 ? 0 : endpoint - 1,
-                                    endpoint != 0, solar_index, weights);
+                                    endpoint != 0, solar_index);
                             }
                             value.solar_transmission = solar(solar_index);
                             value.source = value.extinction * value.albedo *
@@ -3069,19 +3096,16 @@ namespace sasktran2::successive_orders {
                     if (num_layers > 0) {
                         accumulate_scalar_endpoint_vjp<WITH_PHASE_GRADIENT>(
                             ray_endpoint_context, 0, false,
-                            m_solar_offsets[ray],
-                            endpoint_weights(m_solar_offsets[ray]),
-                            scratch.endpoints[0], scratch.endpoint_cotangent(0),
-                            thread_gradient, solar_gradient,
-                            coefficient_gradient);
+                            m_solar_offsets[ray], scratch.endpoints[0],
+                            scratch.endpoint_cotangent(0), thread_gradient,
+                            solar_gradient, coefficient_gradient);
                         for (int endpoint = 1; endpoint <= num_layers;
                              ++endpoint) {
                             const int solar_index =
                                 m_solar_offsets[ray] + endpoint;
                             accumulate_scalar_endpoint_vjp<WITH_PHASE_GRADIENT>(
                                 ray_endpoint_context, endpoint - 1, true,
-                                solar_index, endpoint_weights(solar_index),
-                                scratch.endpoints[endpoint],
+                                solar_index, scratch.endpoints[endpoint],
                                 scratch.endpoint_cotangent(endpoint),
                                 thread_gradient, solar_gradient,
                                 coefficient_gradient);
