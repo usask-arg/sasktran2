@@ -919,7 +919,8 @@ namespace sasktran2::successive_orders {
         void reverse(int wavelength, int threadidx, WorkerState& work,
                      Eigen::Ref<const Eigen::VectorXd> los_cotangent,
                      Eigen::Ref<Eigen::VectorXd> native_gradient,
-                     bool emit_convergence_warning = true) {
+                     bool emit_convergence_warning = true,
+                     bool use_projected_transport = false) {
             work.state_cotangent.resize(work.state.size());
             with_los_derivative_workspace(
                 work, work.los_value_gradient, wavelength, threadidx, "vjp",
@@ -984,12 +985,14 @@ namespace sasktran2::successive_orders {
                                         native_gradient);
             }
             if (m_first_order.uses_compact_scalar_kernel()) {
-                if (work.transport_state_projected) {
+                if (use_projected_transport) {
                     m_first_order.accumulate_vjp_with_projected_transport(
                         wavelength, threadidx, work.layer_state_projection,
                         work.ground_state_projection, work.gradient.forcing,
                         native_gradient);
                 } else {
+                    // Keep the native VJP's multiplication order independent of
+                    // whether an earlier JVP prepared state projections.
                     m_first_order.accumulate_vjp_with_transport(
                         wavelength, threadidx, work.state,
                         work.gradient.forcing, native_gradient);
@@ -1019,7 +1022,7 @@ namespace sasktran2::successive_orders {
                 work.los_cotangent(output) = 1.0;
                 native_gradient.setZero();
                 reverse(wavelength, threadidx, work, work.los_cotangent,
-                        native_gradient, output == 0);
+                        native_gradient, output == 0, true);
                 work.jacobian.row(output) = native_gradient.transpose();
                 work.los_cotangent(output) = 0.0;
             }

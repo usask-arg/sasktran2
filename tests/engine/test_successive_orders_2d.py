@@ -176,86 +176,16 @@ def test_2d_mixed_uniform_phase_history_preserves_native_products(num_threads):
             if num_threads == 1:
                 xr.testing.assert_identical(actual, expected)
             else:
-                # Parallel wavelength accumulation already permits final-bit
-                # rounding differences when the worker completion order changes.
+                # Allow final-bit rounding differences in parallel reductions.
                 xr.testing.assert_allclose(
                     actual, expected, rtol=8 * np.finfo(float).eps, atol=0
                 )
         except AssertionError as error:
-            diagnostics = [
+            msg = (
                 f"Native gradient mismatch: update={update!r}, "
-                f"num_threads={num_threads}",
-                str(error),
-            ]
-            for name in actual.data_vars:
-                if name not in expected:
-                    diagnostics.append(f"{name}: missing from expected gradient")
-                    continue
-                actual_values = actual[name].values
-                expected_values = expected[name].values
-                if actual_values.shape == expected_values.shape:
-                    matches = (
-                        np.array_equal(actual_values, expected_values, equal_nan=True)
-                        if num_threads == 1
-                        else np.allclose(
-                            actual_values,
-                            expected_values,
-                            rtol=8 * np.finfo(float).eps,
-                            atol=0,
-                            equal_nan=True,
-                        )
-                    )
-                    if matches:
-                        continue
-                diagnostics.append(
-                    f"{name}: actual shape={actual_values.shape}, "
-                    f"expected shape={expected_values.shape}"
-                )
-                for label, values in (
-                    ("actual", actual_values),
-                    ("expected", expected_values),
-                ):
-                    diagnostics.append(
-                        f"{label}=\n"
-                        + np.array2string(
-                            values,
-                            precision=17,
-                            threshold=values.size,
-                            floatmode="maxprec_equal",
-                        )
-                    )
-                if (
-                    actual_values.shape != expected_values.shape
-                    or actual_values.size == 0
-                ):
-                    continue
-                absolute_error = np.abs(actual_values - expected_values)
-                ranked_error = np.nan_to_num(
-                    absolute_error, nan=np.inf, posinf=np.inf, neginf=np.inf
-                )
-                worst_index = np.unravel_index(
-                    ranked_error.argmax(), actual_values.shape
-                )
-                nonzero = expected_values != 0
-                relative_error = np.full(actual_values.shape, np.nan)
-                np.divide(
-                    absolute_error,
-                    np.abs(expected_values),
-                    out=relative_error,
-                    where=nonzero,
-                )
-                max_relative = (
-                    relative_error[nonzero].max() if nonzero.any() else np.nan
-                )
-                diagnostics.append(
-                    f"max_absolute_error={absolute_error.max():.17g}, "
-                    f"worst_index={worst_index}, "
-                    f"actual_at_worst={actual_values[worst_index]:.17g}, "
-                    f"expected_at_worst={expected_values[worst_index]:.17g}, "
-                    f"relative_error_at_worst={relative_error[worst_index]:.17g}, "
-                    f"max_relative_error_where_expected_nonzero={max_relative:.17g}"
-                )
-            raise AssertionError("\n".join(diagnostics)) from error
+                f"num_threads={num_threads}\n{error}"
+            )
+            raise AssertionError(msg) from error
 
     for update in ("initial", "swap", "surface", "both_varying", "restore"):
         if update == "swap":
@@ -292,11 +222,19 @@ def test_2d_mixed_uniform_phase_history_preserves_native_products(num_threads):
             cotangent.shape
         )
         gradient = linearization.vjp(cotangent, parameters=parameters)
+        xr.testing.assert_identical(
+            linearization.vjp(cotangent, parameters=parameters), gradient
+        )
         jvp = linearization.jvp(tangent)
-        assert_gradient_equal(
+        # Preparing a JVP projection must not change the transport VJP path.
+        xr.testing.assert_identical(
             linearization.vjp(cotangent, parameters=parameters), gradient
         )
         xr.testing.assert_identical(linearization.jvp(tangent), jvp)
+        jacobian = linearization.jacobian.copy(deep=True)
+        xr.testing.assert_identical(
+            linearization.vjp(cotangent, parameters=parameters), gradient
+        )
 
         reference_scene = _spectral_cache_atmosphere(
             geometry,
@@ -312,6 +250,7 @@ def test_2d_mixed_uniform_phase_history_preserves_native_products(num_threads):
         reference_scene.mark_changed()
         reference = sk.Engine(config, geometry, viewing).linearize(reference_scene)
         xr.testing.assert_identical(linearization.value, reference.value)
+        xr.testing.assert_identical(jacobian, reference.jacobian)
         xr.testing.assert_identical(jvp, reference.jvp(tangent))
         assert_gradient_equal(gradient, reference.vjp(cotangent, parameters=parameters))
         products = tuple(

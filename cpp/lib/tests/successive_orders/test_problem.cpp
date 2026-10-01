@@ -30,10 +30,10 @@ namespace {
         return {size, std::move(row_offsets), std::move(column_indices)};
     }
 
-    ScalarAngularBasis scalar_basis() {
+    ScalarAngularBasis scalar_basis(int coefficients = 3) {
         sasktran2::math::LebedevSphere incoming(6);
         sasktran2::math::LebedevSphere outgoing(6);
-        return {incoming, outgoing, 3};
+        return {incoming, outgoing, coefficients};
     }
 
     FixedPointSettings tight_settings() {
@@ -61,10 +61,10 @@ namespace {
     }
 
     struct ScalarProblemFixture {
-        ScalarProblemFixture()
+        ScalarProblemFixture(int coefficients = 3)
             : sparsity(dense_sparsity(8)), transport(sparsity),
               scattering(ScatteringBlockLayout(1, 1, 6, 6, 2, 2, 1),
-                         scalar_basis()),
+                         scalar_basis(coefficients)),
               problem(transport, scattering),
               forcing(Eigen::VectorXd::LinSpaced(8, 0.04, 0.11)) {
             for (int row = 0; row < 8; ++row) {
@@ -73,7 +73,10 @@ namespace {
                         0.002 * (1 + (row + 2 * column) % 5);
                 }
             }
-            scattering.atmospheric_coefficients() << 0.22, 0.035, -0.012;
+            auto& phase = scattering.atmospheric_coefficients();
+            phase.setZero();
+            phase.leftCols(3) << 0.22, 0.035, -0.012;
+            scattering.set_active_coefficients(3);
             Eigen::Matrix2d ground;
             ground << 0.12, 0.025, -0.015, 0.09;
             scattering.set_ground_block(0, ground);
@@ -217,6 +220,82 @@ TEST_CASE("Successive-orders scalar implicit VJP is adjoint to the JVP",
     const double forward = state_tangent.dot(state_cotangent);
     const double reverse = parameter_inner_product(tangent, gradient);
     REQUIRE(forward == Catch::Approx(reverse).epsilon(3.0e-10));
+}
+
+TEST_CASE("Successive-orders JVP preserves the primal active phase modes",
+          "[successive_orders][problem][jvp][vjp][cache]") {
+    ScalarProblemFixture fixture(4);
+    auto settings = tight_settings();
+    settings.maximum_iterations = 2;
+    settings.relative_tolerance = 0.0;
+    settings.absolute_tolerance = 0.0;
+    const auto require_same = [](const auto& actual, const auto& expected) {
+        REQUIRE(actual.rows() == expected.rows());
+        REQUIRE(actual.cols() == expected.cols());
+        REQUIRE(actual.allFinite());
+        if (actual.size() != 0) {
+            REQUIRE(std::memcmp(actual.data(), expected.data(),
+                                actual.size() * sizeof(double)) == 0);
+        }
+    };
+    const auto& scattering = std::as_const(fixture.scattering);
+    REQUIRE(scattering.active_coefficients() == 3);
+    REQUIRE(scattering.atmospheric_coefficients()(0, 3) == 0.0);
+    const Eigen::MatrixXd coefficients = scattering.atmospheric_coefficients();
+    const Eigen::MatrixXd linear =
+        build_linear_matrix(fixture.problem, fixture.workspace);
+    const Eigen::VectorXd cotangent =
+        Eigen::VectorXd::LinSpaced(fixture.problem.state_size(), -0.4, 0.65);
+    Eigen::VectorXd transpose_before(fixture.problem.state_size());
+    fixture.problem.apply_linear_transpose(cotangent, transpose_before,
+                                           fixture.workspace);
+    Eigen::VectorXd state = Eigen::VectorXd::Zero(fixture.problem.state_size());
+    REQUIRE(fixture.problem
+                .solve(fixture.forcing, state, settings, fixture.workspace)
+                .iterations == 2);
+    const Eigen::VectorXd primal = state;
+    ProblemParameterData<1> gradient_before;
+    Eigen::VectorXd adjoint_before;
+    REQUIRE(fixture.problem
+                .solve_vjp(fixture.forcing, state, cotangent, gradient_before,
+                           settings, fixture.workspace, adjoint_before)
+                .iterations == 2);
+
+    ProblemParameterData<1> tangent;
+    tangent.resize(fixture.transport, scattering);
+    tangent.set_zero();
+    // Degree three belongs to the derivative but is absent from the primal.
+    // Product validation must not activate that physical phase coefficient.
+    tangent.atmospheric_coefficients(0, 3) = 0.01;
+    Eigen::VectorXd state_tangent;
+    REQUIRE(fixture.problem
+                .solve_jvp(fixture.forcing, state, tangent, state_tangent,
+                           settings, fixture.workspace)
+                .iterations == 2);
+    REQUIRE(scattering.active_coefficients() == 3);
+    REQUIRE_FALSE(state_tangent.isZero(0.0));
+    require_same(state, primal);
+    require_same(scattering.atmospheric_coefficients(), coefficients);
+    require_same(build_linear_matrix(fixture.problem, fixture.workspace),
+                 linear);
+    Eigen::VectorXd transpose_after(fixture.problem.state_size());
+    fixture.problem.apply_linear_transpose(cotangent, transpose_after,
+                                           fixture.workspace);
+    require_same(transpose_after, transpose_before);
+
+    ProblemParameterData<1> gradient_after;
+    Eigen::VectorXd adjoint_after;
+    REQUIRE(fixture.problem
+                .solve_vjp(fixture.forcing, state, cotangent, gradient_after,
+                           settings, fixture.workspace, adjoint_after)
+                .iterations == 2);
+    require_same(adjoint_after, adjoint_before);
+    require_same(gradient_after.forcing, gradient_before.forcing);
+    require_same(gradient_after.transport_values,
+                 gradient_before.transport_values);
+    require_same(gradient_after.atmospheric_coefficients,
+                 gradient_before.atmospheric_coefficients);
+    require_same(gradient_after.ground_values, gradient_before.ground_values);
 }
 
 TEST_CASE(

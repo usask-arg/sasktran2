@@ -337,7 +337,7 @@ namespace sasktran2::successive_orders {
                             bool skip_parameters) const;
 
         TransportOperator* m_transport;
-        ScatteringOperator<NSTOKES>* m_scattering;
+        const ScatteringOperator<NSTOKES>* m_scattering;
     };
 
     template <>
