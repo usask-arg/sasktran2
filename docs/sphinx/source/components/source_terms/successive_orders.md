@@ -49,19 +49,18 @@ first-order caches in reusable wavelength-worker slots. Geometry and transport
 topology are shared across wavelengths. Derivative-only buffers are allocated
 when needed. These changes preserve the configured angular and spatial grids.
 
-Each wavelength retains its forward diffuse solution and compact scalar direct
-forcing. Native JVP/VJP products reuse these values, and tolerance-controlled
-solves can use the diffuse solution as a warm start
-after atmosphere updates. Fixed-iteration solves continue to start from zero
-after updates.
+In the compact scalar path, each wavelength retains its forward diffuse solution
+and direct forcing. Native JVP/VJP products reuse these values, and
+tolerance-controlled solves can use the diffuse solution as a warm start after
+atmosphere updates. Fixed-iteration solves continue to start from zero after
+updates.
 
 Reusing a worker for another wavelength recomputes the wavelength-dependent
 transport and first-order derivative quantities. Forcing is reused only while
 the atmosphere revision and geometry remain current. This trades repeated
 assembly for lower resident memory while preserving each wavelength's physical
-values. Surface-only updates also recompute volume
-transport and first-order forcing instead of retaining duplicate volume
-buffers.
+values. Surface-only updates also recompute volume transport and first-order
+forcing instead of retaining duplicate volume buffers.
 
 Finalized source interpolation uses byte or 16-bit CSR slots when the row fits,
 with a 32-bit fallback for larger rows. Compact weight records reconstruct every
@@ -91,9 +90,9 @@ four original weights or explicit stencils. If the floating-point rounding mode
 changes, the provider materializes the original weights before reuse.
 
 Shared transport CSR columns use 16 bits when the complete source grid fits.
-Solar interpolation uses
-one-byte row counts when each row has at most 255 entries, and row-relative
-16-bit column indices when every span fits and the representation saves memory.
+Solar interpolation uses one-byte row counts when each row has at most 255
+entries, and row-relative 16-bit column indices when every span fits and the
+representation saves memory.
 Wider rows and indices retain their original forms. Each product selects its
 storage format before its accumulation loop, preserving the original entry
 order. Finalization also releases unused construction capacity.
@@ -105,16 +104,15 @@ Pattern IDs use 16 bits when possible, with wider IDs or the existing row
 representations as fallbacks. Pattern storage is selected only when it reduces
 retained memory; it does not combine or reorder floating-point contributions.
 
-Scalar first-order products, diffuse solves and line-of-sight derivative
-products lease temporary workspace from calling-thread arenas. Resident local
-engines can reuse this scratch because no product retains a view after its call
-returns. First-order arrays grow to the largest requested size and products use
-only their active ranges. Line-of-sight arrays follow the active transport shape;
-solver history is reset for each solve. Source threads receive separate solar
-cotangent ranges, and nested calls
-use private scratch while the arena is busy. Physical transmission and medium
-caches, derivative lifetimes, and each wavelength's warm-start state remain
-owned by their engines.
+Compact scalar first-order products, scalar diffuse solves and scalar
+line-of-sight derivative products lease temporary workspace from calling-thread
+arenas. Resident local engines can reuse this scratch because no product retains
+a view after its call returns. First-order arrays grow to the largest requested
+size and products use only their active ranges. Line-of-sight arrays follow the
+active transport shape; solver history is reset for each solve. Source threads
+receive separate solar cotangent ranges, and nested calls use private scratch
+while the arena is busy. Physical transmission and medium caches, derivative
+lifetimes, and each wavelength's warm-start state remain owned by their engines.
 
 Geometry and ray transport maps share immutable CSR generations rather than
 copying their index arrays. A geometry refresh creates a new generation;

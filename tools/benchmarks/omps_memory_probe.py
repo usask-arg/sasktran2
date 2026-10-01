@@ -231,7 +231,7 @@ def main() -> int:
     parser.add_argument(
         "--profile-geometry",
         action="store_true",
-        help="Log bytes reclaimed from completed geometry vector capacities",
+        help="Log native memory accounting for geometry, caches and temporary workspace",
     )
     parser.add_argument("--wheel", type=Path)
     parser.add_argument(
