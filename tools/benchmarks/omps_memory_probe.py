@@ -77,7 +77,7 @@ def runtime_identity(python: Path, environment: dict[str, str], root: Path) -> d
 
 def package_manifest(package: Path) -> dict[str, str]:
     return {
-        str(path.relative_to(package)): sha256(path)
+        path.relative_to(package).as_posix(): sha256(path)
         for path in sorted((package / "sasktran2").rglob("*"))
         if path.is_file() and "__pycache__" not in path.parts
     }

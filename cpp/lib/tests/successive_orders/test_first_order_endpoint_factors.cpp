@@ -211,10 +211,15 @@ namespace {
         provider.calculate_with_transport(wavelength, 0, transport, result[1]);
         result[2] = transport.values();
         provider.project_transport_state(state, result[11], result[12]);
+        // Compact JVP preserves the caller's already prepared primal forcing.
+        result[3] = result[0];
         provider.calculate_jvp(wavelength, 0, tangent, result[3], result[4]);
+        require_bits(result[3], result[0]);
+        result[5] = result[1];
         provider.calculate_jvp_with_transport(wavelength, 0, tangent,
                                               result[11], result[12], result[7],
                                               result[5], result[6]);
+        require_bits(result[5], result[1]);
         provider.accumulate_vjp(wavelength, 0, cotangent, result[8]);
         provider.accumulate_vjp_with_transport(wavelength, 0, state, cotangent,
                                                result[9]);
