@@ -301,9 +301,7 @@ def test_1d_empty_ray_does_not_shift_following_rays(single_scatter_source):
     geometry = geometry1d(cos_sza, refracting=False)
     model_config = config(single_scatter_source, False)
 
-    alone = radiance(
-        geometry, limb_viewing(cos_sza, [20_000.0], [0.4]), model_config
-    )
+    alone = radiance(geometry, limb_viewing(cos_sza, [20_000.0], [0.4]), model_config)
     # The 70 km tangent altitude is above the top of the atmosphere
     with_empty = radiance(
         geometry,
@@ -326,9 +324,7 @@ def test_1d_table_single_scatter_derivatives_match_exact(solar_refraction):
         atmosphere = rayleigh_atmosphere(
             geometry, model_config, calculate_derivatives=True
         )
-        return sk.Engine(model_config, geometry, viewing).calculate_radiance(
-            atmosphere
-        )
+        return sk.Engine(model_config, geometry, viewing).calculate_radiance(atmosphere)
 
     exact = calculate(sk.SingleScatterSource.Exact)
     table = calculate(sk.SingleScatterSource.Table)

@@ -48,8 +48,7 @@ namespace {
             sasktran2::grids::outofbounds::extend,
             sasktran2::grids::interpolation::linear);
         sasktran2::Coordinates coordinates(0.5, 0, earth_radius_m);
-        sasktran2::Geometry1D geometry(std::move(coordinates),
-                                       std::move(grid));
+        sasktran2::Geometry1D geometry(std::move(coordinates), std::move(grid));
 
         const auto& levels = geometry.altitude_grid().grid();
         for (Eigen::Index i = 0; i < levels.size(); ++i) {
@@ -83,15 +82,15 @@ namespace {
         using State = std::array<double, 4>;
         const auto derivative = [](const State& y) {
             const double sin_zenith = std::sin(y[2]);
-            return State{
-                std::cos(y[2]), sin_zenith / y[0],
-                -sin_zenith * (1.0 / y[0] + log_refractive_index_gradient),
-                extinction(y[0] - earth_radius_m)};
+            return State{std::cos(y[2]), sin_zenith / y[0],
+                         -sin_zenith *
+                             (1.0 / y[0] + log_refractive_index_gradient),
+                         extinction(y[0] - earth_radius_m)};
         };
         const auto rk4_step = [&](const State& y, double h) {
             const auto add = [](const State& a, const State& b, double s) {
-                return State{a[0] + s * b[0], a[1] + s * b[1],
-                             a[2] + s * b[2], a[3] + s * b[3]};
+                return State{a[0] + s * b[0], a[1] + s * b[1], a[2] + s * b[2],
+                             a[3] + s * b[3]};
             };
             const State k1 = derivative(y);
             const State k2 = derivative(add(y, k1, h / 2.0));
@@ -100,7 +99,8 @@ namespace {
             State result;
             for (int i = 0; i < 4; ++i) {
                 result[i] =
-                    y[i] + h / 6.0 * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
+                    y[i] +
+                    h / 6.0 * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
             }
             return result;
         };
@@ -175,8 +175,7 @@ TEST_CASE("Refraction - Apparent sun direction reaches the sun",
         start_invariant > surface_invariant
             ? EIGEN_PI - std::asin(surface_invariant / start_invariant)
             : EIGEN_PI / 2.0;
-    const auto grazing =
-        integrate_reference_ray(radius, grazing_zenith - 1e-7);
+    const auto grazing = integrate_reference_ray(radius, grazing_zenith - 1e-7);
 
     CAPTURE(altitude, geometric_sza_deg, illuminated,
             grazing.asymptotic_angle - geometric_sza, grazing.hits_ground);
@@ -233,15 +232,14 @@ TEST_CASE("Refraction - Refracted solar ray optical depth",
     for (std::size_t layer = 0; layer < traced.layers.size(); ++layer) {
         const auto weights = traced.optical_depth_weights(layer);
         for (std::size_t i = 0; i < weights.size(); ++i) {
-            optical_depth +=
-                weights[i].second * extinction_at_level(levels(weights[i].first));
+            optical_depth += weights[i].second *
+                             extinction_at_level(levels(weights[i].first));
         }
     }
 
     const auto reference = integrate_reference_ray(
         position.norm(), zenith_angle(position, ray_to_sun.look_away));
-    CAPTURE(altitude, geometric_sza_deg, optical_depth,
-            reference.optical_depth,
+    CAPTURE(altitude, geometric_sza_deg, optical_depth, reference.optical_depth,
             optical_depth / reference.optical_depth - 1.0);
     REQUIRE(!reference.hits_ground);
     // The ray tracer evaluates the extinction of a refracted layer along the
@@ -295,9 +293,8 @@ TEST_CASE("Refraction - Observer inside the atmosphere conserves the ray "
     // and the traced layers reach down to it
     double minimum_radius = std::numeric_limits<double>::max();
     for (const auto& layer : traced.layers) {
-        minimum_radius = std::min({minimum_radius, layer.entrance.radius(),
-                                   layer.exit.radius()});
+        minimum_radius = std::min(
+            {minimum_radius, layer.entrance.radius(), layer.exit.radius()});
     }
     REQUIRE(std::abs(minimum_radius - traced.tangent_radius) < 1e-3);
 }
-
