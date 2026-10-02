@@ -501,6 +501,24 @@ class Config:
         self._config.successive_orders_reduced_horizon_quadrature = value
 
     @property
+    def successive_orders_legacy_interpolation(self) -> bool:
+        """Restore the legacy successive-orders source interpolation.
+
+        Disabled by default, in which case spherical successive-orders
+        calculations rotate each source column's angular grid into its local
+        solar frame, so neighbouring columns sample identical local
+        directions, and Geometry2D interpolates the observer line-of-sight
+        source cubically in horizontal angle when at least four horizontal
+        source columns exist. Set this to ``True`` to use one globally
+        oriented angular grid and bilinear line-of-sight interpolation.
+        """
+        return self._config.successive_orders_legacy_interpolation
+
+    @successive_orders_legacy_interpolation.setter
+    def successive_orders_legacy_interpolation(self, value: bool):
+        self._config.successive_orders_legacy_interpolation = value
+
+    @property
     def successive_orders_altitude_grid_m(self) -> np.ndarray | None:
         """Explicit source-altitude grid for ``SuccessiveOrders``, in metres.
 

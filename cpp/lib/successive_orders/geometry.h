@@ -24,6 +24,10 @@ namespace sasktran2::successive_orders {
         bool include_refraction = false;
         bool use_reduced_horizon_quadrature = false;
 
+        /** Use one globally oriented angular grid and bilinear observer-LOS
+         * interpolation instead of frame-aligned grids and cubic LOS. */
+        bool legacy_interpolation = false;
+
         /** Empty selects one source altitude at each atmosphere-layer
          * midpoint. */
         std::vector<double> altitude_grid_m;

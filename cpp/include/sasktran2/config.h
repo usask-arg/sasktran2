@@ -518,6 +518,20 @@ namespace sasktran2 {
             m_successive_orders_reduced_horizon_quadrature = enabled;
         }
 
+        /** Restore the legacy successive-orders source interpolation: one
+         * globally oriented angular grid shared by every source point and
+         * bilinear observer-LOS interpolation. By default spherical geometries
+         * align each source column's angular grid with its local solar frame
+         * and Geometry2D interpolates the observer-LOS source cubically in
+         * horizontal angle when at least four horizontal source columns
+         * exist. */
+        bool successive_orders_legacy_interpolation() const {
+            return m_successive_orders_legacy_interpolation;
+        }
+        void set_successive_orders_legacy_interpolation(bool enabled) {
+            m_successive_orders_legacy_interpolation = enabled;
+        }
+
         /** Explicit source altitude grid in metres. An empty grid selects the
          * source's default atmosphere-derived grid. */
         const std::vector<double>& successive_orders_altitude_grid_m() const {
@@ -827,6 +841,7 @@ namespace sasktran2 {
         int m_successive_orders_anderson_depth = 3;
         double m_successive_orders_damping = 1.0;
         bool m_successive_orders_reduced_horizon_quadrature = true;
+        bool m_successive_orders_legacy_interpolation = false;
         std::vector<double> m_successive_orders_altitude_grid_m;
         std::vector<double> m_successive_orders_horizontal_angle_grid_radians;
 

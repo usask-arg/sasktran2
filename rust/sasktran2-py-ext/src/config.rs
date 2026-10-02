@@ -561,6 +561,21 @@ impl PyConfig {
     }
 
     #[getter]
+    fn successive_orders_legacy_interpolation(&self) -> PyResult<bool> {
+        self.config
+            .successive_orders_legacy_interpolation()
+            .into_pyresult()
+    }
+
+    #[setter]
+    fn set_successive_orders_legacy_interpolation(&mut self, enabled: bool) -> PyResult<()> {
+        self.config
+            .with_successive_orders_legacy_interpolation(enabled)
+            .into_pyresult()?;
+        Ok(())
+    }
+
+    #[getter]
     fn successive_orders_altitude_grid_m(&self) -> PyResult<Option<Vec<f64>>> {
         let altitude_grid_m = self
             .config
