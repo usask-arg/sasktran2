@@ -270,6 +270,10 @@ namespace sasktran2::successive_orders {
 
         std::unique_ptr<sasktran2::grids::SourceLocationInterpolator>
             m_location_interpolator;
+        /** Observer-LOS interpolation when it differs from diffuse-ray
+         * interpolation; null otherwise. */
+        std::unique_ptr<sasktran2::grids::SourceLocationInterpolator>
+            m_los_location_interpolator;
         std::vector<std::unique_ptr<AngularGridPair>> m_angular_grids;
         std::vector<SourcePoint> m_source_points;
         std::vector<int> m_incoming_point_offsets;

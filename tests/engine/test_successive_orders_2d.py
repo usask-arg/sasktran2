@@ -931,3 +931,67 @@ def test_2d_rejects_legacy_successive_orders_source():
 
     with pytest.raises(NotImplementedError, match="successive-orders"):
         sk.Engine(config, geometry2d(), viewing_geometry())
+
+
+def _convergence_radiance(num_columns: int, *, legacy: bool) -> np.ndarray:
+    altitudes = np.arange(0.0, 60_001.0, 2_000.0)
+    horizontal = np.deg2rad(np.arange(-15.0, 15.01, 1.0))
+    geometry = sk.Geometry2D(
+        cos_sza=float(np.cos(np.deg2rad(60.0))),
+        solar_azimuth=0.0,
+        earth_radius_m=EARTH_RADIUS_M,
+        altitude_grid_m=altitudes,
+        horizontal_angle_grid_radians=horizontal,
+    )
+    config = successive_orders_config(
+        single_scatter_source=sk.SingleScatterSource.NoSource
+    )
+    config.num_threads = 4
+    config.num_successive_orders_incoming = 26
+    config.num_successive_orders_outgoing = 26
+    config.num_successive_orders_iterations = 30
+    config.successive_orders_relative_tolerance = 1.0e-8
+    config.successive_orders_altitude_grid_m = np.arange(1_000.0, 59_001.0, 4_000.0)
+    config.num_sza = num_columns
+    config.successive_orders_legacy_interpolation = legacy
+    viewing = sk.ViewingGeometry()
+    for tangent in (15_000.0, 25_000.0, 35_000.0):
+        viewing.add_ray(
+            sk.TangentAltitude(
+                tangent_altitude_m=tangent,
+                observer_altitude_m=600_000.0,
+                horizontal_angle_radians=0.0,
+                viewing_azimuth_radians=0.0,
+            )
+        )
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=np.array([450.0]),
+        calculate_derivatives=False,
+    )
+    _, altitude = np.meshgrid(horizontal, altitudes, indexing="ij")
+    atmosphere.storage.total_extinction[:, 0] = (
+        1.2e-5 * np.exp(-altitude / 7_500.0)
+    ).ravel()
+    atmosphere.storage.ssa[:, 0] = 0.999
+    atmosphere.leg_coeff.a1[0] = 1.0
+    atmosphere.leg_coeff.a1[2] = 0.5
+    atmosphere.surface.albedo[:] = 0.3
+    engine = sk.Engine(config, geometry, viewing)
+    return engine.calculate_radiance(atmosphere).radiance.values.ravel()
+
+
+def test_2d_aligned_cubic_interpolation_needs_fewer_columns():
+    aligned_reference = _convergence_radiance(31, legacy=False)
+    legacy_reference = _convergence_radiance(31, legacy=True)
+    aligned_error = np.max(
+        np.abs(_convergence_radiance(7, legacy=False) / aligned_reference - 1)
+    )
+    legacy_error = np.max(
+        np.abs(_convergence_radiance(11, legacy=True) / legacy_reference - 1)
+    )
+    # Measured: aligned (cubic LOS, 7 columns) 5.8e-5 against legacy
+    # (bilinear LOS, 11 columns) 5.1e-4. Aligned grids with a bilinear LOS
+    # gave 6.3e-4 at 7 columns.
+    assert aligned_error < legacy_error / 2

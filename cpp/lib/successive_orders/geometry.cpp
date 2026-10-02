@@ -1,4 +1,5 @@
 #include "geometry.h"
+#include "horizontal_interpolation.h"
 
 #include <sasktran2/grids.h>
 
@@ -440,11 +441,13 @@ namespace sasktran2::successive_orders {
                 sasktran2::grids::AltitudeGrid&& altitude_grid,
                 const sasktran2::Geometry2D& geometry,
                 int num_horizontal_points,
-                const std::vector<double>& horizontal_angle_grid_radians)
+                const std::vector<double>& horizontal_angle_grid_radians,
+                HorizontalInterpolation horizontal_interpolation)
                 : SourceLocationInterpolator(std::move(altitude_grid)),
                   m_geometry(geometry), m_horizontal_grid(make_horizontal_grid(
                                             geometry, num_horizontal_points,
-                                            horizontal_angle_grid_radians)) {}
+                                            horizontal_angle_grid_radians)),
+                  m_horizontal_interpolation(horizontal_interpolation) {}
 
             const Eigen::VectorXd& horizontal_grid() const {
                 return m_horizontal_grid.grid();
@@ -501,17 +504,17 @@ namespace sasktran2::successive_orders {
                 std::vector<std::pair<int, double>>& weights,
                 int& num_interp) override {
                 std::array<int, 2> altitude_indices;
-                std::array<int, 2> horizontal_indices;
+                std::array<int, 4> horizontal_indices;
                 std::array<double, 2> altitude_weights;
-                std::array<double, 2> horizontal_weights;
+                std::array<double, 4> horizontal_weights;
                 int num_altitudes = 0;
                 int num_horizontal = 0;
                 m_altitude_grid.calculate_interpolation_weights(
                     m_geometry.altitude_at(location), altitude_indices,
                     altitude_weights, num_altitudes);
-                m_horizontal_grid.calculate_interpolation_weights(
-                    m_geometry.horizontal_angle_at(location),
-                    horizontal_indices, horizontal_weights, num_horizontal);
+                horizontal_stencil(m_geometry.horizontal_angle_at(location),
+                                   horizontal_indices, horizontal_weights,
+                                   num_horizontal);
 
                 num_interp = num_altitudes * num_horizontal;
                 weights.resize(static_cast<std::size_t>(num_interp));
@@ -535,11 +538,11 @@ namespace sasktran2::successive_orders {
                 const sasktran2::Location& location,
                 std::vector<std::pair<int, double>>& weights,
                 int& num_interp) const override {
-                std::array<int, 2> horizontal_indices;
-                std::array<double, 2> horizontal_weights;
-                m_horizontal_grid.calculate_interpolation_weights(
-                    m_geometry.horizontal_angle_at(location),
-                    horizontal_indices, horizontal_weights, num_interp);
+                std::array<int, 4> horizontal_indices;
+                std::array<double, 4> horizontal_weights;
+                horizontal_stencil(m_geometry.horizontal_angle_at(location),
+                                   horizontal_indices, horizontal_weights,
+                                   num_interp);
                 weights.resize(static_cast<std::size_t>(num_interp));
                 for (int horizontal = 0; horizontal < num_interp;
                      ++horizontal) {
@@ -550,6 +553,34 @@ namespace sasktran2::successive_orders {
             }
 
           private:
+            /** Horizontal nodes and weights for one location.
+             *
+             * Cubic mode uses a four-column Lagrange stencil strictly inside
+             * the source-column range and the linear grid stencil elsewhere,
+             * so the end intervals extend constantly as in linear mode.
+             */
+            void horizontal_stencil(double angle, std::array<int, 4>& indices,
+                                    std::array<double, 4>& weights,
+                                    int& count) const {
+                const auto& grid = m_horizontal_grid.grid();
+                const auto size = grid.size();
+                if (m_horizontal_interpolation ==
+                        HorizontalInterpolation::cubic &&
+                    size >= 4 && angle > grid[0] && angle < grid[size - 1]) {
+                    cubic_lagrange_weights(grid, angle, indices, weights);
+                    count = 4;
+                    return;
+                }
+                std::array<int, 2> linear_indices{};
+                std::array<double, 2> linear_weights{};
+                m_horizontal_grid.calculate_interpolation_weights(
+                    angle, linear_indices, linear_weights, count);
+                for (int index = 0; index < count; ++index) {
+                    indices[index] = linear_indices[index];
+                    weights[index] = linear_weights[index];
+                }
+            }
+
             static sasktran2::grids::Grid make_horizontal_grid(
                 const sasktran2::Geometry2D& geometry,
                 int num_horizontal_points,
@@ -606,6 +637,7 @@ namespace sasktran2::successive_orders {
 
             const sasktran2::Geometry2D& m_geometry;
             const sasktran2::grids::Grid m_horizontal_grid;
+            const HorizontalInterpolation m_horizontal_interpolation;
         };
 
         std::vector<InterpolationWeight>
@@ -1142,6 +1174,9 @@ namespace sasktran2::successive_orders {
         std::vector<std::exception_ptr> thread_exceptions(
             m_settings.num_threads);
         std::atomic<bool> failed{false};
+        auto& los_interpolator = m_los_location_interpolator
+                                     ? *m_los_location_interpolator
+                                     : *m_location_interpolator;
 
 #pragma omp parallel for num_threads(m_settings.num_threads) schedule(dynamic)
         for (int ray_index = 0; ray_index < num_rays; ++ray_index) {
@@ -1156,7 +1191,7 @@ namespace sasktran2::successive_orders {
             try {
                 compile_ray_interpolation(
                     internal_viewing.traced_rays[ray_index], m_geometry,
-                    *m_location_interpolator, m_source_points,
+                    los_interpolator, m_source_points,
                     m_los_interpolation[ray_index],
                     interpolation_scratch[thread_index]);
             } catch (...) {
@@ -1489,6 +1524,7 @@ namespace sasktran2::successive_orders {
                 sasktran2::grids::AltitudeSZASourceLocationInterpolator>(
                 std::move(altitude_grid), std::move(cos_sza_grid),
                 m_geometry_1d->altitude_grid().grid()[0]);
+            m_los_location_interpolator.reset();
             m_source_horizontal_angles_rad.clear();
         } else {
             m_source_cos_sza.clear();
@@ -1496,12 +1532,28 @@ namespace sasktran2::successive_orders {
                 std::make_unique<AltitudeAngleSourceLocationInterpolator>(
                     std::move(altitude_grid), *m_geometry_2d,
                     m_settings.num_sza,
-                    m_settings.horizontal_angle_grid_radians);
+                    m_settings.horizontal_angle_grid_radians,
+                    HorizontalInterpolation::linear);
             const auto& horizontal_grid = interpolator->horizontal_grid();
             m_source_horizontal_angles_rad.assign(horizontal_grid.data(),
                                                   horizontal_grid.data() +
                                                       horizontal_grid.size());
             m_location_interpolator = std::move(interpolator);
+
+            // The observer LOS samples the stored source between columns,
+            // where a four-column stencil is much more accurate. Diffuse
+            // rays keep the two-column stencil, which bounds the transport
+            // weights the iteration applies on every order.
+            m_los_location_interpolator.reset();
+            if (!m_settings.legacy_interpolation &&
+                m_source_horizontal_angles_rad.size() >= 4) {
+                m_los_location_interpolator =
+                    std::make_unique<AltitudeAngleSourceLocationInterpolator>(
+                        make_altitude_grid(), *m_geometry_2d,
+                        m_settings.num_sza,
+                        m_settings.horizontal_angle_grid_radians,
+                        HorizontalInterpolation::cubic);
+            }
         }
 
         try {

@@ -1,4 +1,5 @@
 #include "../../successive_orders/geometry.h"
+#include "../../successive_orders/horizontal_interpolation.h"
 
 #include <sasktran2/solartransmission.h>
 #include <sasktran2/test_helper.h>
@@ -11,6 +12,7 @@
 #include <limits>
 #include <map>
 #include <numeric>
+#include <set>
 #include <stdexcept>
 #include <vector>
 
@@ -987,6 +989,130 @@ TEST_CASE("Successive-orders legacy interpolation keeps one global grid",
         REQUIRE(source.source_point(index).angular_class() == index);
     }
 }
+
+TEST_CASE("Successive-orders LOS uses a four-column stencil only on the LOS",
+          "[successive_orders][geometry][geometry2d]") {
+    Eigen::VectorXd altitudes = Eigen::VectorXd::LinSpaced(7, 0.0, 60000.0);
+    Eigen::VectorXd horizontal = Eigen::VectorXd::LinSpaced(9, -0.2, 0.2);
+    sasktran2::Geometry2D geometry(0.6, 0.0, 6372000.0, std::move(altitudes),
+                                   std::move(horizontal),
+                                   sasktran2::grids::interpolation::linear);
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+
+    // A limb ray tangent at 20 km over the centre column stays inside the
+    // horizontal range and crosses the source columns at -0.1, 0 and 0.1.
+    sasktran2::viewinggeometry::InternalViewingGeometry los;
+    los.traced_rays.resize(1);
+    {
+        const auto& coordinates = geometry.coordinates();
+        const Eigen::Vector3d tangent_point =
+            (coordinates.earth_radius() + 20000.0) *
+            coordinates.unit_vector_from_angles(0.0, 0.0);
+        const Eigen::Vector3d forward =
+            coordinates.local_x_y_from_angles(0.0, 0.0).first.normalized();
+        sasktran2::viewinggeometry::ViewingRay ray;
+        ray.observer.position = tangent_point - 3.0e6 * forward;
+        ray.look_away = forward;
+        raytracer.trace_ray(ray, los.traced_rays.front());
+    }
+    const auto& traced = los.traced_rays.front();
+    REQUIRE(!traced.ground_is_hit);
+    double minimum_angle = std::numeric_limits<double>::infinity();
+    double maximum_angle = -std::numeric_limits<double>::infinity();
+    for (const auto& layer : traced.layers) {
+        sasktran2::Location midpoint;
+        midpoint.position =
+            0.5 * (layer.entrance.position + layer.exit.position);
+        const double angle = geometry.horizontal_angle_at(midpoint);
+        minimum_angle = std::min(minimum_angle, angle);
+        maximum_angle = std::max(maximum_angle, angle);
+    }
+    CAPTURE(minimum_angle, maximum_angle);
+    REQUIRE(minimum_angle > -0.2);
+    REQUIRE(minimum_angle < -0.1);
+    REQUIRE(maximum_angle > 0.1);
+    REQUIRE(maximum_angle < 0.2);
+
+    struct ColumnCounts {
+        int maximum = 0;
+        int layers_with_four = 0;
+    };
+    for (const bool legacy_interpolation : {false, true}) {
+        DYNAMIC_SECTION("legacy_interpolation=" << legacy_interpolation) {
+            sasktran2::successive_orders::SourceGeometrySettings settings;
+            settings.num_incoming = 14;
+            settings.num_outgoing = 14;
+            settings.num_sza = 5;
+            settings.num_threads = 1;
+            settings.legacy_interpolation = legacy_interpolation;
+            sasktran2::successive_orders::SourceGeometry1D source(raytracer,
+                                                                  geometry);
+            source.initialize(los, settings);
+            REQUIRE(source.source_horizontal_angles_rad().size() == 5);
+
+            const int num_altitudes =
+                static_cast<int>(source.source_altitudes_m().size());
+            const auto& offsets = source.outgoing_point_offsets();
+            const auto count_columns =
+                [&](const std::vector<
+                        sasktran2::successive_orders::RayInterpolation>& rays,
+                    const auto& columns_for_ray, bool require_unit_sum) {
+                    ColumnCounts counts;
+                    for (std::size_t ray = 0; ray < rays.size(); ++ray) {
+                        const auto columns = columns_for_ray(ray).to_vector();
+                        for (std::size_t layer = 0;
+                             layer < rays[ray].layers.size(); ++layer) {
+                            std::set<int> touched;
+                            double weight_sum = 0.0;
+                            for (const auto& weight :
+                                 rays[ray].source_for_layer(layer)) {
+                                const int outgoing =
+                                    columns[weight.row_inner_index()];
+                                const int point = static_cast<int>(
+                                    std::upper_bound(offsets.begin(),
+                                                     offsets.end(), outgoing) -
+                                    offsets.begin() - 1);
+                                if (point < source.num_interior_points()) {
+                                    touched.insert(point / num_altitudes);
+                                }
+                                weight_sum += weight.weight();
+                            }
+                            if (require_unit_sum) {
+                                REQUIRE(weight_sum ==
+                                        Catch::Approx(1.0).margin(1.0e-12));
+                            }
+                            const int count = static_cast<int>(touched.size());
+                            counts.maximum = std::max(counts.maximum, count);
+                            counts.layers_with_four += count == 4 ? 1 : 0;
+                        }
+                    }
+                    return counts;
+                };
+
+            const auto los_counts = count_columns(
+                source.los_interpolation(),
+                [&](std::size_t ray) {
+                    return source.los_transport_columns_for_ray(ray);
+                },
+                true);
+            const auto incoming_counts = count_columns(
+                source.incoming_interpolation(),
+                [&](std::size_t ray) {
+                    return source.transport_columns_for_ray(ray);
+                },
+                false);
+            CAPTURE(los_counts.maximum, los_counts.layers_with_four,
+                    incoming_counts.maximum);
+            if (legacy_interpolation) {
+                REQUIRE(los_counts.maximum == 2);
+            } else {
+                REQUIRE(los_counts.maximum == 4);
+                REQUIRE(los_counts.layers_with_four > 0);
+            }
+            REQUIRE(incoming_counts.maximum <= 2);
+        }
+    }
+}
 #endif
 
 TEST_CASE("Successive-orders aligned grids equal legacy grids in the "
@@ -1541,4 +1667,37 @@ TEST_CASE("Successive-orders frame-aligned Lebedev grids avoid exactly radial "
             }
         }
     }
+}
+
+TEST_CASE("Successive-orders cubic horizontal weights reproduce cubics",
+          "[successive_orders][geometry]") {
+    Eigen::VectorXd grid(6);
+    grid << 0.0, 0.3, 0.7, 1.2, 2.0, 2.1;
+    const auto cubic = [](double x) {
+        return 1.0 + 2.0 * x - 0.5 * x * x + 0.3 * x * x * x;
+    };
+    std::array<int, 4> indices{};
+    std::array<double, 4> weights{};
+    for (double x = 0.01; x < 2.1; x += 0.0137) {
+        sasktran2::successive_orders::cubic_lagrange_weights(grid, x, indices,
+                                                             weights);
+        double value = 0.0;
+        double total = 0.0;
+        for (int m = 0; m < 4; ++m) {
+            REQUIRE(indices[m] == indices[0] + m);
+            value += weights[m] * cubic(grid[indices[m]]);
+            total += weights[m];
+        }
+        REQUIRE(indices[0] >= 0);
+        REQUIRE(indices[3] <= 5);
+        REQUIRE(value == Catch::Approx(cubic(x)).epsilon(1.0e-12));
+        REQUIRE(total == Catch::Approx(1.0).epsilon(1.0e-13));
+    }
+    sasktran2::successive_orders::cubic_lagrange_weights(grid, 0.7, indices,
+                                                         weights);
+    REQUIRE(indices[0] == 1);
+    REQUIRE(weights[1] == 1.0);
+    REQUIRE(weights[0] == 0.0);
+    REQUIRE(weights[2] == 0.0);
+    REQUIRE(weights[3] == 0.0);
 }
