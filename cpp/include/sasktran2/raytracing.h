@@ -552,7 +552,7 @@ namespace sasktran2::raytracing {
             } else {
                 dt1 = t0 - t1;
                 if (abs(rt) < 10) {
-                    dt2 = 0.5 * ((r0 + t0 - r1 * t1));
+                    dt2 = 0.5 * (r0 * t0 - r1 * t1);
                 } else {
                     dt2 = 0.5 * ((r0 * t0 - r1 * t1) +
                                  rt * rt * log((r0 + t0) / (r1 + t1)));

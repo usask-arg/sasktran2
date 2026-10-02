@@ -258,3 +258,44 @@ TEST_CASE("Spherical Shell Raytracer - Exactly radial rays have finite optical "
     }
     REQUIRE(traced_layers > 0);
 }
+
+TEST_CASE("Spherical Shell Raytracer - Near-radial layers split their optical "
+          "depth evenly",
+          "[sasktran2][raytracing]") {
+    // For extinction varying linearly with radius, a straight radial path
+    // through a layer has endpoint weights of half the path length each.
+    // Ascending and descending layers both take the near-radial branch with
+    // t1 >= t0, because t1 - t0 is the chord length along the layer.
+    const double lower_radius = 6372000.0 + 10000.0;
+    const double thickness = 1000.0;
+    const Eigen::Vector3d up = Eigen::Vector3d(0.3, -0.2, 0.9).normalized();
+    const Eigen::Vector3d side = up.unitOrthogonal();
+    // Tangent radii of zero and about 0.6 m, both below the 10 m threshold.
+    for (const double tilt : {0.0, 1.0e-7}) {
+        const Eigen::Vector3d direction = (up + tilt * side).normalized();
+        const Eigen::Vector3d lower = lower_radius * up;
+        const Eigen::Vector3d upper = lower + thickness * direction;
+        for (const bool descending : {false, true}) {
+            INFO("tilt=" << tilt << " descending=" << descending);
+            sasktran2::raytracing::SphericalLayer layer{};
+            layer.entrance.position = descending ? upper : lower;
+            layer.exit.position = descending ? lower : upper;
+            layer.layer_distance = thickness;
+            layer.curvature_factor = 1.0;
+            sasktran2::raytracing::add_od_quadrature(layer);
+
+            // The endpoint formula subtracts products of order r^2, which
+            // resolves the weights to about 1e-8 relative.
+            const double half_path =
+                0.5 * layer.layer_distance * layer.curvature_factor;
+            REQUIRE(layer.od_quad_start ==
+                    Catch::Approx(half_path).epsilon(1.0e-7));
+            REQUIRE(layer.od_quad_end ==
+                    Catch::Approx(half_path).epsilon(1.0e-7));
+            REQUIRE(layer.od_quad_start_fraction ==
+                    Catch::Approx(0.5).epsilon(1.0e-7));
+            REQUIRE(layer.od_quad_end_fraction ==
+                    Catch::Approx(0.5).epsilon(1.0e-7));
+        }
+    }
+}
