@@ -524,8 +524,10 @@ namespace sasktran2 {
          * align each source column's angular grid with its local solar frame
          * and Geometry2D interpolates the observer-LOS source cubically in
          * horizontal angle when at least four horizontal source columns
-         * exist and the solar zenith angle is below 90 degrees at every
-         * column of the stencil; otherwise bilinearly. */
+         * exist, the solar zenith angle is below 90 degrees at every column
+         * of the stencil and the absolute stencil weights sum to at most 2;
+         * otherwise bilinearly. The weight bound can only reject stencils on
+         * non-uniform explicit column grids; uniform grids always meet it. */
         bool successive_orders_legacy_interpolation() const {
             return m_successive_orders_legacy_interpolation;
         }

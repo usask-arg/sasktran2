@@ -81,23 +81,38 @@ zenith and solar azimuth). Neighbouring columns therefore sample identical
 local directions, so interpolating between them no longer mixes different
 angular nodes. This removes an error floor that did not shrink as columns were
 added, and it makes 1D results insensitive to the solar-azimuth convention. The
-alignment has no memory cost.
+alignment has no memory cost for scalar calculations or with reduced-horizon
+quadrature. Vector calculations with plain Lebedev quadrature build one angular
+basis per column instead of sharing one.
 
 For {py:class}`sasktran2.Geometry2D`, the observer line-of-sight source is also
 interpolated cubically in horizontal angle with four-point Lagrange weights.
-This is used when at least four horizontal source columns exist and the solar
-zenith angle is below 90 degrees at every column of the four-column stencil.
-Otherwise, and for diffuse incoming rays and ground forcing, the interpolation
-is bilinear. Cubic weights can be negative, so the sunlit condition avoids
-mixing a dark night-side column with bright dayside ones; it reduces, but does
-not guarantee freedom from, negative radiances near the terminator. Cubic
-weights roughly double the memory used by the line-of-sight source weights.
+This is used when at least four horizontal source columns exist, the solar
+zenith angle is below 90 degrees at every column of the four-column stencil,
+and the absolute values of the four weights sum to at most 2. Otherwise, and
+for diffuse incoming rays and ground forcing, the interpolation is bilinear.
+Cubic weights can be negative, so the sunlit condition avoids mixing a dark
+night-side column with bright dayside ones; it reduces, but does not guarantee
+freedom from, negative radiances near the terminator. The weight bound rejects
+the large weights that strongly non-uniform explicit column grids produce;
+uniform grids always meet it. Cubic weights roughly double the memory used by
+the line-of-sight source weights.
 
-In practice, about seven columns now match or beat the accuracy that previously
-needed eleven for solar zenith angles below about 85 degrees. Terminator
-conditions remain challenging and still benefit from additional columns. The
-default results differ from earlier versions at the level of the angular
-discretization, up to about 1e-2 at 26 directions and much less at 110.
+In the scalar dayside benchmark cases (110 directions, solar zenith angles of
+30 to 80 degrees), seven default columns gave a maximum multiple-scatter error
+1.7 to 3.9 times smaller than eleven legacy columns, with about 30–35% less
+time and memory. The benefit relies on every column of each line-of-sight
+stencil being sunlit, so it depends on the width of the domain and on the
+position of the terminator. Terminator conditions remain challenging and still
+benefit from additional columns.
+
+The default results differ from earlier versions at the level of the angular
+discretization. The dense-column limits of the default and legacy schemes
+differ by up to about 1e-2 in multiple-scatter radiance at 110 directions
+(1.3e-2 in the oblique benchmark case), shrinking to about 1e-3 at 194
+directions. Geometry1D results with a non-zero solar azimuth can change by
+more, because legacy results depended on the solar-azimuth convention by up to
+a few times 1e-2 for vector calculations.
 
 Set {py:attr}`sasktran2.Config.successive_orders_legacy_interpolation` to
 `True` to restore the previous behaviour: one globally oriented angular grid and

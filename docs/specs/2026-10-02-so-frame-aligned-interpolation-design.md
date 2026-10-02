@@ -146,6 +146,16 @@ mismatch. The non-reduced vector path also moves to per-column bases.
   sunlit ones. The guard reduces rather than guarantees freedom from such
   artefacts: a dim but sunlit column (cos SZA near zero) next to bright ones
   can still give a negative interpolated source.
+- Weight bound: the stencil is also cubic only if its absolute weights sum to
+  at most `max_cubic_weight_abs_sum` = 2 (`horizontal_interpolation.h`);
+  otherwise that location uses linear weights. Lagrange weights grow without
+  bound on strongly non-uniform explicit grids (0.25, -1, 1.5, 0.25 on
+  `[0, 1, 2, 4]` at 3; about +-38 on `[0, 1, 1.01, 2]` at 0.5), which the
+  sunlit guard does not catch. On a uniform grid the sum is at most 1.25 in
+  interior intervals and about 1.63 in the end intervals, so uniform grids
+  always stay cubic. On the tangent-clustered grid `[-20, -8, -3, 0, 3, 8, 20]`
+  degrees the sum stays below 1.40 in the inner four intervals and reaches
+  about 5.1 in parts of the outer two, which fall back to linear there.
 - Geometry1D (cos SZA columns) is unchanged.
 
 Weights are geometry-only, so primal, JVP, VJP and full-Jacobian paths need no
@@ -160,23 +170,34 @@ plumbed through C++ `Config`, the C API, `sasktran2-sys`, `sasktran2-rs`,
 `sasktran2-py-ext`, `sasktran2.Config`, and the orbital-plane structural config
 signature.
 
-Default results change at the angular-discretization level, up to about 1e-2 at
-26 directions and much less at 110, for:
+Default results change at the angular-discretization level. In the
+benchmark, the default and legacy dense-column limits differ by up to about
+1e-2 in multiple-scatter radiance at 110 directions (1.3e-2 in the oblique
+case), shrinking to about 1e-3 at 194 directions. This applies to:
 
 - Geometry2D with several columns;
 - spherical Geometry1D, including single-column plain-Lebedev cases (about
   1e-3 against legacy) and any solar azimuth. Aligned 1D results are invariant
-  to the solar-azimuth convention to about 1e-8, against up to 4e-2 with legacy
-  grids;
+  to the solar-azimuth convention to about 1e-8, against up to 4e-2 (vector)
+  with legacy grids, so Geometry1D runs with a non-zero solar azimuth can
+  change by more than the angular-discretization level;
 - multi-SZA Geometry1D.
 
 Measured accuracy: a dayside convergence test gives a maximum relative
 multiple-scatter error of 5.8e-5 for aligned + cubic at 7 columns, against
 5.1e-4 for legacy at 11 columns. Typical dayside limb cases at 50 directions
 give 2e-4 to 2.5e-3 (aligned + cubic, 7 columns) against 2.5e-3 to 7.5e-3
-(legacy, 11 columns).
+(legacy, 11 columns). In the scalar benchmark at 110 directions
+(`tools/benchmarks/README.md`; dayside cases with SZA 30-80 degrees), seven
+default columns beat eleven legacy columns by factors of 1.7-3.9 in maximum
+multiple-scatter error, at about 30-35% less time and memory. The benefit
+depends on every LOS stencil column being sunlit, so the domain width and the
+terminator position matter.
 
-Costs: frame alignment has no memory cost. Cubic LOS doubles the LOS source
+Costs: frame alignment has no memory cost for scalar calculations (bases are
+shared per angular class) or with reduced-horizon quadrature (bases were
+already per point). Plain-Lebedev vector calculations previously shared one
+angular basis and now build one per column. Cubic LOS doubles the LOS source
 weights, and bytes grow about 2.15x because negative weights are
 escape-encoded: roughly 12 KB to 25 KB per LOS, about +135 MB for 10k LOS.
 Diffuse-ray weights, which dominate orbital-plane memory, are unchanged.
@@ -198,9 +219,10 @@ Diffuse-ray weights, which dominate orbital-plane memory, are unchanged.
 - Python: existing successive-orders, 2D, orbital-plane and linearization tests
   pass (expected-value updates only where results legitimately change);
   JVP/VJP adjoint and finite-difference checks for scalar and vector with both
-  quadrature modes; legacy switch reproduces `main` bitwise; horizontal
-  convergence regression showing seven aligned/cubic columns within the error
-  of eleven legacy columns for a dayside case.
+  quadrature modes; horizontal convergence regression showing seven
+  aligned/cubic columns within the error of eleven legacy columns for a dayside
+  case. That the legacy switch reproduces `main` bitwise was verified manually
+  during development (152 arrays); no automated test compares against `main`.
 
 ## Benchmarks (deliverable)
 
@@ -212,7 +234,7 @@ geometries, plus an orbital-plane run. A reproducible script will live under
 ## Risks
 
 - Vector per-column synthesis can be slower than today's single shared
-  synthesis; measured in the benchmarks.
+  synthesis. Vector timing was not benchmarked; the benchmark is scalar.
 - Regression baselines that pin multiple-scatter values will change and must be
   regenerated deliberately, never loosened.
 

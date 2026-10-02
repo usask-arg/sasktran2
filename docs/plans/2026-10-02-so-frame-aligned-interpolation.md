@@ -1,5 +1,14 @@
 # Frame-aligned successive-orders interpolation Implementation Plan
 
+> **Note:** The implementation deviated from this plan, and the design spec
+> (`docs/specs/2026-10-02-so-frame-aligned-interpolation-design.md`) is
+> authoritative. For example, aligned grids apply the pole-avoiding
+> pre-rotation to every aligned Lebedev rule rather than only to the
+> reduced-horizon outgoing rule; aligned ground grids are tilted off the
+> horizon; and cubic LOS interpolation falls back to linear weights unless
+> every stencil column is sunlit and the absolute stencil weights sum to at
+> most 2.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use usask-foundation:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Reach today's 11-column Geometry2D successive-orders accuracy with about 7 columns by aligning each column's angular grid to its local solar frame and interpolating the observer-LOS source cubically in horizontal angle.

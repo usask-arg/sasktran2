@@ -109,7 +109,7 @@ local ignored `build/omps-memory` archive; they are not bundled with the PR.
 interpolation with the legacy behaviour
 (`Config.successive_orders_legacy_interpolation = True`). The default uses
 frame-aligned angular grids and cubic Geometry2D line-of-sight interpolation.
-It is self-contained and uses two synthetic scenes:
+It is self-contained, scalar (`num_stokes = 1`) and uses two synthetic scenes:
 
 - a standard Geometry2D limb scan: tangents 10–50 km, observer at 600 km,
   350/525/750 nm, Rayleigh + ozone + aerosol, albedo 0.3, a 0.5° atmosphere grid
@@ -120,12 +120,16 @@ It is self-contained and uses two synthetic scenes:
 For each scheme and horizontal source-column count it reports four quantities:
 
 - the maximum relative multiple-scatter error against that scheme's own
-  dense-column reference at the same angular resolution;
-- the wall time of engine construction plus radiance, with and without the full
-  Jacobian;
+  dense-column reference at the same angular resolution: 81 columns for the
+  limb scan and 31 for the orbital-plane scene;
+- the wall time of engine and atmosphere construction plus radiance, with and
+  without the full Jacobian (orbital-plane timings also include the geometry
+  construction). Each timing is a single run, not an average;
 - the peak RSS of a single-threaded run in a fresh process;
 - the diffuse and line-of-sight source-weight memory from
-  `SASKTRAN2_PROFILE_MEMORY`.
+  `SASKTRAN2_PROFILE_MEMORY`. `parse_memory` tells the two apart by order: it
+  assumes their interpolation records alternate, diffuse first, as they do when
+  each geometry is constructed in turn.
 
 ```sh
 python tools/benchmarks/so_interpolation_benchmark.py --output build/so-interp
