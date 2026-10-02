@@ -678,6 +678,60 @@ def test_ground_single_scatter_and_surface_derivative_match_1d():
     np.testing.assert_allclose(result_2d.wf_albedo, result_1d.wf_albedo, rtol=2.0e-12)
 
 
+def test_solar_paths_from_ground_endpoints_match_1d():
+    # Each ground endpoint lies on the surface only to roundoff. Its solar ray
+    # must still traverse the atmosphere rather than stop at the surface root
+    # at the endpoint, which left individual rays unattenuated by the sun.
+    altitudes = np.linspace(0.0, 60_000.0, 13)
+    horizontal_angles = np.linspace(-0.3, 0.3, 12)
+    config = single_scatter_config()
+    geometry_1d = sk.Geometry1D(
+        cos_sza=0.6,
+        solar_azimuth=0.4,
+        earth_radius_m=EARTH_RADIUS_M,
+        altitude_grid_m=altitudes,
+        interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+        geometry_type=sk.GeometryType.Spherical,
+    )
+    geometry_2d = sk.Geometry2D(
+        cos_sza=0.6,
+        solar_azimuth=0.4,
+        earth_radius_m=EARTH_RADIUS_M,
+        altitude_grid_m=altitudes,
+        horizontal_angle_grid_radians=horizontal_angles,
+    )
+    extinction = 1.5e-5 * np.exp(-altitudes / 8_000.0)[:, np.newaxis]
+    atmosphere_1d = sk.Atmosphere(geometry_1d, config, wavelengths_nm=np.array([500.0]))
+    atmosphere_2d = sk.Atmosphere(geometry_2d, config, wavelengths_nm=np.array([500.0]))
+    atmosphere_1d.storage.total_extinction[:] = extinction
+    atmosphere_2d.storage.total_extinction[:] = np.tile(
+        extinction, (horizontal_angles.size, 1)
+    )
+    for atmosphere in (atmosphere_1d, atmosphere_2d):
+        atmosphere.storage.ssa[:] = 0.9
+        atmosphere.surface.albedo[:] = 0.3
+        set_phase(atmosphere)
+    viewing = sk.ViewingGeometry()
+    for cos_viewing_zenith in np.linspace(0.3, 0.95, 40):
+        viewing.add_ray(
+            sk.GroundViewingSolar(
+                cos_sza=0.6,
+                relative_azimuth=0.2,
+                cos_viewing_zenith=cos_viewing_zenith,
+                observer_altitude_m=100_000.0,
+            )
+        )
+
+    result_1d = sk.Engine(config, geometry_1d, viewing).calculate_radiance(
+        atmosphere_1d
+    )
+    result_2d = sk.Engine(config, geometry_2d, viewing).calculate_radiance(
+        atmosphere_2d
+    )
+
+    np.testing.assert_allclose(result_2d.radiance, result_1d.radiance, rtol=1.0e-8)
+
+
 def test_single_scatter_occultation_and_emission_sources_add_linearly():
     geometry = vertical_geometry2d()
     viewing = vertical_ground_viewing()
