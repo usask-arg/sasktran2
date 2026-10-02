@@ -509,8 +509,10 @@ class Config:
         solar frame, so neighbouring columns sample identical local
         directions, and Geometry2D interpolates the observer line-of-sight
         source cubically in horizontal angle when at least four horizontal
-        source columns exist. Set this to ``True`` to use one globally
-        oriented angular grid and bilinear line-of-sight interpolation.
+        source columns exist and the sun is above the horizon at every column
+        of the stencil; otherwise bilinearly. Set this to ``True`` to use one
+        globally oriented angular grid and bilinear line-of-sight
+        interpolation.
         """
         return self._config.successive_orders_legacy_interpolation
 

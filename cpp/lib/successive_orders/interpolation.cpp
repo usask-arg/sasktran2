@@ -416,8 +416,9 @@ namespace sasktran2::successive_orders {
         }
         result.atmosphere_weights.reserve(ray.layers.size() * 2);
         // The common one-SZA grid uses at most two altitude locations and
-        // three Lebedev interpolation directions. Multi-SZA grids can grow
-        // this vector naturally when their four-location stencil is needed.
+        // three Lebedev interpolation directions. Multi-SZA grids and cubic
+        // Geometry2D LOS stencils (up to eight locations) grow this vector
+        // naturally when they need more.
         result.source_weights.reserve(ray.layers.size() * 6);
 
         for (std::size_t layer_index = 0; layer_index < ray.layers.size();

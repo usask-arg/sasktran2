@@ -447,7 +447,10 @@ namespace sasktran2::successive_orders {
                   m_geometry(geometry), m_horizontal_grid(make_horizontal_grid(
                                             geometry, num_horizontal_points,
                                             horizontal_angle_grid_radians)),
-                  m_horizontal_interpolation(horizontal_interpolation) {}
+                  m_horizontal_interpolation(horizontal_interpolation),
+                  m_sunlit_columns(
+                      make_sunlit_columns(geometry, m_horizontal_grid.grid(),
+                                          horizontal_interpolation)) {}
 
             const Eigen::VectorXd& horizontal_grid() const {
                 return m_horizontal_grid.grid();
@@ -556,8 +559,14 @@ namespace sasktran2::successive_orders {
             /** Horizontal nodes and weights for one location.
              *
              * Cubic mode uses a four-column Lagrange stencil strictly inside
-             * the source-column range and the linear grid stencil elsewhere,
-             * so the end intervals extend constantly as in linear mode.
+             * the source-column range; end intervals use one-sided cubic
+             * stencils and locations outside the column range extend
+             * constantly, as in linear mode. Lagrange weights can be
+             * negative, which near the terminator turns a small night-side
+             * source next to large sunlit ones into a negative interpolated
+             * source. A stencil is therefore cubic only when the sun is above
+             * the astronomical horizon at all four of its columns; otherwise
+             * the location uses linear weights.
              */
             void horizontal_stencil(double angle, std::array<int, 4>& indices,
                                     std::array<double, 4>& weights,
@@ -568,8 +577,13 @@ namespace sasktran2::successive_orders {
                         HorizontalInterpolation::cubic &&
                     size >= 4 && angle > grid[0] && angle < grid[size - 1]) {
                     cubic_lagrange_weights(grid, angle, indices, weights);
-                    count = 4;
-                    return;
+                    if (std::all_of(indices.begin(), indices.end(),
+                                    [this](int column) {
+                                        return m_sunlit_columns[column] != 0;
+                                    })) {
+                        count = 4;
+                        return;
+                    }
                 }
                 std::array<int, 2> linear_indices{};
                 std::array<double, 2> linear_weights{};
@@ -628,6 +642,32 @@ namespace sasktran2::successive_orders {
                     sasktran2::grids::interpolation::linear);
             }
 
+            /** Per-column flags, set where the sun is above the astronomical
+             * horizon. The column vertical is altitude independent. Only
+             * cubic mode needs them. */
+            static std::vector<char> make_sunlit_columns(
+                const sasktran2::Geometry2D& geometry,
+                const Eigen::VectorXd& horizontal_angles,
+                HorizontalInterpolation horizontal_interpolation) {
+                std::vector<char> result;
+                if (horizontal_interpolation !=
+                    HorizontalInterpolation::cubic) {
+                    return result;
+                }
+                const auto& coordinates = geometry.coordinates();
+                result.resize(
+                    static_cast<std::size_t>(horizontal_angles.size()));
+                for (Eigen::Index column = 0; column < horizontal_angles.size();
+                     ++column) {
+                    const Eigen::Vector3d up =
+                        coordinates.unit_vector_from_angles(
+                            horizontal_angles[column], 0.0);
+                    result[static_cast<std::size_t>(column)] =
+                        up.dot(coordinates.sun_unit()) > 0.0 ? 1 : 0;
+                }
+                return result;
+            }
+
             int interior_linear_index(int altitude_index,
                                       int horizontal_index) const {
                 return altitude_index +
@@ -638,6 +678,7 @@ namespace sasktran2::successive_orders {
             const sasktran2::Geometry2D& m_geometry;
             const sasktran2::grids::Grid m_horizontal_grid;
             const HorizontalInterpolation m_horizontal_interpolation;
+            const std::vector<char> m_sunlit_columns;
         };
 
         std::vector<InterpolationWeight>
@@ -1528,6 +1569,7 @@ namespace sasktran2::successive_orders {
             m_source_horizontal_angles_rad.clear();
         } else {
             m_source_cos_sza.clear();
+            auto los_altitude_grid = altitude_grid;
             auto interpolator =
                 std::make_unique<AltitudeAngleSourceLocationInterpolator>(
                     std::move(altitude_grid), *m_geometry_2d,
@@ -1543,13 +1585,14 @@ namespace sasktran2::successive_orders {
             // The observer LOS samples the stored source between columns,
             // where a four-column stencil is much more accurate. Diffuse
             // rays keep the two-column stencil, which bounds the transport
-            // weights the iteration applies on every order.
+            // weights the iteration applies on every order. Stencils with a
+            // column on the night side stay linear (see horizontal_stencil).
             m_los_location_interpolator.reset();
             if (!m_settings.legacy_interpolation &&
                 m_source_horizontal_angles_rad.size() >= 4) {
                 m_los_location_interpolator =
                     std::make_unique<AltitudeAngleSourceLocationInterpolator>(
-                        make_altitude_grid(), *m_geometry_2d,
+                        std::move(los_altitude_grid), *m_geometry_2d,
                         m_settings.num_sza,
                         m_settings.horizontal_angle_grid_radians,
                         HorizontalInterpolation::cubic);

@@ -51,6 +51,84 @@ namespace {
         raytracer.trace_ray(ray, result.traced_rays.front());
         return result;
     }
+
+    // Appends a limb ray traced from far outside the atmosphere whose tangent
+    // point lies at the given altitude above one horizontal angle.
+    void
+    add_limb_ray(const sasktran2::Geometry2D& geometry,
+                 const sasktran2::raytracing::RustRayTracer2D& raytracer,
+                 double tangent_altitude, double tangent_angle,
+                 sasktran2::viewinggeometry::InternalViewingGeometry& los) {
+        const auto& coordinates = geometry.coordinates();
+        const Eigen::Vector3d tangent_point =
+            (coordinates.earth_radius() + tangent_altitude) *
+            coordinates.unit_vector_from_angles(tangent_angle, 0.0);
+        const Eigen::Vector3d forward =
+            coordinates.local_x_y_from_angles(tangent_angle, 0.0)
+                .first.normalized();
+        sasktran2::viewinggeometry::ViewingRay ray;
+        ray.observer.position = tangent_point - 3.0e6 * forward;
+        ray.look_away = forward;
+        los.traced_rays.emplace_back();
+        raytracer.trace_ray(ray, los.traced_rays.back());
+    }
+
+    double layer_horizontal_angle(const sasktran2::Geometry2D& geometry,
+                                  const sasktran2::raytracing::TracedRay& ray,
+                                  std::size_t layer) {
+        sasktran2::Location midpoint;
+        midpoint.position = 0.5 * (ray.layers[layer].entrance.position +
+                                   ray.layers[layer].exit.position);
+        return geometry.horizontal_angle_at(midpoint);
+    }
+
+    // Source columns referenced by one set of compiled source weights.
+    struct TouchedColumns {
+        std::set<int> interior;
+        std::set<int> ground;
+        double weight_sum = 0.0;
+    };
+
+    template <typename Weights>
+    TouchedColumns touched_columns(
+        const sasktran2::successive_orders::SourceGeometry1D& source,
+        const Weights& weights, const std::vector<int>& columns) {
+        TouchedColumns result;
+        const int num_altitudes =
+            static_cast<int>(source.source_altitudes_m().size());
+        const auto& offsets = source.outgoing_point_offsets();
+        for (const auto& weight : weights) {
+            const int outgoing = columns[weight.row_inner_index()];
+            const int point = static_cast<int>(
+                std::upper_bound(offsets.begin(), offsets.end(), outgoing) -
+                offsets.begin() - 1);
+            if (point < source.num_interior_points()) {
+                result.interior.insert(point / num_altitudes);
+            } else {
+                result.ground.insert(point - source.num_interior_points());
+            }
+            result.weight_sum += weight.weight();
+        }
+        return result;
+    }
+
+    // Columns touched by every layer of every LOS ray, indexed [ray][layer].
+    std::vector<std::vector<TouchedColumns>> los_layer_columns(
+        const sasktran2::successive_orders::SourceGeometry1D& source) {
+        std::vector<std::vector<TouchedColumns>> result;
+        const auto& rays = source.los_interpolation();
+        for (std::size_t ray = 0; ray < rays.size(); ++ray) {
+            const auto columns =
+                source.los_transport_columns_for_ray(ray).to_vector();
+            auto& layers = result.emplace_back();
+            for (std::size_t layer = 0; layer < rays[ray].layers.size();
+                 ++layer) {
+                layers.push_back(touched_columns(
+                    source, rays[ray].source_for_layer(layer), columns));
+            }
+        }
+        return result;
+    }
 #endif
 
     class ThrowingRayTracer final
@@ -1002,28 +1080,13 @@ TEST_CASE("Successive-orders LOS uses a four-column stencil only on the LOS",
     // A limb ray tangent at 20 km over the centre column stays inside the
     // horizontal range and crosses the source columns at -0.1, 0 and 0.1.
     sasktran2::viewinggeometry::InternalViewingGeometry los;
-    los.traced_rays.resize(1);
-    {
-        const auto& coordinates = geometry.coordinates();
-        const Eigen::Vector3d tangent_point =
-            (coordinates.earth_radius() + 20000.0) *
-            coordinates.unit_vector_from_angles(0.0, 0.0);
-        const Eigen::Vector3d forward =
-            coordinates.local_x_y_from_angles(0.0, 0.0).first.normalized();
-        sasktran2::viewinggeometry::ViewingRay ray;
-        ray.observer.position = tangent_point - 3.0e6 * forward;
-        ray.look_away = forward;
-        raytracer.trace_ray(ray, los.traced_rays.front());
-    }
+    add_limb_ray(geometry, raytracer, 20000.0, 0.0, los);
     const auto& traced = los.traced_rays.front();
     REQUIRE(!traced.ground_is_hit);
     double minimum_angle = std::numeric_limits<double>::infinity();
     double maximum_angle = -std::numeric_limits<double>::infinity();
-    for (const auto& layer : traced.layers) {
-        sasktran2::Location midpoint;
-        midpoint.position =
-            0.5 * (layer.entrance.position + layer.exit.position);
-        const double angle = geometry.horizontal_angle_at(midpoint);
+    for (std::size_t layer = 0; layer < traced.layers.size(); ++layer) {
+        const double angle = layer_horizontal_angle(geometry, traced, layer);
         minimum_angle = std::min(minimum_angle, angle);
         maximum_angle = std::max(maximum_angle, angle);
     }
@@ -1033,10 +1096,6 @@ TEST_CASE("Successive-orders LOS uses a four-column stencil only on the LOS",
     REQUIRE(maximum_angle > 0.1);
     REQUIRE(maximum_angle < 0.2);
 
-    struct ColumnCounts {
-        int maximum = 0;
-        int layers_with_four = 0;
-    };
     for (const bool legacy_interpolation : {false, true}) {
         DYNAMIC_SECTION("legacy_interpolation=" << legacy_interpolation) {
             sasktran2::successive_orders::SourceGeometrySettings settings;
@@ -1050,68 +1109,234 @@ TEST_CASE("Successive-orders LOS uses a four-column stencil only on the LOS",
             source.initialize(los, settings);
             REQUIRE(source.source_horizontal_angles_rad().size() == 5);
 
-            const int num_altitudes =
-                static_cast<int>(source.source_altitudes_m().size());
-            const auto& offsets = source.outgoing_point_offsets();
-            const auto count_columns =
-                [&](const std::vector<
-                        sasktran2::successive_orders::RayInterpolation>& rays,
-                    const auto& columns_for_ray, bool require_unit_sum) {
-                    ColumnCounts counts;
-                    for (std::size_t ray = 0; ray < rays.size(); ++ray) {
-                        const auto columns = columns_for_ray(ray).to_vector();
-                        for (std::size_t layer = 0;
-                             layer < rays[ray].layers.size(); ++layer) {
-                            std::set<int> touched;
-                            double weight_sum = 0.0;
-                            for (const auto& weight :
-                                 rays[ray].source_for_layer(layer)) {
-                                const int outgoing =
-                                    columns[weight.row_inner_index()];
-                                const int point = static_cast<int>(
-                                    std::upper_bound(offsets.begin(),
-                                                     offsets.end(), outgoing) -
-                                    offsets.begin() - 1);
-                                if (point < source.num_interior_points()) {
-                                    touched.insert(point / num_altitudes);
-                                }
-                                weight_sum += weight.weight();
-                            }
-                            if (require_unit_sum) {
-                                REQUIRE(weight_sum ==
-                                        Catch::Approx(1.0).margin(1.0e-12));
-                            }
-                            const int count = static_cast<int>(touched.size());
-                            counts.maximum = std::max(counts.maximum, count);
-                            counts.layers_with_four += count == 4 ? 1 : 0;
-                        }
-                    }
-                    return counts;
-                };
-
-            const auto los_counts = count_columns(
-                source.los_interpolation(),
-                [&](std::size_t ray) {
-                    return source.los_transport_columns_for_ray(ray);
-                },
-                true);
-            const auto incoming_counts = count_columns(
-                source.incoming_interpolation(),
-                [&](std::size_t ray) {
-                    return source.transport_columns_for_ray(ray);
-                },
-                false);
-            CAPTURE(los_counts.maximum, los_counts.layers_with_four,
-                    incoming_counts.maximum);
-            if (legacy_interpolation) {
-                REQUIRE(los_counts.maximum == 2);
-            } else {
-                REQUIRE(los_counts.maximum == 4);
-                REQUIRE(los_counts.layers_with_four > 0);
+            int los_maximum = 0;
+            int los_layers_with_four = 0;
+            const auto los_layers = los_layer_columns(source);
+            for (const auto& touched : los_layers.front()) {
+                REQUIRE(touched.weight_sum ==
+                        Catch::Approx(1.0).margin(1.0e-12));
+                const int count = static_cast<int>(touched.interior.size());
+                los_maximum = std::max(los_maximum, count);
+                los_layers_with_four += count == 4 ? 1 : 0;
             }
-            REQUIRE(incoming_counts.maximum <= 2);
+            int incoming_maximum = 0;
+            const auto& incoming = source.incoming_interpolation();
+            for (std::size_t ray = 0; ray < incoming.size(); ++ray) {
+                const auto columns =
+                    source.transport_columns_for_ray(ray).to_vector();
+                for (std::size_t layer = 0; layer < incoming[ray].layers.size();
+                     ++layer) {
+                    incoming_maximum = std::max(
+                        incoming_maximum,
+                        static_cast<int>(
+                            touched_columns(
+                                source, incoming[ray].source_for_layer(layer),
+                                columns)
+                                .interior.size()));
+                }
+            }
+            CAPTURE(los_maximum, los_layers_with_four, incoming_maximum);
+            if (legacy_interpolation) {
+                REQUIRE(los_maximum == 2);
+            } else {
+                REQUIRE(los_maximum == 4);
+                REQUIRE(los_layers_with_four > 0);
+            }
+            REQUIRE(incoming_maximum <= 2);
         }
     }
+}
+
+TEST_CASE("Successive-orders cubic LOS ground hits use four ground columns",
+          "[successive_orders][geometry][geometry2d]") {
+    Eigen::VectorXd altitudes = Eigen::VectorXd::LinSpaced(7, 0.0, 60000.0);
+    Eigen::VectorXd horizontal = Eigen::VectorXd::LinSpaced(9, -0.2, 0.2);
+    sasktran2::Geometry2D geometry(0.6, 0.0, 6372000.0, std::move(altitudes),
+                                   std::move(horizontal),
+                                   sasktran2::grids::interpolation::linear);
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+
+    // A nadir ray halfway between the source columns at 0 and 0.1 radians.
+    sasktran2::viewinggeometry::InternalViewingGeometry los;
+    los.traced_rays.resize(1);
+    sasktran2::viewinggeometry::ViewingRay ray;
+    ray.observer.position =
+        (geometry.coordinates().earth_radius() + 40000.0) *
+        geometry.coordinates().unit_vector_from_angles(0.05, 0.0);
+    ray.look_away = -ray.observer.position.normalized();
+    raytracer.trace_ray(ray, los.traced_rays.front());
+    REQUIRE(los.traced_rays.front().ground_is_hit);
+
+    for (const bool legacy_interpolation : {false, true}) {
+        DYNAMIC_SECTION("legacy_interpolation=" << legacy_interpolation) {
+            sasktran2::successive_orders::SourceGeometrySettings settings;
+            settings.num_incoming = 14;
+            settings.num_outgoing = 14;
+            settings.num_sza = 5;
+            settings.num_threads = 1;
+            settings.legacy_interpolation = legacy_interpolation;
+            sasktran2::successive_orders::SourceGeometry1D source(raytracer,
+                                                                  geometry);
+            source.initialize(los, settings);
+
+            const auto& compiled = source.los_interpolation().front();
+            REQUIRE(compiled.ground_is_hit());
+            const auto ground = touched_columns(
+                source, compiled.ground(),
+                source.los_transport_columns_for_ray(0).to_vector());
+            REQUIRE(ground.interior.empty());
+            REQUIRE(ground.weight_sum == Catch::Approx(1.0).margin(1.0e-12));
+            REQUIRE(ground.ground.size() == (legacy_interpolation ? 2u : 4u));
+            const auto los_layers = los_layer_columns(source);
+            for (const auto& touched : los_layers.front()) {
+                REQUIRE(touched.interior.size() ==
+                        (legacy_interpolation ? 2u : 4u));
+            }
+        }
+    }
+}
+
+TEST_CASE("Successive-orders LOS stays linear with fewer than four columns",
+          "[successive_orders][geometry][geometry2d]") {
+    Eigen::VectorXd altitudes = Eigen::VectorXd::LinSpaced(7, 0.0, 60000.0);
+    Eigen::VectorXd horizontal = Eigen::VectorXd::LinSpaced(9, -0.2, 0.2);
+    sasktran2::Geometry2D geometry(0.6, 0.0, 6372000.0, std::move(altitudes),
+                                   std::move(horizontal),
+                                   sasktran2::grids::interpolation::linear);
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+    sasktran2::viewinggeometry::InternalViewingGeometry los;
+    add_limb_ray(geometry, raytracer, 20000.0, 0.0, los);
+
+    sasktran2::successive_orders::SourceGeometrySettings settings;
+    settings.num_incoming = 14;
+    settings.num_outgoing = 14;
+    settings.num_sza = 3;
+    settings.num_threads = 1;
+    sasktran2::successive_orders::SourceGeometry1D source(raytracer, geometry);
+    source.initialize(los, settings);
+    REQUIRE(source.source_horizontal_angles_rad().size() == 3);
+
+    std::size_t maximum = 0;
+    const auto los_layers = los_layer_columns(source);
+    for (const auto& touched : los_layers.front()) {
+        maximum = std::max(maximum, touched.interior.size());
+    }
+    REQUIRE(maximum == 2);
+}
+
+TEST_CASE("Successive-orders cubic LOS extends constantly outside the source "
+          "columns",
+          "[successive_orders][geometry][geometry2d]") {
+    Eigen::VectorXd altitudes = Eigen::VectorXd::LinSpaced(7, 0.0, 60000.0);
+    Eigen::VectorXd horizontal = Eigen::VectorXd::LinSpaced(9, -0.2, 0.2);
+    sasktran2::Geometry2D geometry(0.6, 0.0, 6372000.0, std::move(altitudes),
+                                   std::move(horizontal),
+                                   sasktran2::grids::interpolation::linear);
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+    // The limb ray spans about +-0.11 radians, beyond the column range.
+    sasktran2::viewinggeometry::InternalViewingGeometry los;
+    add_limb_ray(geometry, raytracer, 20000.0, 0.0, los);
+
+    sasktran2::successive_orders::SourceGeometrySettings settings;
+    settings.num_incoming = 14;
+    settings.num_outgoing = 14;
+    settings.num_threads = 1;
+    settings.horizontal_angle_grid_radians = {-0.06, -0.02, 0.02, 0.06};
+    sasktran2::successive_orders::SourceGeometry1D source(raytracer, geometry);
+    source.initialize(los, settings);
+
+    const auto& traced = los.traced_rays.front();
+    const auto layers = los_layer_columns(source).front();
+    REQUIRE(layers.size() == traced.layers.size());
+    int below = 0;
+    int inside = 0;
+    int above = 0;
+    for (std::size_t layer = 0; layer < layers.size(); ++layer) {
+        const double angle = layer_horizontal_angle(geometry, traced, layer);
+        INFO("layer=" << layer << " angle=" << angle);
+        REQUIRE(layers[layer].weight_sum == Catch::Approx(1.0).margin(1.0e-12));
+        if (angle < -0.06) {
+            REQUIRE(layers[layer].interior == std::set<int>{0});
+            ++below;
+        } else if (angle > 0.06) {
+            REQUIRE(layers[layer].interior == std::set<int>{3});
+            ++above;
+        } else {
+            REQUIRE(layers[layer].interior.size() == 4);
+            ++inside;
+        }
+    }
+    CAPTURE(below, inside, above);
+    REQUIRE(below > 0);
+    REQUIRE(inside > 0);
+    REQUIRE(above > 0);
+}
+
+TEST_CASE("Successive-orders cubic LOS falls back to linear across the "
+          "terminator",
+          "[successive_orders][geometry][geometry2d]") {
+    // With the sun on the horizon at the reference point, columns at
+    // negative horizontal angles are on the night side.
+    Eigen::VectorXd altitudes = Eigen::VectorXd::LinSpaced(7, 0.0, 60000.0);
+    Eigen::VectorXd horizontal = Eigen::VectorXd::LinSpaced(17, -0.4, 0.4);
+    sasktran2::Geometry2D geometry(0.0, 0.0, 6372000.0, std::move(altitudes),
+                                   std::move(horizontal),
+                                   sasktran2::grids::interpolation::linear);
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+    sasktran2::viewinggeometry::InternalViewingGeometry los;
+    add_limb_ray(geometry, raytracer, 20000.0, 0.0, los);
+    add_limb_ray(geometry, raytracer, 20000.0, 0.15, los);
+
+    const std::vector<double> columns = {-0.15, -0.05, 0.05, 0.10,
+                                         0.15,  0.20,  0.25};
+    for (const double column : columns) {
+        const Eigen::Vector3d up =
+            geometry.coordinates().unit_vector_from_angles(column, 0.0);
+        REQUIRE((up.dot(geometry.coordinates().sun_unit()) > 0.0) ==
+                (column > 0.0));
+    }
+    sasktran2::successive_orders::SourceGeometrySettings settings;
+    settings.num_incoming = 14;
+    settings.num_outgoing = 14;
+    settings.num_threads = 1;
+    settings.horizontal_angle_grid_radians = columns;
+    sasktran2::successive_orders::SourceGeometry1D source(raytracer, geometry);
+    source.initialize(los, settings);
+
+    const int size = static_cast<int>(columns.size());
+    const auto compiled = los_layer_columns(source);
+    int cubic = 0;
+    int linear = 0;
+    for (std::size_t ray = 0; ray < compiled.size(); ++ray) {
+        const auto& traced = los.traced_rays[ray];
+        for (std::size_t layer = 0; layer < compiled[ray].size(); ++layer) {
+            const double angle =
+                layer_horizontal_angle(geometry, traced, layer);
+            INFO("ray=" << ray << " layer=" << layer << " angle=" << angle);
+            const auto count = compiled[ray][layer].interior.size();
+            if (angle <= columns.front() || angle >= columns.back()) {
+                REQUIRE(count == 1);
+                continue;
+            }
+            const int lower = static_cast<int>(
+                std::upper_bound(columns.begin(), columns.end(), angle) -
+                columns.begin() - 1);
+            const int start = std::clamp(lower - 1, 0, size - 4);
+            const bool sunlit = std::all_of(
+                columns.begin() + start, columns.begin() + start + 4,
+                [](double column) { return column > 0.0; });
+            if (sunlit) {
+                REQUIRE(count == 4);
+                ++cubic;
+            } else {
+                REQUIRE(count <= 2);
+                ++linear;
+            }
+        }
+    }
+    CAPTURE(cubic, linear);
+    REQUIRE(cubic > 0);
+    REQUIRE(linear > 0);
 }
 #endif
 
@@ -1700,4 +1925,10 @@ TEST_CASE("Successive-orders cubic horizontal weights reproduce cubics",
     REQUIRE(weights[0] == 0.0);
     REQUIRE(weights[2] == 0.0);
     REQUIRE(weights[3] == 0.0);
+
+    Eigen::VectorXd short_grid(3);
+    short_grid << 0.0, 1.0, 2.0;
+    REQUIRE_THROWS_AS(sasktran2::successive_orders::cubic_lagrange_weights(
+                          short_grid, 0.5, indices, weights),
+                      std::invalid_argument);
 }

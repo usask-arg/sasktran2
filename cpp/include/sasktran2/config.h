@@ -524,7 +524,8 @@ namespace sasktran2 {
          * align each source column's angular grid with its local solar frame
          * and Geometry2D interpolates the observer-LOS source cubically in
          * horizontal angle when at least four horizontal source columns
-         * exist. */
+         * exist and the sun is above the horizon at every column of the
+         * stencil; otherwise bilinearly. */
         bool successive_orders_legacy_interpolation() const {
             return m_successive_orders_legacy_interpolation;
         }

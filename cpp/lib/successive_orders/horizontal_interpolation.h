@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <stdexcept>
 
 namespace sasktran2::successive_orders {
     /** Horizontal interpolation of the stored source between columns. */
@@ -11,14 +12,19 @@ namespace sasktran2::successive_orders {
 
     /** Four-point Lagrange weights on a strictly increasing grid.
      *
-     * Requires at least four nodes and grid[0] < x < grid[n-1]. The stencil
-     * is centred on the interval containing x and shifted inward at the ends.
-     * Weights reproduce cubic polynomials and are exactly one/zero at nodes.
+     * Requires at least four nodes (std::invalid_argument otherwise) and
+     * grid[0] < x < grid[n-1]. The stencil is centred on the interval
+     * containing x and shifted inward at the ends. Weights reproduce cubic
+     * polynomials and are exactly one/zero at nodes.
      */
     inline void cubic_lagrange_weights(const Eigen::VectorXd& grid, double x,
                                        std::array<int, 4>& indices,
                                        std::array<double, 4>& weights) {
         const int size = static_cast<int>(grid.size());
+        if (size < 4) {
+            throw std::invalid_argument(
+                "Cubic Lagrange weights require at least four grid nodes");
+        }
         const int lower = static_cast<int>(
             std::upper_bound(grid.data(), grid.data() + size, x) - grid.data() -
             1);
