@@ -625,17 +625,50 @@ namespace sasktran2::successive_orders {
             atmospheric_point.incoming_sphere(),
             atmospheric_point.outgoing_sphere(), num_coefficients);
 
-        if (geometry.settings().use_reduced_horizon_quadrature) {
+        bool shares_grids = true;
+        for (int point_index = 1; point_index < geometry.num_interior_points();
+             ++point_index) {
+            const auto& point = geometry.source_point(point_index);
+            if (&point.incoming_sphere() !=
+                    &atmospheric_point.incoming_sphere() ||
+                &point.outgoing_sphere() !=
+                    &atmospheric_point.outgoing_sphere()) {
+                shares_grids = false;
+                break;
+            }
+        }
+        // Reduced horizon keeps the legacy point-basis path (also for one
+        // interior point).
+        if (geometry.settings().use_reduced_horizon_quadrature ||
+            !shares_grids) {
+            // Q/U use global spin-harmonic frames, so points only share a
+            // basis when they share both sphere objects, and synthesis only
+            // when they share the outgoing sphere object.
             m_point_angular_bases.reserve(geometry.num_interior_points());
-            m_point_angular_bases.push_back(m_angular_basis);
-            for (int point_index = 1;
+            m_synthesis_group_offsets.assign(1, 0);
+            const sasktran2::math::UnitSphere* previous_incoming = nullptr;
+            const sasktran2::math::UnitSphere* previous_outgoing = nullptr;
+            std::shared_ptr<const VectorAngularBasis> basis;
+            for (int point_index = 0;
                  point_index < geometry.num_interior_points(); ++point_index) {
                 const auto& point = geometry.source_point(point_index);
-                m_point_angular_bases.push_back(
-                    std::make_shared<const VectorAngularBasis>(
+                if (point_index != 0 &&
+                    &point.outgoing_sphere() != previous_outgoing) {
+                    m_synthesis_group_offsets.push_back(point_index);
+                }
+                if (point_index == 0) {
+                    basis = m_angular_basis;
+                } else if (&point.incoming_sphere() != previous_incoming ||
+                           &point.outgoing_sphere() != previous_outgoing) {
+                    basis = std::make_shared<const VectorAngularBasis>(
                         point.incoming_sphere(), point.outgoing_sphere(),
-                        num_coefficients));
+                        num_coefficients);
+                }
+                m_point_angular_bases.push_back(basis);
+                previous_incoming = &point.incoming_sphere();
+                previous_outgoing = &point.outgoing_sphere();
             }
+            m_synthesis_group_offsets.push_back(geometry.num_interior_points());
         }
 
         for (int point_index = 0; point_index < geometry.num_interior_points();
@@ -698,7 +731,8 @@ namespace sasktran2::successive_orders {
 
     ScatteringOperator<3> VectorScatteringAssembler::create_operator() const {
         if (!m_point_angular_bases.empty()) {
-            return ScatteringOperator<3>(m_layout, m_point_angular_bases, true);
+            return ScatteringOperator<3>(m_layout, m_point_angular_bases,
+                                         m_synthesis_group_offsets);
         }
         return ScatteringOperator<3>(m_layout, m_angular_basis);
     }
@@ -1014,8 +1048,11 @@ namespace sasktran2::successive_orders {
         std::size_t angular_bytes = m_angular_basis->storage_bytes();
         if (!m_point_angular_bases.empty()) {
             angular_bytes = 0;
+            std::unordered_set<const VectorAngularBasis*> bases;
             for (const auto& basis : m_point_angular_bases) {
-                angular_bytes += basis->storage_bytes();
+                if (bases.insert(basis.get()).second) {
+                    angular_bytes += basis->storage_bytes();
+                }
             }
         }
         std::size_t result =
