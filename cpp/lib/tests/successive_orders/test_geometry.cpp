@@ -914,34 +914,56 @@ TEST_CASE("Successive-orders 2D solar table resolves source-ray endpoint OD",
             interpolation.apply(table_nodes, table_od);
             exact_matrix.multiply(extinction, exact_od);
 
+            // Rows whose exact OD is zero to rounding are excluded from the
+            // worst-row bounds. A few of them (10 legacy, 2 aligned) have
+            // table OD near 1.1 in both samples; the mean bound covers them.
+            // Below an exact OD of 1e-3 a relative bound is ill-conditioned,
+            // so those rows are bounded in absolute OD instead.
+            constexpr double thin_optical_depth = 1.0e-3;
             double maximum_absolute = 0.0;
             double maximum_relative = 0.0;
+            double maximum_relative_thick = 0.0;
+            double maximum_absolute_thin = 0.0;
             double mean_absolute = 0.0;
             int active = 0;
+            int thin = 0;
             for (Eigen::Index row = 0; row < exact_od.size(); ++row) {
                 if (exact_ground_hit[row]) {
                     continue;
                 }
                 const double absolute = std::abs(table_od[row] - exact_od[row]);
+                const double optical_depth = std::abs(exact_od[row]);
                 maximum_absolute = std::max(maximum_absolute, absolute);
-                if (std::abs(exact_od[row]) > 1.0e-10) {
-                    maximum_relative = std::max(
-                        maximum_relative, absolute / std::abs(exact_od[row]));
+                if (optical_depth > 1.0e-10) {
+                    maximum_relative =
+                        std::max(maximum_relative, absolute / optical_depth);
+                    if (optical_depth < thin_optical_depth) {
+                        maximum_absolute_thin =
+                            std::max(maximum_absolute_thin, absolute);
+                        ++thin;
+                    } else {
+                        maximum_relative_thick = std::max(
+                            maximum_relative_thick, absolute / optical_depth);
+                    }
                 }
                 mean_absolute += absolute;
                 ++active;
             }
             mean_absolute /= active;
-            CAPTURE(active, maximum_absolute, maximum_relative, mean_absolute);
-            // Ground-hit parity (above) and the mean bound apply to both
-            // samples.
+            CAPTURE(active, thin, maximum_absolute, maximum_relative,
+                    maximum_relative_thick, maximum_absolute_thin,
+                    mean_absolute);
+            // Ground-hit parity (above), the mean bound and the split
+            // worst-row bounds apply to both samples.
             REQUIRE(mean_absolute < 0.006);
+            REQUIRE(maximum_relative_thick < 0.06);
+            REQUIRE(maximum_absolute_thin < 1.0e-4);
             if (legacy_interpolation) {
                 // The worst-ray relative bound was calibrated on the legacy
-                // global incoming grid. Frame-aligned grids trace a different
-                // sample, in which two rows with exact OD below 1e-3 (9.3e-4
-                // and 5.4e-4) exceed it, with absolute errors below 1e-4
-                // (8.3e-5 and 4.6e-5).
+                // global incoming grid, which has no thin rows. Frame-aligned
+                // grids trace a different sample with two thin rows (exact OD
+                // 9.3e-4 and 5.4e-4) whose relative errors exceed it; their
+                // absolute errors are 8.3e-5 and 4.6e-5.
                 REQUIRE(maximum_relative < 0.06);
             }
         }
@@ -1336,6 +1358,221 @@ TEST_CASE("Successive-orders cubic LOS falls back to linear across the "
     }
     CAPTURE(cubic, linear);
     REQUIRE(cubic > 0);
+    REQUIRE(linear > 0);
+}
+
+namespace {
+    double cubic_weight_abs_sum(const std::vector<double>& columns,
+                                double angle) {
+        const Eigen::VectorXd grid = Eigen::Map<const Eigen::VectorXd>(
+            columns.data(), static_cast<Eigen::Index>(columns.size()));
+        std::array<int, 4> indices{};
+        std::array<double, 4> weights{};
+        sasktran2::successive_orders::cubic_lagrange_weights(grid, angle,
+                                                             indices, weights);
+        double sum = 0.0;
+        for (const double weight : weights) {
+            sum += std::abs(weight);
+        }
+        return sum;
+    }
+} // namespace
+
+TEST_CASE("Successive-orders cubic LOS stays cubic on uniform source grids",
+          "[successive_orders][geometry][geometry2d]") {
+    // Every column is sunlit (solar zenith angles 30-76 degrees), so only the
+    // weight bound could make a uniform-grid stencil linear.
+    Eigen::VectorXd altitudes = Eigen::VectorXd::LinSpaced(7, 0.0, 60000.0);
+    Eigen::VectorXd horizontal = Eigen::VectorXd::LinSpaced(17, -0.4, 0.4);
+    sasktran2::Geometry2D geometry(0.6, 0.0, 6372000.0, std::move(altitudes),
+                                   std::move(horizontal),
+                                   sasktran2::grids::interpolation::linear);
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+    // Limb rays covering interior and end intervals of every grid below.
+    sasktran2::viewinggeometry::InternalViewingGeometry los;
+    for (const double tangent_angle : {-0.25, -0.1, 0.0, 0.12, 0.25}) {
+        add_limb_ray(geometry, raytracer, 20000.0, tangent_angle, los);
+        add_limb_ray(geometry, raytracer, 35000.0, tangent_angle, los);
+    }
+
+    struct UniformCase {
+        int num_sza;
+        std::vector<double> explicit_grid;
+    };
+    const std::vector<UniformCase> cases = {
+        {4, {}},
+        {5, {}},
+        {7, {}},
+        {11, {}},
+        {99, {-0.3, -0.18, -0.06, 0.06, 0.18, 0.3}},
+    };
+    for (const auto& uniform : cases) {
+        DYNAMIC_SECTION("num_sza=" << uniform.num_sza << " explicit="
+                                   << uniform.explicit_grid.size()) {
+            sasktran2::successive_orders::SourceGeometrySettings settings;
+            settings.num_incoming = 14;
+            settings.num_outgoing = 14;
+            settings.num_sza = uniform.num_sza;
+            settings.num_threads = 1;
+            settings.horizontal_angle_grid_radians = uniform.explicit_grid;
+            sasktran2::successive_orders::SourceGeometry1D source(raytracer,
+                                                                  geometry);
+            source.initialize(los, settings);
+            const auto& columns = source.source_horizontal_angles_rad();
+
+            const auto compiled = los_layer_columns(source);
+            int inside = 0;
+            double maximum_sum = 0.0;
+            for (std::size_t ray = 0; ray < compiled.size(); ++ray) {
+                const auto& traced = los.traced_rays[ray];
+                for (std::size_t layer = 0; layer < compiled[ray].size();
+                     ++layer) {
+                    const double angle =
+                        layer_horizontal_angle(geometry, traced, layer);
+                    INFO("ray=" << ray << " layer=" << layer
+                                << " angle=" << angle);
+                    REQUIRE(compiled[ray][layer].weight_sum ==
+                            Catch::Approx(1.0).margin(1.0e-12));
+                    if (angle <= columns.front() || angle >= columns.back()) {
+                        continue;
+                    }
+                    REQUIRE(compiled[ray][layer].interior.size() == 4);
+                    maximum_sum = std::max(
+                        maximum_sum, cubic_weight_abs_sum(columns, angle));
+                    ++inside;
+                }
+            }
+            CAPTURE(inside, maximum_sum);
+            REQUIRE(inside > 0);
+            REQUIRE(maximum_sum <
+                    sasktran2::successive_orders::max_cubic_weight_abs_sum);
+        }
+    }
+}
+
+TEST_CASE("Successive-orders cubic LOS falls back to linear on strongly "
+          "non-uniform source grids",
+          "[successive_orders][geometry][geometry2d]") {
+    Eigen::VectorXd altitudes = Eigen::VectorXd::LinSpaced(7, 0.0, 60000.0);
+    Eigen::VectorXd horizontal = Eigen::VectorXd::LinSpaced(9, -0.2, 0.2);
+    sasktran2::Geometry2D geometry(0.6, 0.0, 6372000.0, std::move(altitudes),
+                                   std::move(horizontal),
+                                   sasktran2::grids::interpolation::linear);
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+    // The limb ray spans about +-0.11 radians, across every column interval.
+    sasktran2::viewinggeometry::InternalViewingGeometry los;
+    add_limb_ray(geometry, raytracer, 20000.0, 0.0, los);
+    add_limb_ray(geometry, raytracer, 30000.0, 0.0, los);
+
+    // The grid [0, 1, 1.01, 2] scaled by 0.1 radians and shifted to -0.1.
+    // Its cubic weights reach about +-38 in the wide intervals.
+    const std::vector<double> columns = {-0.1, 0.0, 0.001, 0.1};
+    sasktran2::successive_orders::SourceGeometrySettings settings;
+    settings.num_incoming = 14;
+    settings.num_outgoing = 14;
+    settings.num_threads = 1;
+    settings.horizontal_angle_grid_radians = columns;
+    sasktran2::successive_orders::SourceGeometry1D source(raytracer, geometry);
+    source.initialize(los, settings);
+
+    const auto compiled = los_layer_columns(source);
+    int linear = 0;
+    for (std::size_t ray = 0; ray < compiled.size(); ++ray) {
+        const auto& traced = los.traced_rays[ray];
+        for (std::size_t layer = 0; layer < compiled[ray].size(); ++layer) {
+            const double angle =
+                layer_horizontal_angle(geometry, traced, layer);
+            INFO("ray=" << ray << " layer=" << layer << " angle=" << angle);
+            const auto& touched = compiled[ray][layer];
+            REQUIRE(touched.weight_sum == Catch::Approx(1.0).margin(1.0e-12));
+            const bool wide_interval_interior =
+                angle > columns.front() && angle < columns.back() &&
+                std::all_of(columns.begin(), columns.end(),
+                            [angle](double column) {
+                                return std::abs(angle - column) > 0.005;
+                            });
+            if (wide_interval_interior) {
+                CAPTURE(cubic_weight_abs_sum(columns, angle));
+                REQUIRE(cubic_weight_abs_sum(columns, angle) >
+                        sasktran2::successive_orders::max_cubic_weight_abs_sum);
+                REQUIRE(touched.interior.size() <= 2);
+                ++linear;
+            }
+        }
+    }
+    CAPTURE(linear);
+    REQUIRE(linear > 0);
+}
+
+TEST_CASE("Successive-orders cubic LOS stays cubic on mildly non-uniform "
+          "source grids",
+          "[successive_orders][geometry][geometry2d]") {
+    // Columns clustered around the tangent point. All are sunlit (solar
+    // zenith angles 33-73 degrees). The cubic weights' absolute sum is at
+    // most about 1.40 in the four inner intervals and reaches about 5.1 in
+    // parts of the outer intervals, which fall back to linear there.
+    Eigen::VectorXd altitudes = Eigen::VectorXd::LinSpaced(7, 0.0, 60000.0);
+    Eigen::VectorXd horizontal = Eigen::VectorXd::LinSpaced(17, -0.4, 0.4);
+    sasktran2::Geometry2D geometry(0.6, 0.0, 6372000.0, std::move(altitudes),
+                                   std::move(horizontal),
+                                   sasktran2::grids::interpolation::linear);
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+    sasktran2::viewinggeometry::InternalViewingGeometry los;
+    for (const double tangent_angle : {-0.2, 0.0, 0.2}) {
+        add_limb_ray(geometry, raytracer, 20000.0, tangent_angle, los);
+        add_limb_ray(geometry, raytracer, 35000.0, tangent_angle, los);
+    }
+
+    std::vector<double> columns;
+    for (const double degrees : {-20.0, -8.0, -3.0, 0.0, 3.0, 8.0, 20.0}) {
+        columns.push_back(degrees * EIGEN_PI / 180.0);
+    }
+    sasktran2::successive_orders::SourceGeometrySettings settings;
+    settings.num_incoming = 14;
+    settings.num_outgoing = 14;
+    settings.num_threads = 1;
+    settings.horizontal_angle_grid_radians = columns;
+    sasktran2::successive_orders::SourceGeometry1D source(raytracer, geometry);
+    source.initialize(los, settings);
+
+    const double inner = 8.0 * EIGEN_PI / 180.0;
+    const auto compiled = los_layer_columns(source);
+    int cubic = 0;
+    int inner_cubic = 0;
+    int linear = 0;
+    double minimum_cubic_sum = std::numeric_limits<double>::infinity();
+    double maximum_cubic_sum = 0.0;
+    for (std::size_t ray = 0; ray < compiled.size(); ++ray) {
+        const auto& traced = los.traced_rays[ray];
+        for (std::size_t layer = 0; layer < compiled[ray].size(); ++layer) {
+            const double angle =
+                layer_horizontal_angle(geometry, traced, layer);
+            INFO("ray=" << ray << " layer=" << layer << " angle=" << angle);
+            const auto& touched = compiled[ray][layer];
+            REQUIRE(touched.weight_sum == Catch::Approx(1.0).margin(1.0e-12));
+            if (angle <= columns.front() || angle >= columns.back()) {
+                continue;
+            }
+            const double sum = cubic_weight_abs_sum(columns, angle);
+            CAPTURE(sum);
+            if (std::abs(angle) < inner) {
+                REQUIRE(sum < 1.41);
+            }
+            if (sum <= sasktran2::successive_orders::max_cubic_weight_abs_sum) {
+                REQUIRE(touched.interior.size() == 4);
+                minimum_cubic_sum = std::min(minimum_cubic_sum, sum);
+                maximum_cubic_sum = std::max(maximum_cubic_sum, sum);
+                ++cubic;
+                inner_cubic += std::abs(angle) < inner ? 1 : 0;
+            } else {
+                REQUIRE(touched.interior.size() <= 2);
+                ++linear;
+            }
+        }
+    }
+    CAPTURE(cubic, inner_cubic, linear, minimum_cubic_sum, maximum_cubic_sum);
+    REQUIRE(inner_cubic > 0);
+    REQUIRE(cubic > inner_cubic);
     REQUIRE(linear > 0);
 }
 #endif
@@ -1931,4 +2168,64 @@ TEST_CASE("Successive-orders cubic horizontal weights reproduce cubics",
     REQUIRE_THROWS_AS(sasktran2::successive_orders::cubic_lagrange_weights(
                           short_grid, 0.5, indices, weights),
                       std::invalid_argument);
+}
+
+TEST_CASE("Successive-orders cubic weight bound accepts uniform grids and "
+          "rejects strongly non-uniform ones",
+          "[successive_orders][geometry]") {
+    using sasktran2::successive_orders::cubic_lagrange_weights;
+    using sasktran2::successive_orders::cubic_weights_are_bounded;
+    const auto abs_sum = [](const std::array<double, 4>& weights) {
+        return std::abs(weights[0]) + std::abs(weights[1]) +
+               std::abs(weights[2]) + std::abs(weights[3]);
+    };
+    std::array<int, 4> indices{};
+    std::array<double, 4> weights{};
+
+    for (const int size : {4, 5, 7, 11, 31}) {
+        INFO("size=" << size);
+        const Eigen::VectorXd grid =
+            Eigen::VectorXd::LinSpaced(size, -0.3, 0.45);
+        const double spacing = grid[1] - grid[0];
+        double interior_maximum = 0.0;
+        double end_maximum = 0.0;
+        constexpr int samples = 400;
+        for (int interval = 0; interval < size - 1; ++interval) {
+            for (int sample = 1; sample < samples; ++sample) {
+                const double x = grid[interval] + spacing * sample / samples;
+                cubic_lagrange_weights(grid, x, indices, weights);
+                REQUIRE(cubic_weights_are_bounded(weights));
+                const bool end = interval == 0 || interval == size - 2;
+                double& maximum = end ? end_maximum : interior_maximum;
+                maximum = std::max(maximum, abs_sum(weights));
+            }
+        }
+        CAPTURE(interior_maximum, end_maximum);
+        REQUIRE(end_maximum == Catch::Approx(1.6311).margin(1.0e-3));
+        REQUIRE(interior_maximum == Catch::Approx(1.25).margin(1.0e-6));
+    }
+
+    Eigen::VectorXd stretched(4);
+    stretched << 0.0, 1.0, 2.0, 4.0;
+    cubic_lagrange_weights(stretched, 3.0, indices, weights);
+    REQUIRE(weights[0] == Catch::Approx(0.25));
+    REQUIRE(weights[1] == Catch::Approx(-1.0));
+    REQUIRE(weights[2] == Catch::Approx(1.5));
+    REQUIRE(weights[3] == Catch::Approx(0.25));
+    REQUIRE(!cubic_weights_are_bounded(weights));
+
+    Eigen::VectorXd clustered(4);
+    clustered << 0.0, 1.0, 1.01, 2.0;
+    for (const double x :
+         {0.1, 0.25, 0.5, 0.75, 0.9, 1.1, 1.25, 1.5, 1.75, 1.9}) {
+        INFO("x=" << x);
+        cubic_lagrange_weights(clustered, x, indices, weights);
+        REQUIRE(!cubic_weights_are_bounded(weights));
+    }
+    cubic_lagrange_weights(clustered, 0.5, indices, weights);
+    REQUIRE(weights[1] == Catch::Approx(38.25));
+    REQUIRE(weights[2] == Catch::Approx(-37.5037).epsilon(1.0e-5));
+    // Inside the narrow interval the stencil is well conditioned.
+    cubic_lagrange_weights(clustered, 1.005, indices, weights);
+    REQUIRE(cubic_weights_are_bounded(weights));
 }

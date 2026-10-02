@@ -565,10 +565,13 @@ namespace sasktran2::successive_orders {
              * negative, which near the terminator turns a small night-side
              * source next to large sunlit ones into a negative interpolated
              * source. A stencil is therefore cubic only when the solar zenith
-             * angle is below 90 degrees at all four of its columns; otherwise
-             * the location uses linear weights. The guard is geometry-only: it
-             * reduces, but does not eliminate, negative-weight artefacts
-             * (for example, a very dim sunlit column next to bright ones).
+             * angle is below 90 degrees at all four of its columns, and when
+             * its absolute weights sum to at most max_cubic_weight_abs_sum,
+             * which rejects the large weights of strongly non-uniform
+             * explicit grids; otherwise the location uses linear weights.
+             * Both guards are geometry-only: they reduce, but do not
+             * eliminate, negative-weight artefacts (for example, a very dim
+             * sunlit column next to bright ones).
              */
             void horizontal_stencil(double angle, std::array<int, 4>& indices,
                                     std::array<double, 4>& weights,
@@ -579,7 +582,8 @@ namespace sasktran2::successive_orders {
                         HorizontalInterpolation::cubic &&
                     size >= 4 && angle > grid[0] && angle < grid[size - 1]) {
                     cubic_lagrange_weights(grid, angle, indices, weights);
-                    if (std::all_of(indices.begin(), indices.end(),
+                    if (cubic_weights_are_bounded(weights) &&
+                        std::all_of(indices.begin(), indices.end(),
                                     [this](int column) {
                                         return m_sunlit_columns[column] != 0;
                                     })) {
@@ -1588,7 +1592,8 @@ namespace sasktran2::successive_orders {
             // where a four-column stencil is much more accurate. Diffuse
             // rays keep the two-column stencil, which bounds the transport
             // weights the iteration applies on every order. Stencils with a
-            // column on the night side stay linear (see horizontal_stencil).
+            // column on the night side, or with large weights on a strongly
+            // non-uniform grid, stay linear (see horizontal_stencil).
             m_los_location_interpolator.reset();
             if (!m_settings.legacy_interpolation &&
                 m_source_horizontal_angles_rad.size() >= 4) {

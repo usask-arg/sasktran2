@@ -131,9 +131,9 @@ def fill_atmosphere(
     ozone = (5e18 * np.exp(-((z - 22_000.0) ** 2) / (2 * 6_000.0**2)))[
         :, None
     ] * np.array([1e-27, 4.5e-25, 1e-25])[np.newaxis, :]
-    aerosol = (1.5e-7 * np.exp(-((z - 18_000.0) ** 2) / (2 * 6_000.0**2)))[:, None] * (
-        wavelength / 750.0
-    ) ** -1.5
+    aerosol = (1.5e-7 * np.exp(-((z - 18_000.0) ** 2) / (2 * 6_000.0**2)))[
+        :, None
+    ] * (wavelength / 750.0) ** -1.5
     extinction = rayleigh + ozone + aerosol
     scattering = rayleigh + 0.99 * aerosol
     atmosphere.storage.total_extinction[:] = extinction
@@ -181,9 +181,10 @@ def run_2d(
     )
     fill_atmosphere(atmosphere, HORIZONTAL_RAD, ALTITUDES_M)
     radiance = engine.calculate_radiance(atmosphere).radiance.values
-    return np.asarray(radiance).reshape(
-        len(WAVELENGTHS_NM), -1
-    ), time.perf_counter() - start
+    return (
+        np.asarray(radiance).reshape(len(WAVELENGTHS_NM), -1),
+        time.perf_counter() - start,
+    )
 
 
 def memory_probe(argv: list[str]) -> None:

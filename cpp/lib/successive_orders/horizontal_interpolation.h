@@ -4,11 +4,34 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <stdexcept>
 
 namespace sasktran2::successive_orders {
     /** Horizontal interpolation of the stored source between columns. */
     enum class HorizontalInterpolation { linear, cubic };
+
+    /** Largest sum of absolute cubic weights accepted for one stencil.
+     *
+     * Lagrange weights grow without bound on strongly non-uniform grids, for
+     * example 0.25, -1, 1.5, 0.25 on [0, 1, 2, 4] at 3 and about +-38 on
+     * [0, 1, 1.01, 2] at 0.5, which amplifies any error in the stored
+     * source. Stencils whose absolute weights sum to more than this use
+     * linear weights instead. On a uniform grid the sum is at most 1.25 in
+     * interior intervals and about 1.63 in the end intervals, so uniform
+     * grids always stay cubic.
+     */
+    inline constexpr double max_cubic_weight_abs_sum = 2.0;
+
+    /** Whether four-point weights satisfy max_cubic_weight_abs_sum. */
+    inline bool
+    cubic_weights_are_bounded(const std::array<double, 4>& weights) {
+        double sum = 0.0;
+        for (const double weight : weights) {
+            sum += std::abs(weight);
+        }
+        return sum <= max_cubic_weight_abs_sum;
+    }
 
     /** Four-point Lagrange weights on a strictly increasing grid.
      *

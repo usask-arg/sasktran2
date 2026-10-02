@@ -594,8 +594,10 @@ def test_2d_successive_orders_rejects_source_angles_outside_geometry():
     [
         (1, False, False),
         (1, True, False),
+        (3, False, False),
         (3, True, False),
         (1, False, True),
+        (3, False, True),
         (3, True, True),
     ],
 )
@@ -606,11 +608,13 @@ def test_2d_successive_orders_native_products_are_adjoint(
     config = successive_orders_config(
         num_stokes=num_stokes, single_scatter_source=sk.SingleScatterSource.NoSource
     )
+    # The Config default prefers reduced-horizon quadrature, so the plain
+    # Lebedev cases must disable it explicitly.
+    config.successive_orders_reduced_horizon_quadrature = reduced_horizon
     if reduced_horizon:
         config.num_sza = 3
         config.num_successive_orders_incoming = 37
         config.num_successive_orders_outgoing = 14
-        config.successive_orders_reduced_horizon_quadrature = True
     viewing = viewing_geometry()
     if cubic_los:
         # Five sunlit source columns and a limb ray between them select the
