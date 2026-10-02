@@ -73,6 +73,36 @@ diffuse multiple-scatter rays is not yet supported, so
 Line-of-sight refraction and flux observers are also not supported with
 Geometry2D.
 
+## Source interpolation
+
+For spherical geometries each source column stores its multiple-scatter source
+on angular grids that are rotated into the column's local solar frame (local
+zenith and solar azimuth). Neighbouring columns therefore sample identical
+local directions, so interpolating between them no longer mixes different
+angular nodes. This removes an error floor that did not shrink as columns were
+added, and it makes 1D results insensitive to the solar-azimuth convention. The
+alignment has no memory cost.
+
+For {py:class}`sasktran2.Geometry2D`, the observer line-of-sight source is also
+interpolated cubically in horizontal angle with four-point Lagrange weights.
+This is used when at least four horizontal source columns exist and the solar
+zenith angle is below 90 degrees at every column of the four-column stencil.
+Otherwise, and for diffuse incoming rays and ground forcing, the interpolation
+is bilinear. Cubic weights can be negative, so the sunlit condition avoids
+mixing a dark night-side column with bright dayside ones; it reduces, but does
+not guarantee freedom from, negative radiances near the terminator. Cubic
+weights roughly double the memory used by the line-of-sight source weights.
+
+In practice, about seven columns now match or beat the accuracy that previously
+needed eleven for solar zenith angles below about 85 degrees. Terminator
+conditions remain challenging and still benefit from additional columns. The
+default results differ from earlier versions at the level of the angular
+discretization, up to about 1e-2 at 26 directions and much less at 110.
+
+Set {py:attr}`sasktran2.Config.successive_orders_legacy_interpolation` to
+`True` to restore the previous behaviour: one globally oriented angular grid and
+bilinear line-of-sight interpolation.
+
 ## Relevant Configuration Options
 
 ```{eval-rst}
@@ -89,6 +119,8 @@ Geometry2D.
   sasktran2.Config.successive_orders_damping
   sasktran2.Config.successive_orders_altitude_grid_m
   sasktran2.Config.successive_orders_horizontal_angle_grid_radians
+  sasktran2.Config.successive_orders_reduced_horizon_quadrature
+  sasktran2.Config.successive_orders_legacy_interpolation
   sasktran2.Config.num_stokes
 
 ```

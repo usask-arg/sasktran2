@@ -564,9 +564,11 @@ namespace sasktran2::successive_orders {
              * constantly, as in linear mode. Lagrange weights can be
              * negative, which near the terminator turns a small night-side
              * source next to large sunlit ones into a negative interpolated
-             * source. A stencil is therefore cubic only when the sun is above
-             * the astronomical horizon at all four of its columns; otherwise
-             * the location uses linear weights.
+             * source. A stencil is therefore cubic only when the solar zenith
+             * angle is below 90 degrees at all four of its columns; otherwise
+             * the location uses linear weights. The guard is geometry-only: it
+             * reduces, but does not eliminate, negative-weight artefacts
+             * (for example, a very dim sunlit column next to bright ones).
              */
             void horizontal_stencil(double angle, std::array<int, 4>& indices,
                                     std::array<double, 4>& weights,
@@ -642,8 +644,8 @@ namespace sasktran2::successive_orders {
                     sasktran2::grids::interpolation::linear);
             }
 
-            /** Per-column flags, set where the sun is above the astronomical
-             * horizon. The column vertical is altitude independent. Only
+            /** Per-column flags, set where the solar zenith angle is below
+             * 90 degrees. The column vertical is altitude independent. Only
              * cubic mode needs them. */
             static std::vector<char> make_sunlit_columns(
                 const sasktran2::Geometry2D& geometry,

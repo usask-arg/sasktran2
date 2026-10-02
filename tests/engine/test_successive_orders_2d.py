@@ -614,7 +614,9 @@ def test_2d_successive_orders_native_products_are_adjoint(
     viewing = viewing_geometry()
     if cubic_los:
         # Five sunlit source columns and a limb ray between them select the
-        # four-column LOS stencil.
+        # four-column LOS stencil. The outermost column has cos SZA ~ 0.044,
+        # so the cubic path depends on geometry2d() keeping all five columns
+        # sunlit; a darker geometry would silently fall back to bilinear.
         config.num_sza = 5
         viewing.add_ray(
             sk.TangentAltitude(
@@ -1022,6 +1024,8 @@ def test_2d_cubic_los_interpolation_stays_positive_at_the_terminator():
     # at negative horizontal angles are on the night side. Cubic weights there
     # would mix the small night-side source with negative multiples of the
     # sunlit columns' source.
+    # With num_sza=7 over +-20 deg the centre column lies exactly on the
+    # terminator, so the night-side rays exercise only the linear fallback.
     altitudes = np.arange(0.0, 60_001.0, 2_000.0)
     horizontal = np.deg2rad(np.arange(-20.0, 20.01, 1.0))
     geometry = sk.Geometry2D(
