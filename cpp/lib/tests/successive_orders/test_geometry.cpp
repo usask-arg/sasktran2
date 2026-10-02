@@ -789,7 +789,201 @@ TEST_CASE("Successive-orders 2D solar table resolves source-ray endpoint OD",
     REQUIRE(maximum_relative < 0.06);
     REQUIRE(mean_absolute < 0.006);
 }
+
+TEST_CASE("Successive-orders columns share frame-aligned outgoing grids",
+          "[successive_orders][geometry][geometry2d]") {
+    for (const bool reduced_horizon : {true, false}) {
+        DYNAMIC_SECTION("reduced_horizon=" << reduced_horizon) {
+            sasktran2::Geometry2D geometry(
+                0.6, 0.4, 6372000.0, altitude_grid(), horizontal_angle_grid(),
+                sasktran2::grids::interpolation::linear);
+            sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+            const auto los = make_los_geometry(geometry, raytracer);
+            sasktran2::successive_orders::SourceGeometrySettings settings;
+            settings.num_incoming = 26;
+            settings.num_outgoing = 26;
+            settings.num_sza = 3;
+            settings.num_threads = 1;
+            settings.use_reduced_horizon_quadrature = reduced_horizon;
+            sasktran2::successive_orders::SourceGeometry1D source(raytracer,
+                                                                  geometry);
+            source.initialize(los, settings);
+
+            const int altitudes =
+                static_cast<int>(source.source_altitudes_m().size());
+            const auto frame = [&](const Eigen::Vector3d& position) {
+                const Eigen::Vector3d up = position.normalized();
+                const Eigen::Vector3d x =
+                    sasktran2::successive_orders::solar_horizontal_reference(
+                        up, geometry);
+                Eigen::Matrix3d result;
+                result << x, up.cross(x), up;
+                return result;
+            };
+            const auto& reference = source.source_point(0);
+            const Eigen::Matrix3d reference_frame =
+                frame(reference.location().position);
+            for (int index = 0; index < source.num_interior_points(); ++index) {
+                const auto& point = source.source_point(index);
+                const auto& column_first =
+                    source.source_point(index - index % altitudes);
+                REQUIRE(&point.outgoing_sphere() ==
+                        &column_first.outgoing_sphere());
+                REQUIRE(point.angular_class() ==
+                        (reduced_horizon ? index % altitudes : 0));
+                const Eigen::Matrix3d point_frame =
+                    frame(point.location().position);
+                for (int node = 0; node < point.num_outgoing(); ++node) {
+                    REQUIRE(
+                        (point_frame.transpose() *
+                             point.outgoing_sphere().get_quad_position(node) -
+                         reference_frame.transpose() *
+                             reference.outgoing_sphere().get_quad_position(
+                                 node))
+                            .norm() < 1.0e-12);
+                }
+            }
+            for (int ground = 0; ground < source.num_ground_points();
+                 ++ground) {
+                REQUIRE(
+                    source.source_point(source.num_interior_points() + ground)
+                        .num_outgoing() ==
+                    source.source_point(source.num_interior_points())
+                        .num_outgoing());
+            }
+        }
+    }
+}
+
+TEST_CASE("Successive-orders legacy interpolation keeps one global grid",
+          "[successive_orders][geometry][geometry2d]") {
+    sasktran2::Geometry2D geometry(0.6, 0.4, 6372000.0, altitude_grid(),
+                                   horizontal_angle_grid(),
+                                   sasktran2::grids::interpolation::linear);
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+    const auto los = make_los_geometry(geometry, raytracer);
+    sasktran2::successive_orders::SourceGeometrySettings settings;
+    settings.num_incoming = 26;
+    settings.num_outgoing = 26;
+    settings.num_sza = 3;
+    settings.num_threads = 1;
+    settings.use_reduced_horizon_quadrature = true;
+    settings.legacy_interpolation = true;
+    sasktran2::successive_orders::SourceGeometry1D source(raytracer, geometry);
+    source.initialize(los, settings);
+    for (int index = 0; index < source.num_interior_points(); ++index) {
+        REQUIRE(&source.source_point(index).outgoing_sphere() ==
+                &source.source_point(0).outgoing_sphere());
+        REQUIRE(source.source_point(index).angular_class() == index);
+    }
+}
 #endif
+
+TEST_CASE("Successive-orders aligned grids equal legacy grids in the "
+          "reference solar frame",
+          "[successive_orders][geometry]") {
+    // At a single SZA column on the reference point with zero solar azimuth
+    // the local solar frame is the identity up to rounding of the source
+    // position, so frame-aligned grids must reproduce the legacy global grids
+    // to rounding, with identical weights.
+    for (const bool reduced_horizon : {true, false}) {
+        DYNAMIC_SECTION("reduced_horizon=" << reduced_horizon) {
+            sasktran2::Geometry1D geometry(
+                0.6, 0.0, 6372000.0, altitude_grid(),
+                sasktran2::grids::interpolation::linear,
+                sasktran2::geometrytype::spherical);
+            sasktran2::raytracing::SphericalShellRayTracer raytracer(geometry);
+            const auto los = make_los_geometry(geometry, raytracer);
+            sasktran2::successive_orders::SourceGeometrySettings settings;
+            settings.num_incoming = 26;
+            settings.num_outgoing = 26;
+            settings.num_sza = 1;
+            settings.num_threads = 1;
+            settings.use_reduced_horizon_quadrature = reduced_horizon;
+            sasktran2::successive_orders::SourceGeometry1D aligned(raytracer,
+                                                                   geometry);
+            aligned.initialize(los, settings);
+            settings.legacy_interpolation = true;
+            sasktran2::successive_orders::SourceGeometry1D legacy(raytracer,
+                                                                  geometry);
+            legacy.initialize(los, settings);
+
+            REQUIRE(aligned.num_points() == legacy.num_points());
+            REQUIRE(aligned.num_interior_points() ==
+                    legacy.num_interior_points());
+            const auto require_same_direction =
+                [](const Eigen::Vector3d& actual,
+                   const Eigen::Vector3d& expected) {
+                    REQUIRE((actual - expected).cwiseAbs().maxCoeff() <=
+                            1.0e-14);
+                };
+            const auto require_same_sphere =
+                [&](const sasktran2::math::UnitSphere& actual,
+                    const sasktran2::math::UnitSphere& expected) {
+                    REQUIRE(actual.num_points() == expected.num_points());
+                    for (int node = 0; node < expected.num_points(); ++node) {
+                        require_same_direction(
+                            actual.get_quad_position(node),
+                            expected.get_quad_position(node));
+                        REQUIRE(actual.quadrature_weight(node) ==
+                                expected.quadrature_weight(node));
+                    }
+                };
+            // The reference position carries an ulp-level horizontal offset,
+            // so the legacy ground hemisphere keeps equator nodes whose dot
+            // product with the vertical is roundoff-positive. Aligned ground
+            // grids reject that horizon band consistently; otherwise they
+            // keep the same nodes.
+            const auto require_same_hemisphere =
+                [&](const sasktran2::math::UnitSphere& actual,
+                    const sasktran2::math::UnitSphere& expected,
+                    const Eigen::Vector3d& up) {
+                    int actual_node = 0;
+                    int horizon_nodes = 0;
+                    for (int node = 0; node < expected.num_points(); ++node) {
+                        const Eigen::Vector3d direction =
+                            expected.get_quad_position(node);
+                        if (std::abs(direction.dot(up)) <= 1.0e-12) {
+                            ++horizon_nodes;
+                            continue;
+                        }
+                        REQUIRE(actual_node < actual.num_points());
+                        require_same_direction(
+                            actual.get_quad_position(actual_node), direction);
+                        ++actual_node;
+                    }
+                    REQUIRE(actual_node == actual.num_points());
+                    if (horizon_nodes == 0) {
+                        for (int node = 0; node < expected.num_points();
+                             ++node) {
+                            REQUIRE(actual.quadrature_weight(node) ==
+                                    expected.quadrature_weight(node));
+                        }
+                    }
+                };
+            for (int index = 0; index < legacy.num_points(); ++index) {
+                INFO("point=" << index);
+                const auto& actual = aligned.source_point(index);
+                const auto& expected = legacy.source_point(index);
+                REQUIRE(actual.location().position ==
+                        expected.location().position);
+                if (expected.is_ground()) {
+                    const Eigen::Vector3d up =
+                        expected.location().position.normalized();
+                    require_same_hemisphere(actual.incoming_sphere(),
+                                            expected.incoming_sphere(), up);
+                    require_same_hemisphere(actual.outgoing_sphere(),
+                                            expected.outgoing_sphere(), up);
+                } else {
+                    require_same_sphere(actual.incoming_sphere(),
+                                        expected.incoming_sphere());
+                    require_same_sphere(actual.outgoing_sphere(),
+                                        expected.outgoing_sphere());
+                }
+            }
+        }
+    }
+}
 
 TEST_CASE("Successive-orders default source grid preserves nonuniform midpoint "
           "interpolation",
@@ -1141,4 +1335,63 @@ TEST_CASE("Successive-orders structured layer storage retains generic rays "
                    4);              // Cell base does not fit the descriptor.
     check_fallback(0, 0, 65537, 4); // Layer offset domain needs the wide form.
     check_fallback(0, 0, 0, 3);     // Generic OD stencil has a different size.
+}
+
+TEST_CASE("Successive-orders frame-aligned Lebedev grids trace exactly radial "
+          "incoming rays",
+          "[successive_orders][geometry]") {
+    // Aligned Lebedev frames map the canonical poles exactly onto each
+    // column's vertical, so diffuse rays are traced exactly radially at every
+    // column, not just at the reference point.
+    Eigen::VectorXd altitudes = Eigen::VectorXd::LinSpaced(27, 0.0, 65000.0);
+    sasktran2::Geometry1D geometry(0.6, 0.0, 6372000.0, std::move(altitudes),
+                                   sasktran2::grids::interpolation::linear,
+                                   sasktran2::geometrytype::spherical);
+    sasktran2::raytracing::SphericalShellRayTracer raytracer(geometry);
+    sasktran2::viewinggeometry::InternalViewingGeometry los;
+    los.traced_rays.resize(3);
+    const std::array<double, 3> observer_cos_sza{0.4, 0.6, 0.8};
+    for (std::size_t ray_index = 0; ray_index < observer_cos_sza.size();
+         ++ray_index) {
+        sasktran2::viewinggeometry::ViewingRay ray;
+        ray.observer.position = geometry.coordinates().solar_coordinate_vector(
+            observer_cos_sza[ray_index], 0.0, 4000.0);
+        ray.look_away = -ray.observer.position.normalized();
+        raytracer.trace_ray(ray, los.traced_rays[ray_index]);
+    }
+
+    sasktran2::successive_orders::SourceGeometrySettings settings;
+    settings.num_incoming = 6;
+    settings.num_outgoing = 6;
+    settings.num_sza = 3;
+    settings.num_threads = 1;
+    sasktran2::successive_orders::SourceGeometry1D source(raytracer, geometry);
+    source.initialize(los, settings);
+    REQUIRE(source.source_cos_sza().size() == 3);
+
+    int radial_rays = 0;
+    for (const auto& point : source.source_points()) {
+        const Eigen::Vector3d up = point.location().position.normalized();
+        for (int direction = 0; direction < point.num_incoming(); ++direction) {
+            if (std::abs(
+                    point.incoming_sphere().get_quad_position(direction).dot(
+                        up)) > 1.0 - 1.0e-14) {
+                ++radial_rays;
+            }
+        }
+    }
+    REQUIRE(radial_rays > 0);
+    for (std::size_t ray = 0; ray < source.incoming_interpolation().size();
+         ++ray) {
+        INFO("ray=" << ray);
+        const auto& interpolation = source.incoming_interpolation()[ray];
+        for (std::size_t layer = 0; layer < interpolation.layers.size();
+             ++layer) {
+            const auto optical_depth =
+                interpolation.optical_depth_for_layer(layer);
+            for (std::size_t index = 0; index < optical_depth.size(); ++index) {
+                REQUIRE(std::isfinite(optical_depth[index].second));
+            }
+        }
+    }
 }

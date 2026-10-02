@@ -3,17 +3,20 @@
 #include <sasktran2/hr/diffuse_point.h>
 #include <sasktran2/test_helper.h>
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace {
     using namespace sasktran2::successive_orders;
 
+    template <int NSTOKES>
     Eigen::MatrixXd
-    materialize_atmospheric_block(const ScatteringOperator<3>& scattering,
+    materialize_atmospheric_block(const ScatteringOperator<NSTOKES>& scattering,
                                   int block) {
         const int rows = scattering.layout().output_block_size(block);
         const int columns = scattering.layout().input_block_size(block);
@@ -954,3 +957,126 @@ TEST_CASE("Vector scattering assembler completes delta-M scaling",
     REQUIRE(parameter_forward ==
             Catch::Approx(tangent.dot(native_gradient)).epsilon(5.0e-12));
 }
+
+#ifdef SKTRAN_RUST_SUPPORT
+namespace {
+    template <int NSTOKES> struct FrameAlignedAssemblyCase {
+        using Assembler =
+            std::conditional_t<NSTOKES == 1, ScalarScatteringAssembler,
+                               VectorScatteringAssembler>;
+        using Basis = std::conditional_t<NSTOKES == 1, ScalarAngularBasis,
+                                         VectorAngularBasis>;
+        static constexpr int num_coefficients = 3;
+
+        explicit FrameAlignedAssemblyCase(bool reduced_horizon,
+                                          bool legacy_interpolation = false)
+            : geometry(0.6, 0.4, 6372000.0, altitudes(), horizontal_angles(),
+                       sasktran2::grids::interpolation::linear),
+              raytracer(geometry), source_geometry(raytracer, geometry),
+              atmosphere(
+                  sasktran2::atmosphere::AtmosphereGridStorageFull<NSTOKES>(
+                      1, geometry.size(), num_coefficients),
+                  sasktran2::atmosphere::Surface<NSTOKES>(1), false) {
+            SourceGeometrySettings settings;
+            settings.num_incoming = 26;
+            settings.num_outgoing = 14;
+            settings.num_sza = 3;
+            settings.num_threads = 1;
+            settings.altitude_grid_m = {500.0, 1500.0};
+            settings.use_reduced_horizon_quadrature = reduced_horizon;
+            settings.legacy_interpolation = legacy_interpolation;
+            sasktran2::viewinggeometry::InternalViewingGeometry viewing;
+            source_geometry.initialize(viewing, settings);
+
+            const int stored_coefficients =
+                NSTOKES == 1 ? num_coefficients : 4 * num_coefficients;
+            for (int location = 0; location < geometry.size(); ++location) {
+                for (int coefficient = 0; coefficient < stored_coefficients;
+                     ++coefficient) {
+                    atmosphere.storage().leg_coeff(coefficient, location, 0) =
+                        0.08 + 0.013 * coefficient + 0.021 * location;
+                }
+            }
+            atmosphere.surface().brdf_args().setConstant(0.24);
+        }
+
+        static Eigen::VectorXd altitudes() {
+            return (Eigen::Vector3d() << 0.0, 1000.0, 2000.0).finished();
+        }
+
+        static Eigen::VectorXd horizontal_angles() {
+            return (Eigen::Vector3d() << -0.3, 0.0, 0.3).finished();
+        }
+
+        sasktran2::Geometry2D geometry;
+        sasktran2::raytracing::RustRayTracer2D raytracer;
+        SourceGeometry1D source_geometry;
+        sasktran2::atmosphere::Atmosphere<NSTOKES> atmosphere;
+    };
+
+    template <int NSTOKES>
+    void require_frame_aligned_blocks_match_exact_bases(bool reduced_horizon) {
+        using Case = FrameAlignedAssemblyCase<NSTOKES>;
+        Case fixture(reduced_horizon);
+        typename Case::Assembler assembler(fixture.source_geometry,
+                                           Case::num_coefficients);
+        auto assembled = assembler.create_operator();
+        assembler.assemble_values(fixture.atmosphere, 0, assembled);
+
+        std::vector<std::shared_ptr<const typename Case::Basis>> exact;
+        for (int point = 0;
+             point < fixture.source_geometry.num_interior_points(); ++point) {
+            const auto& source_point =
+                fixture.source_geometry.source_point(point);
+            exact.push_back(std::make_shared<const typename Case::Basis>(
+                source_point.incoming_sphere(), source_point.outgoing_sphere(),
+                Case::num_coefficients));
+        }
+        ScatteringOperator<NSTOKES> reference(assembler.layout(), exact);
+        reference.set_atmospheric_coefficients(
+            static_cast<const ScatteringOperator<NSTOKES>&>(assembled)
+                .atmospheric_coefficients());
+
+        REQUIRE(fixture.source_geometry.num_interior_points() == 6);
+        for (int point = 0;
+             point < fixture.source_geometry.num_interior_points(); ++point) {
+            const Eigen::MatrixXd expected =
+                materialize_atmospheric_block(reference, point);
+            const Eigen::MatrixXd actual =
+                materialize_atmospheric_block(assembled, point);
+            const double scale = std::max(1.0, expected.cwiseAbs().maxCoeff());
+            const double maximum_error =
+                (actual - expected).cwiseAbs().maxCoeff();
+            INFO("point=" << point << " max error=" << maximum_error
+                          << " scale=" << scale);
+            REQUIRE(maximum_error < 5.0e-13 * scale);
+        }
+    }
+} // namespace
+
+TEST_CASE("Frame-aligned scattering blocks match exact per-point bases",
+          "[successive_orders][scattering_assembler][geometry2d]") {
+    for (const bool reduced_horizon : {true, false}) {
+        DYNAMIC_SECTION("scalar reduced_horizon=" << reduced_horizon) {
+            require_frame_aligned_blocks_match_exact_bases<1>(reduced_horizon);
+        }
+        DYNAMIC_SECTION("vector reduced_horizon=" << reduced_horizon) {
+            require_frame_aligned_blocks_match_exact_bases<3>(reduced_horizon);
+        }
+    }
+}
+
+TEST_CASE("Frame-aligned scalar bases are shared per source altitude",
+          "[successive_orders][scattering_assembler][geometry2d]"
+          "[reduced_horizon]") {
+    FrameAlignedAssemblyCase<1> aligned(true);
+    FrameAlignedAssemblyCase<1> legacy(true, true);
+    const ScalarScatteringAssembler aligned_assembler(
+        aligned.source_geometry, FrameAlignedAssemblyCase<1>::num_coefficients);
+    const ScalarScatteringAssembler legacy_assembler(
+        legacy.source_geometry, FrameAlignedAssemblyCase<1>::num_coefficients);
+    // Aligned grids share analysis per altitude, legacy grids per point.
+    REQUIRE(aligned_assembler.storage_bytes() <
+            legacy_assembler.storage_bytes());
+}
+#endif

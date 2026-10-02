@@ -205,6 +205,8 @@ def test_fixed_iteration_solution_agrees_with_legacy_successive_orders(
         iterations=3,
     )
     cpp_config.successive_orders_reduced_horizon_quadrature = False
+    # Compares implementations with identical global grids.
+    cpp_config.successive_orders_legacy_interpolation = True
 
     cpp = _calculate(cpp_config, surface_albedo=0.0).radiance
     legacy = _calculate(legacy_config, surface_albedo=0.0).radiance
@@ -629,3 +631,62 @@ def test_scalar_repeated_vjp_survives_atmosphere_and_engine_lifetimes():
         gc.collect()
 
     assert product_count == 200
+
+
+def test_aligned_grids_make_1d_successive_orders_invariant_to_solar_azimuth_convention():
+    # Rotating the whole scene about the reference vertical (sun and rays
+    # together) must not change the radiance once grids follow the solar frame.
+    def radiance(solar_azimuth: float, legacy: bool) -> np.ndarray:
+        config = sk.Config()
+        config.num_threads = 1
+        config.num_streams = 8
+        config.single_scatter_source = sk.SingleScatterSource.NoSource
+        config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
+        config.num_successive_orders_incoming = 26
+        config.num_successive_orders_outgoing = 26
+        config.successive_orders_legacy_interpolation = legacy
+        cos_sza = 0.6
+        geometry = sk.Geometry1D(
+            cos_sza=cos_sza,
+            solar_azimuth=solar_azimuth,
+            earth_radius_m=EARTH_RADIUS_M,
+            altitude_grid_m=np.arange(0.0, 65_001.0, 1_000.0),
+            interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+            geometry_type=sk.GeometryType.Spherical,
+        )
+        viewing = sk.ViewingGeometry()
+        for tangent in (10_000.0, 25_000.0, 40_000.0):
+            viewing.add_ray(
+                sk.TangentAltitudeSolar(
+                    tangent_altitude_m=tangent,
+                    relative_azimuth=0.7,
+                    observer_altitude_m=200_000.0,
+                    cos_sza=cos_sza,
+                )
+            )
+        atmosphere = sk.Atmosphere(
+            geometry,
+            config,
+            wavelengths_nm=np.array([450.0]),
+            calculate_derivatives=False,
+        )
+        sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+        atmosphere["rayleigh"] = sk.constituent.Rayleigh()
+        atmosphere["surface"] = sk.constituent.LambertianSurface(0.3)
+        engine = sk.Engine(config, geometry, viewing)
+        return engine.calculate_radiance(atmosphere).radiance.values.ravel()
+
+    # Radiance jumps by about 7e-8 with solar azimuth independently of
+    # successive orders (single-scatter-only runs show it too), so the aligned
+    # bound sits above that floor while staying >100x below the legacy change.
+    aligned_reference = radiance(0.0, False)
+    legacy_reference = radiance(0.0, True)
+    for solar_azimuth in (1.1, 2.5):
+        aligned_change = np.max(
+            np.abs(radiance(solar_azimuth, False) / aligned_reference - 1)
+        )
+        legacy_change = np.max(
+            np.abs(radiance(solar_azimuth, True) / legacy_reference - 1)
+        )
+        assert aligned_change < 1e-6
+        assert legacy_change > 1e-4

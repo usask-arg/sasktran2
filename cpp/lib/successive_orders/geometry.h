@@ -57,6 +57,17 @@ namespace sasktran2::successive_orders {
         int incoming_offset() const { return m_incoming_offset; }
         int outgoing_offset() const { return m_outgoing_offset; }
 
+        /** Rotation class of this point's angular grids.
+         *
+         * Interior points with equal class have scattering operators related
+         * by one rigid rotation applied to both their incoming and outgoing
+         * grids. Frame-aligned reduced-horizon grids use the altitude index,
+         * plain Lebedev grids (aligned or legacy) use 0, legacy
+         * reduced-horizon grids use the point index, and ground points use
+         * -1.
+         */
+        int angular_class() const { return m_angular_class; }
+
         const std::vector<InterpolationWeight>& atmosphere_weights() const {
             return m_atmosphere_weights;
         }
@@ -70,6 +81,7 @@ namespace sasktran2::successive_orders {
         std::vector<InterpolationWeight> m_atmosphere_weights;
         int m_incoming_offset = 0;
         int m_outgoing_offset = 0;
+        int m_angular_class = 0;
         bool m_is_ground = false;
     };
 

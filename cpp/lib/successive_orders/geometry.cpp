@@ -100,8 +100,8 @@ namespace sasktran2::successive_orders {
             return {(total + 1) / 2, total / 2};
         }
 
-        /** A minimally rotated Lebedev rule used by the reduced-horizon
-         * vector solver.
+        /** The minimal rotation applied to the reduced-horizon outgoing
+         * Lebedev rule.
          *
          * Lebedev rules contain nodes on the coordinate poles. Those nodes
          * make the meridian reference frame singular and require an expensive
@@ -109,15 +109,35 @@ namespace sasktran2::successive_orders {
          * rotation preserves every quadrature weight and degree-of-exactness
          * guarantee while moving the nodes away from the singular frame.
          */
-        class PoleAvoidingLebedevSphere final
-            : public sasktran2::math::UnitSphere {
+        Eigen::Matrix3d pole_avoiding_rotation() {
+            return (Eigen::AngleAxisd(0.01, Eigen::Vector3d::UnitZ()) *
+                    Eigen::AngleAxisd(0.01, Eigen::Vector3d::UnitY()))
+                .toRotationMatrix();
+        }
+
+        /** Rotation from canonical sphere axes to a point's local solar frame.
+         *
+         * The columns are the solar horizontal direction, up x that
+         * direction, and the local vertical. The frame equals the identity,
+         * up to rounding of the position, at a reference point whose solar
+         * azimuth is zero.
+         */
+        Eigen::Matrix3d local_solar_frame(const Eigen::Vector3d& position,
+                                          const sasktran2::Geometry& geometry) {
+            const Eigen::Vector3d up = position.normalized();
+            const Eigen::Vector3d x = solar_horizontal_reference(up, geometry);
+            Eigen::Matrix3d frame;
+            frame.col(0) = x;
+            frame.col(1) = up.cross(x);
+            frame.col(2) = up;
+            return frame;
+        }
+
+        /** A Lebedev rule rigidly rotated by a fixed matrix. */
+        class RotatedLebedevSphere final : public sasktran2::math::UnitSphere {
           public:
-            explicit PoleAvoidingLebedevSphere(int npoints)
-                : m_sphere(npoints),
-                  m_rotation(
-                      (Eigen::AngleAxisd(0.01, Eigen::Vector3d::UnitZ()) *
-                       Eigen::AngleAxisd(0.01, Eigen::Vector3d::UnitY()))
-                          .toRotationMatrix()) {}
+            RotatedLebedevSphere(int npoints, const Eigen::Matrix3d& rotation)
+                : m_sphere(npoints), m_rotation(rotation) {}
 
             int num_points() const override { return m_sphere.num_points(); }
 
@@ -313,14 +333,26 @@ namespace sasktran2::successive_orders {
 
         class GroundUnitSphere final : public sasktran2::math::UnitSphere {
           public:
+            /** Upward hemisphere of a full-sphere rule.
+             *
+             * Nodes are kept when their dot product with the location exceeds
+             * relative_horizon_tolerance * |location|. Frame-aligned rules put
+             * Lebedev equator nodes exactly on the horizon, where roundoff
+             * would otherwise keep some of them and reject others, so they
+             * pass a small positive tolerance. Legacy grids pass zero, which
+             * keeps their original selection unchanged.
+             */
             GroundUnitSphere(std::unique_ptr<const UnitSphere>&& sphere,
-                             const Eigen::Vector3d& location)
+                             const Eigen::Vector3d& location,
+                             double relative_horizon_tolerance)
                 : m_full_sphere(std::move(sphere)) {
                 m_contributing_map.reserve(m_full_sphere->num_points() / 2);
+                const double horizon_tolerance =
+                    relative_horizon_tolerance * location.norm();
                 for (int index = 0; index < m_full_sphere->num_points();
                      ++index) {
                     if (m_full_sphere->get_quad_position(index).dot(location) >
-                        0) {
+                        horizon_tolerance) {
                         m_contributing_map.push_back(index);
                         m_quadrature_normalization +=
                             m_full_sphere->quadrature_weight(index);
@@ -779,21 +811,30 @@ namespace sasktran2::successive_orders {
             }
         }
 
+        // Frame-aligned grids rotate each column's legacy grid into the
+        // column's local solar frame, so a direction mapped to any column by
+        // rotate_unit_vector meets the same canonical nodes and weights.
+        const bool aligned = !m_settings.legacy_interpolation &&
+                             m_geometry.coordinates().geometry_type() ==
+                                 sasktran2::geometrytype::spherical;
+        const int num_altitudes = static_cast<int>(m_source_altitudes_m.size());
+        if (num_altitudes < 1 || m_num_interior_points % num_altitudes != 0) {
+            throw std::logic_error(
+                "Successive-orders interior points must form complete "
+                "altitude columns");
+        }
+        const int num_columns = m_num_interior_points / num_altitudes;
+        const auto column_frame = [&](int point_index) {
+            return local_solar_frame(
+                m_source_points[point_index].location().position, m_geometry);
+        };
+
         m_angular_grids.clear();
         m_angular_grids.reserve(
             static_cast<std::size_t>(m_num_ground_points) +
             (m_settings.use_reduced_horizon_quadrature
                  ? static_cast<std::size_t>(m_num_interior_points)
-                 : 1));
-        std::shared_ptr<const sasktran2::math::UnitSphere> volume_outgoing;
-        if (m_settings.use_reduced_horizon_quadrature) {
-            volume_outgoing = std::make_shared<const PoleAvoidingLebedevSphere>(
-                m_settings.num_outgoing);
-        } else {
-            volume_outgoing =
-                std::make_shared<const sasktran2::math::LebedevSphere>(
-                    m_settings.num_outgoing);
-        }
+                 : (aligned ? static_cast<std::size_t>(num_columns) : 1)));
         double surface_radius = 0.0;
         if (m_settings.use_reduced_horizon_quadrature) {
             const auto& altitude_grid =
@@ -802,31 +843,71 @@ namespace sasktran2::successive_orders {
                     : m_geometry_2d->altitude_grid().grid();
             surface_radius =
                 m_geometry.coordinates().earth_radius() + altitude_grid[0];
+            const std::shared_ptr<const sasktran2::math::UnitSphere>
+                volume_outgoing = std::make_shared<const RotatedLebedevSphere>(
+                    m_settings.num_outgoing, pole_avoiding_rotation());
+            std::shared_ptr<const sasktran2::math::UnitSphere> column_outgoing;
             for (int point_index = 0; point_index < m_num_interior_points;
                  ++point_index) {
+                auto& point = m_source_points[point_index];
                 auto grid = std::make_unique<AngularGridPair>();
+                // The incoming rings are already built in the local solar
+                // frame and depend only on the point radius.
                 grid->incoming = std::make_shared<ReducedHorizonSphere>(
-                    m_source_points[point_index].location().position,
-                    surface_radius, m_settings.num_incoming, m_geometry);
-                grid->outgoing = volume_outgoing;
-                m_source_points[point_index].m_incoming_sphere =
-                    grid->incoming.get();
-                m_source_points[point_index].m_outgoing_sphere =
-                    grid->outgoing.get();
+                    point.location().position, surface_radius,
+                    m_settings.num_incoming, m_geometry);
+                if (aligned) {
+                    if (point_index % num_altitudes == 0) {
+                        column_outgoing =
+                            std::make_shared<const RotatedLebedevSphere>(
+                                m_settings.num_outgoing,
+                                column_frame(point_index) *
+                                    pole_avoiding_rotation());
+                    }
+                    grid->outgoing = column_outgoing;
+                    point.m_angular_class = point_index % num_altitudes;
+                } else {
+                    grid->outgoing = volume_outgoing;
+                    point.m_angular_class = point_index;
+                }
+                point.m_incoming_sphere = grid->incoming.get();
+                point.m_outgoing_sphere = grid->outgoing.get();
                 m_angular_grids.push_back(std::move(grid));
+            }
+        } else if (aligned) {
+            for (int point_index = 0; point_index < m_num_interior_points;
+                 ++point_index) {
+                if (point_index % num_altitudes == 0) {
+                    const Eigen::Matrix3d frame = column_frame(point_index);
+                    auto grid = std::make_unique<AngularGridPair>();
+                    grid->incoming =
+                        std::make_shared<const RotatedLebedevSphere>(
+                            m_settings.num_incoming, frame);
+                    grid->outgoing =
+                        std::make_shared<const RotatedLebedevSphere>(
+                            m_settings.num_outgoing, frame);
+                    m_angular_grids.push_back(std::move(grid));
+                }
+                const auto& grid = *m_angular_grids.back();
+                auto& point = m_source_points[point_index];
+                point.m_incoming_sphere = grid.incoming.get();
+                point.m_outgoing_sphere = grid.outgoing.get();
+                point.m_angular_class = 0;
             }
         } else {
             auto grid = std::make_unique<AngularGridPair>();
             grid->incoming =
                 std::make_shared<const sasktran2::math::LebedevSphere>(
                     m_settings.num_incoming);
-            grid->outgoing = volume_outgoing;
+            grid->outgoing =
+                std::make_shared<const sasktran2::math::LebedevSphere>(
+                    m_settings.num_outgoing);
             for (int point_index = 0; point_index < m_num_interior_points;
                  ++point_index) {
-                m_source_points[point_index].m_incoming_sphere =
-                    grid->incoming.get();
-                m_source_points[point_index].m_outgoing_sphere =
-                    grid->outgoing.get();
+                auto& point = m_source_points[point_index];
+                point.m_incoming_sphere = grid->incoming.get();
+                point.m_outgoing_sphere = grid->outgoing.get();
+                point.m_angular_class = 0;
             }
             m_angular_grids.push_back(std::move(grid));
         }
@@ -837,27 +918,43 @@ namespace sasktran2::successive_orders {
             const Eigen::Vector3d location =
                 m_location_interpolator->ground_location(
                     m_geometry.coordinates(), ground_index);
+            const Eigen::Matrix3d ground_frame =
+                aligned ? local_solar_frame(location, m_geometry)
+                        : Eigen::Matrix3d::Identity();
+            const double horizon_tolerance = aligned ? 1.0e-12 : 0.0;
             auto ground_grid = std::make_unique<AngularGridPair>();
             if (m_settings.use_reduced_horizon_quadrature) {
                 ground_grid->incoming = std::make_shared<GroundUnitSphere>(
                     std::make_unique<ReducedHorizonSphere>(
                         m_source_points[point_index].location().position,
                         surface_radius, m_settings.num_incoming, m_geometry),
-                    location);
+                    location, horizon_tolerance);
+            } else if (aligned) {
+                ground_grid->incoming = std::make_shared<GroundUnitSphere>(
+                    std::make_unique<RotatedLebedevSphere>(
+                        m_settings.num_incoming, ground_frame),
+                    location, horizon_tolerance);
             } else {
                 ground_grid->incoming = std::make_shared<GroundUnitSphere>(
                     std::make_unique<sasktran2::math::LebedevSphere>(
                         m_settings.num_incoming),
-                    location);
+                    location, horizon_tolerance);
             }
-            ground_grid->outgoing = std::make_shared<GroundUnitSphere>(
-                std::make_unique<sasktran2::math::LebedevSphere>(
-                    m_settings.num_outgoing),
-                location);
-            m_source_points[point_index].m_incoming_sphere =
-                ground_grid->incoming.get();
-            m_source_points[point_index].m_outgoing_sphere =
-                ground_grid->outgoing.get();
+            if (aligned) {
+                ground_grid->outgoing = std::make_shared<GroundUnitSphere>(
+                    std::make_unique<RotatedLebedevSphere>(
+                        m_settings.num_outgoing, ground_frame),
+                    location, horizon_tolerance);
+            } else {
+                ground_grid->outgoing = std::make_shared<GroundUnitSphere>(
+                    std::make_unique<sasktran2::math::LebedevSphere>(
+                        m_settings.num_outgoing),
+                    location, horizon_tolerance);
+            }
+            auto& point = m_source_points[point_index];
+            point.m_incoming_sphere = ground_grid->incoming.get();
+            point.m_outgoing_sphere = ground_grid->outgoing.get();
+            point.m_angular_class = -1;
             m_angular_grids.push_back(std::move(ground_grid));
         }
 
