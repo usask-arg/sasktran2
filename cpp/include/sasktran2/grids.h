@@ -163,7 +163,8 @@ namespace sasktran2::grids {
      * altitude dependence in the base class
      *
      *  Interior locations are ordered altitude-fastest within columns that
-     * share one direction (successive orders relies on this).
+     * share one direction, and each altitude index has the same radius in
+     * every column (successive orders relies on this).
      *
      */
     class SourceLocationInterpolator {

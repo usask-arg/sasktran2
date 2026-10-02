@@ -147,6 +147,41 @@ namespace {
         }
     }
 
+    // Every compiled LOS node must be the expected direction itself, which
+    // holds when the grid has a node on that direction.
+    void require_los_direction_on_node(
+        const sasktran2::successive_orders::SourceGeometry1D& geometry,
+        std::size_t ray_index, const Eigen::Vector3d& expected_direction) {
+        const auto weights =
+            geometry.los_interpolation()[ray_index].source_for_layer(0);
+        const auto columns = geometry.los_transport_columns_for_ray(ray_index);
+        REQUIRE(!weights.empty());
+
+        double weight_sum = 0.0;
+        for (const auto& weight : weights) {
+            REQUIRE(std::isfinite(weight.weight()));
+            weight_sum += weight.weight();
+            const int source_index = columns[weight.row_inner_index()];
+
+            const sasktran2::successive_orders::SourcePoint* owner = nullptr;
+            for (const auto& point : geometry.source_points()) {
+                if (source_index >= point.outgoing_offset() &&
+                    source_index <
+                        point.outgoing_offset() + point.num_outgoing()) {
+                    owner = &point;
+                    break;
+                }
+            }
+            REQUIRE(owner != nullptr);
+            const int local_direction = source_index - owner->outgoing_offset();
+            const Eigen::Vector3d compiled_direction =
+                owner->outgoing_sphere().get_quad_position(local_direction);
+            REQUIRE(compiled_direction.dot(expected_direction) ==
+                    Catch::Approx(1.0).margin(1.0e-12));
+        }
+        REQUIRE(weight_sum == Catch::Approx(1.0).margin(1.0e-12));
+    }
+
     // A direction that rotate_unit_vector maps unchanged onto every stencil
     // point must compile to exactly that point sphere's own interpolation of
     // the direction, scaled by the point's location weight.
@@ -743,84 +778,94 @@ TEST_CASE("Successive-orders 2D solar table resolves source-ray endpoint OD",
     sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
     const auto los = make_los_geometry(geometry, raytracer);
 
-    sasktran2::successive_orders::SourceGeometrySettings settings;
-    settings.num_incoming = 14;
-    settings.num_outgoing = 6;
-    settings.num_sza = 3;
-    settings.num_threads = 1;
-    // This bounds the solar table on a fixed sample of source rays, and the
-    // bounds were calibrated on the legacy global incoming grid. Frame-aligned
-    // grids trace a different sample whose two smallest-OD rays exceed the
-    // relative bound by absolute errors below 1e-4.
-    settings.legacy_interpolation = true;
-    settings.altitude_grid_m.resize(7);
-    for (int index = 0; index < 7; ++index) {
-        settings.altitude_grid_m[index] = (index + 0.5) * 80000.0 / 7.0;
-    }
-    sasktran2::successive_orders::SourceGeometry1D source_geometry(raytracer,
-                                                                   geometry);
-    source_geometry.initialize(los, settings);
-    const auto& rays = source_geometry.incoming_rays();
+    for (const bool legacy_interpolation : {true, false}) {
+        DYNAMIC_SECTION("legacy_interpolation=" << legacy_interpolation) {
+            sasktran2::successive_orders::SourceGeometrySettings settings;
+            settings.num_incoming = 14;
+            settings.num_outgoing = 6;
+            settings.num_sza = 3;
+            settings.num_threads = 1;
+            settings.legacy_interpolation = legacy_interpolation;
+            settings.altitude_grid_m.resize(7);
+            for (int index = 0; index < 7; ++index) {
+                settings.altitude_grid_m[index] = (index + 0.5) * 80000.0 / 7.0;
+            }
+            sasktran2::successive_orders::SourceGeometry1D source_geometry(
+                raytracer, geometry);
+            source_geometry.initialize(los, settings);
+            const auto& rays = source_geometry.incoming_rays();
 
-    sasktran2::Config config;
-    sasktran2::solartransmission::SolarTransmissionTable2D table(geometry,
-                                                                 raytracer);
-    table.initialize_config(config);
-    table.initialize_geometry(rays);
-    sasktran2::solartransmission::SolarTableInterpolation interpolation;
-    std::vector<bool> table_ground_hit;
-    table.generate_interpolation(rays, interpolation, table_ground_hit);
+            sasktran2::Config config;
+            sasktran2::solartransmission::SolarTransmissionTable2D table(
+                geometry, raytracer);
+            table.initialize_config(config);
+            table.initialize_geometry(rays);
+            sasktran2::solartransmission::SolarTableInterpolation interpolation;
+            std::vector<bool> table_ground_hit;
+            table.generate_interpolation(rays, interpolation, table_ground_hit);
 
-    sasktran2::solartransmission::SolarTransmissionExact exact(geometry,
-                                                               raytracer);
-    sasktran2::solartransmission::SolarGeometryMatrix exact_matrix;
-    std::vector<bool> exact_ground_hit;
-    exact.generate_geometry_matrix(rays, exact_matrix, exact_ground_hit);
-    REQUIRE(table_ground_hit == exact_ground_hit);
+            sasktran2::solartransmission::SolarTransmissionExact exact(
+                geometry, raytracer);
+            sasktran2::solartransmission::SolarGeometryMatrix exact_matrix;
+            std::vector<bool> exact_ground_hit;
+            exact.generate_geometry_matrix(rays, exact_matrix,
+                                           exact_ground_hit);
+            REQUIRE(table_ground_hit == exact_ground_hit);
 
-    Eigen::VectorXd extinction(geometry.size());
-    for (int horizontal_index = 0; horizontal_index < num_horizontal;
-         ++horizontal_index) {
-        for (int altitude_index = 0; altitude_index < num_altitudes;
-             ++altitude_index) {
-            const double altitude =
-                geometry.altitude_grid().grid()[altitude_index];
-            const double angle =
-                geometry.horizontal_angle_grid()[horizontal_index];
-            extinction[geometry.location_index(altitude_index,
-                                               horizontal_index)] =
-                1.5e-5 * std::exp(-altitude / 18000.0) *
-                (1.0 + 0.2 * std::sin(2.0 * EIGEN_PI * angle / 0.8));
+            Eigen::VectorXd extinction(geometry.size());
+            for (int horizontal_index = 0; horizontal_index < num_horizontal;
+                 ++horizontal_index) {
+                for (int altitude_index = 0; altitude_index < num_altitudes;
+                     ++altitude_index) {
+                    const double altitude =
+                        geometry.altitude_grid().grid()[altitude_index];
+                    const double angle =
+                        geometry.horizontal_angle_grid()[horizontal_index];
+                    extinction[geometry.location_index(altitude_index,
+                                                       horizontal_index)] =
+                        1.5e-5 * std::exp(-altitude / 18000.0) *
+                        (1.0 + 0.2 * std::sin(2.0 * EIGEN_PI * angle / 0.8));
+                }
+            }
+            Eigen::VectorXd table_nodes(table.table_size());
+            Eigen::VectorXd table_od(interpolation.rows());
+            Eigen::VectorXd exact_od(exact_matrix.rows());
+            table.apply(extinction, table_nodes);
+            interpolation.apply(table_nodes, table_od);
+            exact_matrix.multiply(extinction, exact_od);
+
+            double maximum_absolute = 0.0;
+            double maximum_relative = 0.0;
+            double mean_absolute = 0.0;
+            int active = 0;
+            for (Eigen::Index row = 0; row < exact_od.size(); ++row) {
+                if (exact_ground_hit[row]) {
+                    continue;
+                }
+                const double absolute = std::abs(table_od[row] - exact_od[row]);
+                maximum_absolute = std::max(maximum_absolute, absolute);
+                if (std::abs(exact_od[row]) > 1.0e-10) {
+                    maximum_relative = std::max(
+                        maximum_relative, absolute / std::abs(exact_od[row]));
+                }
+                mean_absolute += absolute;
+                ++active;
+            }
+            mean_absolute /= active;
+            CAPTURE(active, maximum_absolute, maximum_relative, mean_absolute);
+            // Ground-hit parity (above) and the mean bound apply to both
+            // samples.
+            REQUIRE(mean_absolute < 0.006);
+            if (legacy_interpolation) {
+                // The worst-ray relative bound was calibrated on the legacy
+                // global incoming grid. Frame-aligned grids trace a different
+                // sample, in which two rows with exact OD below 1e-3 (9.3e-4
+                // and 5.4e-4) exceed it, with absolute errors below 1e-4
+                // (8.3e-5 and 4.6e-5).
+                REQUIRE(maximum_relative < 0.06);
+            }
         }
     }
-    Eigen::VectorXd table_nodes(table.table_size());
-    Eigen::VectorXd table_od(interpolation.rows());
-    Eigen::VectorXd exact_od(exact_matrix.rows());
-    table.apply(extinction, table_nodes);
-    interpolation.apply(table_nodes, table_od);
-    exact_matrix.multiply(extinction, exact_od);
-
-    double maximum_absolute = 0.0;
-    double maximum_relative = 0.0;
-    double mean_absolute = 0.0;
-    int active = 0;
-    for (Eigen::Index row = 0; row < exact_od.size(); ++row) {
-        if (exact_ground_hit[row]) {
-            continue;
-        }
-        const double absolute = std::abs(table_od[row] - exact_od[row]);
-        maximum_absolute = std::max(maximum_absolute, absolute);
-        if (std::abs(exact_od[row]) > 1.0e-10) {
-            maximum_relative =
-                std::max(maximum_relative, absolute / std::abs(exact_od[row]));
-        }
-        mean_absolute += absolute;
-        ++active;
-    }
-    mean_absolute /= active;
-    CAPTURE(active, maximum_absolute, maximum_relative, mean_absolute);
-    REQUIRE(maximum_relative < 0.06);
-    REQUIRE(mean_absolute < 0.006);
 }
 
 TEST_CASE("Successive-orders columns share frame-aligned outgoing grids",
@@ -896,19 +941,25 @@ TEST_CASE("Successive-orders columns share frame-aligned outgoing grids",
                     REQUIRE(point.outgoing_sphere().get_quad_position(node).dot(
                                 up) > 1.0e-12);
                 }
-                REQUIRE(point.num_outgoing() ==
-                        reference_ground.num_outgoing());
+                // Ground grids share canonical coordinates across columns.
                 const Eigen::Matrix3d point_frame =
                     frame(point.location().position);
-                for (int node = 0; node < point.num_outgoing(); ++node) {
-                    REQUIRE(
-                        (point_frame.transpose() *
-                             point.outgoing_sphere().get_quad_position(node) -
-                         reference_ground_frame.transpose() *
-                             reference_ground.outgoing_sphere()
-                                 .get_quad_position(node))
-                            .norm() < 1.0e-12);
-                }
+                const auto require_same_canonical_grid =
+                    [&](const sasktran2::math::UnitSphere& actual,
+                        const sasktran2::math::UnitSphere& expected) {
+                        REQUIRE(actual.num_points() == expected.num_points());
+                        for (int node = 0; node < actual.num_points(); ++node) {
+                            REQUIRE((point_frame.transpose() *
+                                         actual.get_quad_position(node) -
+                                     reference_ground_frame.transpose() *
+                                         expected.get_quad_position(node))
+                                        .norm() < 1.0e-12);
+                        }
+                    };
+                require_same_canonical_grid(point.incoming_sphere(),
+                                            reference_ground.incoming_sphere());
+                require_same_canonical_grid(point.outgoing_sphere(),
+                                            reference_ground.outgoing_sphere());
             }
         }
     }
@@ -944,8 +995,8 @@ TEST_CASE("Successive-orders aligned grids equal legacy grids in the "
     // At a single SZA column on the reference point with zero solar azimuth
     // the local solar frame is the identity up to rounding of the source
     // position, so frame-aligned grids must reproduce the legacy global grids
-    // to rounding, with identical weights. Aligned plain-Lebedev interior
-    // grids additionally carry the pole-avoiding pre-rotation.
+    // to rounding, with identical weights. Aligned Lebedev rules additionally
+    // carry the pole-avoiding pre-rotation, interior and ground.
     const Eigen::Matrix3d pole_avoiding_rotation =
         (Eigen::AngleAxisd(0.01, Eigen::Vector3d::UnitZ()) *
          Eigen::AngleAxisd(0.01, Eigen::Vector3d::UnitY()))
@@ -997,36 +1048,35 @@ TEST_CASE("Successive-orders aligned grids equal legacy grids in the "
             const Eigen::Matrix3d interior_rotation =
                 reduced_horizon ? Eigen::Matrix3d::Identity()
                                 : pole_avoiding_rotation;
-            // The reference position carries an ulp-level horizontal offset,
-            // so the legacy ground hemisphere keeps equator nodes whose dot
-            // product with the vertical is roundoff-positive. Aligned ground
-            // grids reject that horizon band consistently; otherwise they
-            // keep the same nodes.
-            const auto require_same_hemisphere =
-                [&](const sasktran2::math::UnitSphere& actual,
-                    const sasktran2::math::UnitSphere& expected,
+            // Aligned ground Lebedev rules are the pre-rotated full rule
+            // restricted to the upward hemisphere and renormalized. The
+            // pre-rotation keeps only the canonical y-axis pair on the horizon,
+            // which the horizon tolerance rejects.
+            const auto require_tilted_hemisphere =
+                [&](const sasktran2::math::UnitSphere& actual, int num_points,
                     const Eigen::Vector3d& up) {
-                    int actual_node = 0;
-                    int horizon_nodes = 0;
-                    for (int node = 0; node < expected.num_points(); ++node) {
-                        const Eigen::Vector3d direction =
-                            expected.get_quad_position(node);
-                        if (std::abs(direction.dot(up)) <= 1.0e-12) {
-                            ++horizon_nodes;
-                            continue;
+                    const sasktran2::math::LebedevSphere full(num_points);
+                    std::vector<int> kept;
+                    double normalization = 0.0;
+                    for (int node = 0; node < full.num_points(); ++node) {
+                        if ((pole_avoiding_rotation *
+                             full.get_quad_position(node))
+                                .dot(up) > 1.0e-12) {
+                            kept.push_back(node);
+                            normalization += full.quadrature_weight(node);
                         }
-                        REQUIRE(actual_node < actual.num_points());
-                        require_same_direction(
-                            actual.get_quad_position(actual_node), direction);
-                        ++actual_node;
                     }
-                    REQUIRE(actual_node == actual.num_points());
-                    if (horizon_nodes == 0) {
-                        for (int node = 0; node < expected.num_points();
-                             ++node) {
-                            REQUIRE(actual.quadrature_weight(node) ==
-                                    expected.quadrature_weight(node));
-                        }
+                    REQUIRE(actual.num_points() ==
+                            static_cast<int>(kept.size()));
+                    for (std::size_t node = 0; node < kept.size(); ++node) {
+                        const int index = static_cast<int>(node);
+                        require_same_direction(
+                            actual.get_quad_position(index),
+                            pole_avoiding_rotation *
+                                full.get_quad_position(kept[node]));
+                        REQUIRE(actual.quadrature_weight(index) ==
+                                full.quadrature_weight(kept[node]) /
+                                    normalization * 0.5);
                     }
                 };
             for (int index = 0; index < legacy.num_points(); ++index) {
@@ -1038,10 +1088,18 @@ TEST_CASE("Successive-orders aligned grids equal legacy grids in the "
                 if (expected.is_ground()) {
                     const Eigen::Vector3d up =
                         expected.location().position.normalized();
-                    require_same_hemisphere(actual.incoming_sphere(),
-                                            expected.incoming_sphere(), up);
-                    require_same_hemisphere(actual.outgoing_sphere(),
-                                            expected.outgoing_sphere(), up);
+                    if (reduced_horizon) {
+                        // Reduced-horizon rings are already local, and none
+                        // lies on the horizon.
+                        require_same_sphere(actual.incoming_sphere(),
+                                            expected.incoming_sphere(),
+                                            Eigen::Matrix3d::Identity());
+                    } else {
+                        require_tilted_hemisphere(actual.incoming_sphere(),
+                                                  settings.num_incoming, up);
+                    }
+                    require_tilted_hemisphere(actual.outgoing_sphere(),
+                                              settings.num_outgoing, up);
                 } else {
                     require_same_sphere(actual.incoming_sphere(),
                                         expected.incoming_sphere(),
@@ -1258,21 +1316,37 @@ TEST_CASE("Successive-orders spherical interpolation preserves exact axial "
     sasktran2::raytracing::SphericalShellRayTracer raytracer(geometry);
     const auto los = make_exact_direction_los(geometry);
 
-    sasktran2::successive_orders::SourceGeometrySettings settings;
-    settings.num_incoming = 6;
-    settings.num_outgoing = 6;
-    settings.num_threads = 2;
-    sasktran2::successive_orders::SourceGeometry1D source_geometry(raytracer,
-                                                                   geometry);
-    source_geometry.initialize(los, settings);
+    const std::array<Eigen::Vector3d, 4> directions{
+        Eigen::Vector3d::UnitZ(), -Eigen::Vector3d::UnitZ(),
+        Eigen::Vector3d::UnitX(), Eigen::Vector3d::UnitY()};
+    for (const bool legacy_interpolation : {false, true}) {
+        DYNAMIC_SECTION("legacy_interpolation=" << legacy_interpolation) {
+            sasktran2::successive_orders::SourceGeometrySettings settings;
+            settings.num_incoming = 6;
+            settings.num_outgoing = 6;
+            settings.num_threads = 2;
+            settings.legacy_interpolation = legacy_interpolation;
+            sasktran2::successive_orders::SourceGeometry1D source_geometry(
+                raytracer, geometry);
+            source_geometry.initialize(los, settings);
 
-    // Aligned plain-Lebedev grids carry the pole-avoiding pre-rotation, so the
-    // axial directions fall between nodes. Exact preservation then means the
-    // compiled weights equal the point grid's interpolation of the direction.
-    require_los_direction(source_geometry, 0, Eigen::Vector3d::UnitZ());
-    require_los_direction(source_geometry, 1, -Eigen::Vector3d::UnitZ());
-    require_los_direction(source_geometry, 2, Eigen::Vector3d::UnitX());
-    require_los_direction(source_geometry, 3, Eigen::Vector3d::UnitY());
+            for (std::size_t ray = 0; ray < directions.size(); ++ray) {
+                INFO("ray=" << ray);
+                if (legacy_interpolation) {
+                    // The global grid has a node on every axis.
+                    require_los_direction_on_node(source_geometry, ray,
+                                                  directions[ray]);
+                } else {
+                    // Aligned grids carry the pole-avoiding pre-rotation, so
+                    // the axes fall between nodes. Exact preservation then
+                    // means the compiled weights equal the point grid's own
+                    // interpolation of the direction.
+                    require_los_direction(source_geometry, ray,
+                                          directions[ray]);
+                }
+            }
+        }
+    }
 }
 
 TEST_CASE("Successive-orders structured layer storage preserves every weight "
@@ -1410,13 +1484,13 @@ TEST_CASE("Successive-orders structured layer storage retains generic rays "
     check_fallback(0, 0, 0, 3);     // Generic OD stencil has a different size.
 }
 
-TEST_CASE("Successive-orders frame-aligned ground grids trace exactly radial "
+TEST_CASE("Successive-orders frame-aligned Lebedev grids avoid exactly radial "
           "incoming rays",
           "[successive_orders][geometry]") {
-    // Aligned plain-Lebedev ground grids map the canonical pole exactly onto
-    // each ground column's vertical, so diffuse rays leave every ground point
-    // exactly radially. Interior grids carry the pole-avoiding pre-rotation
-    // and have no radial nodes.
+    // Frame-only Lebedev grids would map the canonical pole exactly onto each
+    // column's vertical. The pole-avoiding pre-rotation keeps every aligned
+    // incoming node, interior and ground, off the vertical, and the diffuse
+    // optical-depth quadrature stays finite at every column.
     Eigen::VectorXd altitudes = Eigen::VectorXd::LinSpaced(27, 0.0, 65000.0);
     sasktran2::Geometry1D geometry(0.6, 0.0, 6372000.0, std::move(altitudes),
                                    sasktran2::grids::interpolation::linear,
@@ -1443,21 +1517,17 @@ TEST_CASE("Successive-orders frame-aligned ground grids trace exactly radial "
     source.initialize(los, settings);
     REQUIRE(source.source_cos_sza().size() == 3);
 
-    int interior_radial_rays = 0;
-    int ground_radial_rays = 0;
+    REQUIRE(source.num_ground_points() == 3);
     for (const auto& point : source.source_points()) {
+        INFO("ground=" << point.is_ground());
         const Eigen::Vector3d up = point.location().position.normalized();
         for (int direction = 0; direction < point.num_incoming(); ++direction) {
-            if (std::abs(
+            REQUIRE(
+                std::abs(
                     point.incoming_sphere().get_quad_position(direction).dot(
-                        up)) > 1.0 - 1.0e-14) {
-                ++(point.is_ground() ? ground_radial_rays
-                                     : interior_radial_rays);
-            }
+                        up)) < 1.0 - 1.0e-6);
         }
     }
-    REQUIRE(interior_radial_rays == 0);
-    REQUIRE(ground_radial_rays == source.num_ground_points());
     for (std::size_t ray = 0; ray < source.incoming_interpolation().size();
          ++ray) {
         INFO("ray=" << ray);

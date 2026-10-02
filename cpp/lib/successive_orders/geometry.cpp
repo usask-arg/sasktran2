@@ -100,14 +100,18 @@ namespace sasktran2::successive_orders {
             return {(total + 1) / 2, total / 2};
         }
 
-        /** The minimal rotation applied to the reduced-horizon outgoing
-         * Lebedev rule.
+        /** The minimal rotation applied to Lebedev rules before any frame
+         * alignment.
          *
          * Lebedev rules contain nodes on the coordinate poles. Those nodes
          * make the meridian reference frame singular and require an expensive
          * point-by-point correction after spin-harmonic synthesis. A rigid
          * rotation preserves every quadrature weight and degree-of-exactness
          * guarantee while moving the nodes away from the singular frame.
+         * Legacy grids apply it to the reduced-horizon outgoing rule only.
+         * Frame-aligned grids apply it to every Lebedev rule, interior and
+         * ground, so no node lies on the local vertical and only the
+         * canonical y-axis pair stays on the horizon.
          */
         Eigen::Matrix3d pole_avoiding_rotation() {
             return (Eigen::AngleAxisd(0.01, Eigen::Vector3d::UnitZ()) *
@@ -336,11 +340,11 @@ namespace sasktran2::successive_orders {
             /** Upward hemisphere of a full-sphere rule.
              *
              * Nodes are kept when their dot product with the location exceeds
-             * relative_horizon_tolerance * |location|. Frame-aligned rules put
-             * Lebedev equator nodes exactly on the horizon, where roundoff
-             * would otherwise keep some of them and reject others, so they
-             * pass a small positive tolerance. Legacy grids pass zero, which
-             * keeps their original selection unchanged.
+             * relative_horizon_tolerance * |location|. Frame-aligned rules
+             * keep the canonical y-axis Lebedev pair exactly on the horizon,
+             * where roundoff would otherwise keep one and reject the other,
+             * so they pass a small positive tolerance. Legacy grids pass
+             * zero, which keeps their original selection unchanged.
              */
             GroundUnitSphere(std::unique_ptr<const UnitSphere>&& sphere,
                              const Eigen::Vector3d& location,
@@ -954,9 +958,16 @@ namespace sasktran2::successive_orders {
             const Eigen::Vector3d location =
                 m_location_interpolator->ground_location(
                     m_geometry.coordinates(), ground_index);
+            // Frame-only ground rules put Lebedev equator nodes on the horizon,
+            // where their exclusion biases the hemisphere quadrature, and a
+            // node on the vertical, where the BRDF azimuth is undefined. The
+            // pre-rotation leaves only the canonical y-axis pair on the
+            // horizon, which the tolerance rejects symmetrically.
             const Eigen::Matrix3d ground_frame =
-                aligned ? local_solar_frame(location, m_geometry)
-                        : Eigen::Matrix3d::Identity();
+                aligned
+                    ? Eigen::Matrix3d(local_solar_frame(location, m_geometry) *
+                                      pole_avoiding_rotation())
+                    : Eigen::Matrix3d::Identity();
             const double horizon_tolerance = aligned ? 1.0e-12 : 0.0;
             auto ground_grid = std::make_unique<AngularGridPair>();
             if (m_settings.use_reduced_horizon_quadrature) {
