@@ -219,3 +219,42 @@ TEST_CASE("Spherical Shell Raytracer - Observer Outside Ground Viewing",
 
     REQUIRE(fabs(min_alt) < 1e-8);
 }
+
+TEST_CASE("Spherical Shell Raytracer - Exactly radial rays have finite optical "
+          "depth quadrature",
+          "[sasktran2][raytracing]") {
+    // A ray along the normalized observer position is radial to within
+    // rounding. The entrance cosine can then round one ulp above one, which
+    // must not make the tangent radius of the quadrature non-finite.
+    Eigen::VectorXd altitudes = Eigen::VectorXd::LinSpaced(27, 0.0, 65000.0);
+    sasktran2::Geometry1D geometry(0.6, 0.0, 6372000.0, std::move(altitudes),
+                                   sasktran2::grids::interpolation::linear,
+                                   sasktran2::geometrytype::spherical);
+    sasktran2::raytracing::SphericalShellRayTracer raytracer(geometry);
+
+    int traced_layers = 0;
+    for (const double cos_sza : {0.2, 0.4, 0.6, 0.8}) {
+        for (int layer_index = 0; layer_index < 26; ++layer_index) {
+            const double altitude = 1250.0 + 2500.0 * layer_index;
+            for (const double sign : {1.0, -1.0}) {
+                sasktran2::viewinggeometry::ViewingRay ray;
+                ray.observer.position =
+                    geometry.coordinates().solar_coordinate_vector(cos_sza, 0.0,
+                                                                   altitude);
+                ray.look_away = sign * ray.observer.position.normalized();
+                sasktran2::raytracing::TracedRay traced_ray;
+                raytracer.trace_ray(ray, traced_ray);
+                for (const auto& layer : traced_ray.layers) {
+                    INFO("cos_sza=" << cos_sza << " altitude=" << altitude
+                                    << " sign=" << sign);
+                    REQUIRE(std::isfinite(layer.od_quad_start));
+                    REQUIRE(std::isfinite(layer.od_quad_end));
+                    REQUIRE(std::isfinite(layer.od_quad_start_fraction));
+                    REQUIRE(std::isfinite(layer.od_quad_end_fraction));
+                    ++traced_layers;
+                }
+            }
+        }
+    }
+    REQUIRE(traced_layers > 0);
+}

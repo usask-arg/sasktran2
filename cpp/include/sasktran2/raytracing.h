@@ -536,7 +536,7 @@ namespace sasktran2::raytracing {
 
             double t0 = r0 * costheta0;
             double t1 = r1 * costheta1;
-            double rt = r0 * sqrt(1.0 - costheta0 * costheta0);
+            double rt = r0 * sqrt(std::max(0.0, 1.0 - costheta0 * costheta0));
 
             double dt1;
             double dt2;
