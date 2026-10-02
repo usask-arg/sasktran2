@@ -633,17 +633,25 @@ def test_scalar_repeated_vjp_survives_atmosphere_and_engine_lifetimes():
     assert product_count == 200
 
 
-def test_aligned_grids_make_1d_successive_orders_invariant_to_solar_azimuth_convention():
+@pytest.mark.parametrize("num_sza", [1, 3])
+@pytest.mark.parametrize("reduced_horizon", [True, False])
+@pytest.mark.parametrize("num_stokes", [1, 3])
+def test_aligned_grids_make_1d_successive_orders_invariant_to_solar_azimuth_convention(
+    num_stokes: int, reduced_horizon: bool, num_sza: int
+):
     # Rotating the whole scene about the reference vertical (sun and rays
     # together) must not change the radiance once grids follow the solar frame.
     def radiance(solar_azimuth: float, legacy: bool) -> np.ndarray:
         config = sk.Config()
         config.num_threads = 1
+        config.num_stokes = num_stokes
         config.num_streams = 8
+        config.num_sza = num_sza
         config.single_scatter_source = sk.SingleScatterSource.NoSource
         config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
         config.num_successive_orders_incoming = 26
         config.num_successive_orders_outgoing = 26
+        config.successive_orders_reduced_horizon_quadrature = reduced_horizon
         config.successive_orders_legacy_interpolation = legacy
         cos_sza = 0.6
         geometry = sk.Geometry1D(
@@ -671,10 +679,17 @@ def test_aligned_grids_make_1d_successive_orders_invariant_to_solar_azimuth_conv
             calculate_derivatives=False,
         )
         sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+        # Rayleigh scattering polarizes, so Q and U are nonzero for vector runs.
         atmosphere["rayleigh"] = sk.constituent.Rayleigh()
         atmosphere["surface"] = sk.constituent.LambertianSurface(0.3)
         engine = sk.Engine(config, geometry, viewing)
-        return engine.calculate_radiance(atmosphere).radiance.values.ravel()
+        result = engine.calculate_radiance(atmosphere).radiance
+        return result.transpose(..., "stokes").values
+
+    def change(value: np.ndarray, reference: np.ndarray) -> float:
+        # Relative to each line of sight's intensity, so small Q/U do not
+        # inflate the measure.
+        return float(np.max(np.abs(value - reference) / np.abs(reference[..., :1])))
 
     # Radiance jumps by about 7e-8 with solar azimuth independently of
     # successive orders (single-scatter-only runs show it too), so the aligned
@@ -682,11 +697,7 @@ def test_aligned_grids_make_1d_successive_orders_invariant_to_solar_azimuth_conv
     aligned_reference = radiance(0.0, False)
     legacy_reference = radiance(0.0, True)
     for solar_azimuth in (1.1, 2.5):
-        aligned_change = np.max(
-            np.abs(radiance(solar_azimuth, False) / aligned_reference - 1)
-        )
-        legacy_change = np.max(
-            np.abs(radiance(solar_azimuth, True) / legacy_reference - 1)
-        )
+        aligned_change = change(radiance(solar_azimuth, False), aligned_reference)
+        legacy_change = change(radiance(solar_azimuth, True), legacy_reference)
         assert aligned_change < 1e-6
         assert legacy_change > 1e-4

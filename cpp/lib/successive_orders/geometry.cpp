@@ -818,15 +818,48 @@ namespace sasktran2::successive_orders {
                              m_geometry.coordinates().geometry_type() ==
                                  sasktran2::geometrytype::spherical;
         const int num_altitudes = static_cast<int>(m_source_altitudes_m.size());
-        if (num_altitudes < 1 || m_num_interior_points % num_altitudes != 0) {
-            throw std::logic_error(
-                "Successive-orders interior points must form complete "
-                "altitude columns");
+        if (aligned) {
+            // One frame per column is exact only when interior points are
+            // altitude-fastest within columns that share one direction, and
+            // equal altitude indices share one radius.
+            bool columns_are_aligned =
+                num_altitudes > 0 && m_num_interior_points % num_altitudes == 0;
+            for (int point_index = 0;
+                 columns_are_aligned && point_index < m_num_interior_points;
+                 ++point_index) {
+                const Eigen::Vector3d& position =
+                    m_source_points[point_index].location().position;
+                const Eigen::Vector3d& column_first =
+                    m_source_points[point_index - point_index % num_altitudes]
+                        .location()
+                        .position;
+                const double reference_radius =
+                    m_source_points[point_index % num_altitudes]
+                        .location()
+                        .position.norm();
+                columns_are_aligned =
+                    std::abs(position.norm() - reference_radius) <=
+                        1.0e-12 * reference_radius &&
+                    (position.normalized() - column_first.normalized())
+                            .norm() <= 1.0e-12;
+            }
+            if (!columns_are_aligned) {
+                throw std::logic_error(
+                    "Successive-orders frame-aligned grids require "
+                    "altitude-fastest source columns");
+            }
         }
-        const int num_columns = m_num_interior_points / num_altitudes;
+        // Plain Lebedev rules place nodes on the canonical poles and on
+        // mirror-symmetric great circles. Aligned interior grids keep the
+        // pole-avoiding pre-rotation used by the reduced-horizon outgoing
+        // rule, so no node lies on the global pole, the local zenith, or a
+        // solar-plane mirror tie.
         const auto column_frame = [&](int point_index) {
-            return local_solar_frame(
-                m_source_points[point_index].location().position, m_geometry);
+            return Eigen::Matrix3d(
+                local_solar_frame(
+                    m_source_points[point_index].location().position,
+                    m_geometry) *
+                pole_avoiding_rotation());
         };
 
         m_angular_grids.clear();
@@ -834,7 +867,9 @@ namespace sasktran2::successive_orders {
             static_cast<std::size_t>(m_num_ground_points) +
             (m_settings.use_reduced_horizon_quadrature
                  ? static_cast<std::size_t>(m_num_interior_points)
-                 : (aligned ? static_cast<std::size_t>(num_columns) : 1)));
+                 : (aligned ? static_cast<std::size_t>(m_num_interior_points /
+                                                       num_altitudes)
+                            : 1)));
         double surface_radius = 0.0;
         if (m_settings.use_reduced_horizon_quadrature) {
             const auto& altitude_grid =
@@ -843,9 +878,11 @@ namespace sasktran2::successive_orders {
                     : m_geometry_2d->altitude_grid().grid();
             surface_radius =
                 m_geometry.coordinates().earth_radius() + altitude_grid[0];
-            const std::shared_ptr<const sasktran2::math::UnitSphere>
+            std::shared_ptr<const sasktran2::math::UnitSphere> volume_outgoing;
+            if (!aligned) {
                 volume_outgoing = std::make_shared<const RotatedLebedevSphere>(
                     m_settings.num_outgoing, pole_avoiding_rotation());
+            }
             std::shared_ptr<const sasktran2::math::UnitSphere> column_outgoing;
             for (int point_index = 0; point_index < m_num_interior_points;
                  ++point_index) {
@@ -861,8 +898,7 @@ namespace sasktran2::successive_orders {
                         column_outgoing =
                             std::make_shared<const RotatedLebedevSphere>(
                                 m_settings.num_outgoing,
-                                column_frame(point_index) *
-                                    pole_avoiding_rotation());
+                                column_frame(point_index));
                     }
                     grid->outgoing = column_outgoing;
                     point.m_angular_class = point_index % num_altitudes;
