@@ -102,3 +102,87 @@ Validation included 276 targeted Python tests, 131 C++ cases with 101,539
 assertions, the focused Rust derivative-storage test, Clippy and pre-commit.
 Detailed arrays, guard logs and source/build attestation records remain in the
 local ignored `build/omps-memory` archive; they are not bundled with the PR.
+
+# Successive-orders source interpolation
+
+`so_interpolation_benchmark.py` compares the default successive-orders source
+interpolation with the legacy behaviour
+(`Config.successive_orders_legacy_interpolation = True`). The default uses
+frame-aligned angular grids and cubic Geometry2D line-of-sight interpolation.
+It is self-contained and uses two synthetic scenes:
+
+- a standard Geometry2D limb scan: tangents 10–50 km, observer at 600 km,
+  350/525/750 nm, Rayleigh + ozone + aerosol, albedo 0.3, a 0.5° atmosphere grid
+  over ±20°, 25 source altitudes. It is run for eight dayside solar geometries;
+- an orbital-plane track with vertical limb scans, two images per local engine,
+  and a solar zenith angle of 35–75° along the track.
+
+For each scheme and horizontal source-column count it reports four quantities:
+
+- the maximum relative multiple-scatter error against that scheme's own
+  dense-column reference at the same angular resolution;
+- the wall time of engine construction plus radiance, with and without the full
+  Jacobian;
+- the peak RSS of a single-threaded run in a fresh process;
+- the diffuse and line-of-sight source-weight memory from
+  `SASKTRAN2_PROFILE_MEMORY`.
+
+```sh
+python tools/benchmarks/so_interpolation_benchmark.py --output build/so-interp
+```
+
+`--directions`, `--columns`, `--cases`, `--reference-columns`,
+`--skip-jacobian`, `--skip-memory` and `--skip-orbital` control the run, which
+takes about 30 minutes at the default 110 directions on an Apple M4 Pro with
+8 threads. Results are written to `results.json` and `results.md`.
+
+## Results at 110 directions
+
+These were measured at commit `fce16966` on an Apple M4 Pro, with 8 threads for
+the timings and 1 thread for the memory probes.
+
+Standard Geometry2D limb scan, maximum relative multiple-scatter error:
+
+| Case | Legacy 11 columns | Default 5 columns | Default 7 columns | Default 11 columns |
+| --- | ---: | ---: | ---: | ---: |
+| SZA 30°, sun ahead | 7.4e-4 | 4.1e-4 | 2.4e-4 | 1.1e-4 |
+| SZA 60°, sun ahead | 1.7e-3 | 1.1e-3 | 6.7e-4 | 3.4e-4 |
+| SZA 60°, sun behind | 1.5e-3 | 1.1e-3 | 6.7e-4 | 3.3e-4 |
+| SZA 60°, sun out of plane | 9.0e-4 | 3.7e-4 | 2.3e-4 | 1.1e-4 |
+| SZA 70°, oblique sun | 1.8e-3 | 1.4e-3 | 8.1e-4 | 4.1e-4 |
+| SZA 75°, sun ahead | 5.6e-3 | 3.2e-2 | 2.2e-3 | 1.1e-3 |
+| SZA 75°, sun behind | 3.7e-3 | 9.3e-3 | 2.2e-3 | 1.0e-3 |
+| SZA 80°, sun out of plane | 7.7e-4 | 4.5e-4 | 2.7e-4 | 1.3e-4 |
+
+Seven default columns beat eleven legacy columns in every case. Five do so
+except at SZA 75° with the sun in the plane, where the domain edges reach the
+terminator. Cost scales with the column count and is the same for both
+schemes:
+
+| Columns | Radiance s | Radiance + Jacobian s | Peak RSS MB |
+| ---: | ---: | ---: | ---: |
+| 5 | 2.3 | 3.0–3.2 | 1015–1022 |
+| 7 | 3.2–3.4 | 4.2–4.4 | 1277–1340 |
+| 11 | 4.9–5.2 | 6.4–6.9 | 1863–1994 |
+
+Orbital-plane scene (16 images × 9 tangent altitudes):
+
+| Scheme | Columns | Max MS error | Seconds | Peak RSS MB |
+| --- | ---: | ---: | ---: | ---: |
+| legacy | 11 | 1.2e-2 | 8.5 | 6348 |
+| default | 5 | 1.9e-3 | 3.8 | 3029 |
+| default | 7 | 9.0e-4 | 5.0 | 3994 |
+| default | 11 | 4.0e-4 | 8.3 | 5911 |
+
+Diffuse-ray source weights dominate memory and are unchanged by the default
+interpolation. Cubic line-of-sight weights roughly double the line-of-sight
+weight memory, from 1.9 MB to 4.5 MB for the 144 orbital-plane lines of sight.
+
+The errors above measure horizontal (column) discretization. The absolute
+multiple-scatter error at 110 directions is dominated by angular
+discretization: against a 194-direction, 81-column reference it is about
+3–4% for both schemes. For SZA 70° with an oblique sun it is 3.7–4.0e-2 for
+legacy and 3.4e-2 for default. For SZA 60° with the sun ahead it is
+3.0–3.3e-2 and 3.2e-2. The two schemes' dense limits converge with angular
+resolution: they differ by 1.3e-3 at 194 directions, against 1.3e-2 at 110 for
+the oblique case.
