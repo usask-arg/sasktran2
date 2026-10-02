@@ -185,6 +185,81 @@ def test_reduced_horizon_uses_nonzero_geometry1d_lower_boundary():
     assert np.max(result.values) > 1.0e-6
 
 
+def _modis_to_lambertian_ratio(config: sk.Config, solar_azimuth: float) -> np.ndarray:
+    altitudes_m = np.arange(0.0, 60_001.0, 2_000.0)
+    geometry = sk.Geometry1D(
+        cos_sza=0.6,
+        solar_azimuth=solar_azimuth,
+        earth_radius_m=EARTH_RADIUS_M,
+        altitude_grid_m=altitudes_m,
+        interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+        geometry_type=sk.GeometryType.Spherical,
+    )
+    viewing = sk.ViewingGeometry()
+    viewing.add_ray(
+        sk.TangentAltitudeSolar(
+            tangent_altitude_m=15_000.0,
+            relative_azimuth=0.3,
+            observer_altitude_m=200_000.0,
+            cos_sza=0.6,
+        )
+    )
+    for cos_viewing_zenith in (1.0, 0.7):
+        viewing.add_ray(
+            sk.GroundViewingSolar(
+                cos_sza=0.6,
+                relative_azimuth=0.5,
+                cos_viewing_zenith=cos_viewing_zenith,
+                observer_altitude_m=200_000.0,
+            )
+        )
+    engine = sk.Engine(config, geometry, viewing)
+
+    radiances = []
+    for surface in (
+        sk.constituent.MODIS(isotropic=0.1, volumetric=0.05, geometric=0.02),
+        sk.constituent.LambertianSurface(0.1),
+    ):
+        atmosphere = sk.Atmosphere(
+            geometry,
+            config,
+            wavelengths_nm=np.array([350.0, 650.0]),
+            calculate_derivatives=False,
+        )
+        sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+        atmosphere["rayleigh"] = sk.constituent.Rayleigh()
+        atmosphere["surface"] = surface
+        radiances.append(engine.calculate_radiance(atmosphere).radiance.values)
+    assert np.all(np.isfinite(radiances[0]))
+    return radiances[0] / radiances[1]
+
+
+@pytest.mark.parametrize("reduced_horizon", [False, True])
+@pytest.mark.parametrize("solar_azimuth", [0.0, 2.5])
+def test_spherical_modis_surface_matches_discrete_ordinates(
+    reduced_horizon: bool, solar_azimuth: float
+):
+    # Roundoff in the spherical reference ground point used to keep Lebedev
+    # horizon nodes with mu ~ 1e-17, where the MODIS kernels diverge.
+    config = sk.Config()
+    config.num_threads = 1
+    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
+    config.num_successive_orders_incoming = 26
+    config.num_successive_orders_outgoing = 26
+    config.successive_orders_reduced_horizon_quadrature = reduced_horizon
+    reference_config = sk.Config()
+    reference_config.num_threads = 1
+    reference_config.multiple_scatter_source = (
+        sk.MultipleScatterSource.DiscreteOrdinates
+    )
+    reference_config.num_streams = 16
+
+    ratio = _modis_to_lambertian_ratio(config, solar_azimuth)
+    reference_ratio = _modis_to_lambertian_ratio(reference_config, solar_azimuth)
+
+    np.testing.assert_allclose(ratio, reference_ratio, rtol=0.05)
+
+
 @pytest.mark.parametrize(
     ("num_stokes", "relative_tolerance", "absolute_tolerance"),
     [(1, 2.0e-3, 2.0e-7), (3, 2.0e-3, 2.0e-7)],
