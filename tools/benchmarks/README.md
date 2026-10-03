@@ -143,7 +143,11 @@ takes about 30 minutes at the default 110 directions on an Apple M4 Pro with
 ## Results at 110 directions
 
 These were measured at commit `fce16966` on an Apple M4 Pro, with 8 threads for
-the timings and 1 thread for the memory probes.
+the timings and 1 thread for the memory probes. A rerun at `7dafc02e`, after
+merging `main` (#306–#308) and tilting aligned ground grids, reproduced every
+error value below to the digits shown. Its peak RSS matched to within a few
+percent. Its timings were 20–40% slower, which looks like contention from other
+processes on the machine; the per-column cost ratios were unchanged.
 
 Standard Geometry2D limb scan, maximum relative multiple-scatter error:
 
