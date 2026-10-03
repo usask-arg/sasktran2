@@ -136,6 +136,7 @@ void sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>::
     ray.look_away = geometry.coordinates().sun_unit();
 
     sasktran2::raytracing::TracedRay result;
+    std::vector<std::pair<int, double>> index_weights;
 
     // For every layer, we have to construct a ray from the sun to the bottom of
     // the layer
@@ -143,6 +144,16 @@ void sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>::
 
         ray.observer.position = geometry.coordinates().solar_coordinate_vector(
             csz, 0.0, m_floor_h(p));
+
+        // Refracted rays leave the layer along the apparent sun direction so
+        // that they reach the sun after bending through the atmosphere
+        if (refraction &&
+            !sasktran2::raytracing::refraction::refracted_direction_to_sun(
+                geometry, ray.observer.position, ray.look_away,
+                index_weights)) {
+            m_chapman_factors.row(p).setConstant(-1.0);
+            continue;
+        }
 
         ray_tracer.trace_ray(ray, result, refraction);
 

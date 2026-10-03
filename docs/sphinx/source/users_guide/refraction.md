@@ -114,6 +114,20 @@ Solar refraction refers to refraction of the incoming solar beam, it is most imp
 Typically solar refraction is unimportant until the solar zenith angle is above 85 degrees.  The option is controlled by
 {py:attr}`sasktran2.Config.solar_refraction`.
 
+For a spherical {py:class}`sasktran2.Geometry1D` calculation, solar refraction is supported by the exact and table
+single-scatter sources and by the successive-orders and discrete-ordinates multiple-scatter sources. At every point where
+the direct beam is needed, the apparent direction of the sun is found such that the refracted ray leaving the point
+travels parallel to the geometric sun direction above the atmosphere, and the solar optical depth is traced along that
+bent path. The single-scatter phase function uses the apparent sun direction, and points beyond the geometric terminator
+remain illuminated while the refracted sun is above their horizon. The table source tabulates the refracted optical
+depth and the apparent elevation of the sun on its altitude and solar zenith angle grid. The discrete-ordinates source
+includes refraction in the path lengths of the solar beam through each layer. Single scattering does not apply solar
+refraction for plane-parallel and pseudo-spherical geometries.
+
+Within each refracted layer the ray tracer evaluates the extinction along the straight chord between the layer end
+points, scaled to the refracted path length. The chord lies slightly below the curved path, so grazing solar paths in
+twilight have a small optical depth bias that decreases with finer altitude grids.
+
 For a {py:class}`sasktran2.Geometry2D` calculation, solar refraction is supported by both the exact and table single-scatter
 sources and by the successive-orders multiple-scatter source. The direct beam is represented by a three-dimensional
 solar-characteristic table parameterized by altitude, solar zenith angle, and off-plane azimuth. The exact single-scatter
