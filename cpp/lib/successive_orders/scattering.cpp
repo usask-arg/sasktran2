@@ -910,11 +910,11 @@ namespace sasktran2::successive_orders {
     ScatteringOperator<3>::ScatteringOperator(
         ScatteringBlockLayout layout,
         std::vector<std::shared_ptr<const VectorAngularBasis>> angular_bases,
-        bool point_bases_share_synthesis)
+        std::vector<int> synthesis_group_offsets)
         : m_layout(std::move(layout)),
           m_basis(angular_bases.empty() ? nullptr : angular_bases.front()),
           m_point_bases(std::move(angular_bases)),
-          m_point_bases_share_synthesis(point_bases_share_synthesis),
+          m_synthesis_group_offsets(std::move(synthesis_group_offsets)),
           m_ground_value_offsets(
               make_dense_value_offsets(m_layout, m_layout.atmospheric_blocks(),
                                        m_layout.ground_blocks())),
@@ -942,6 +942,21 @@ namespace sasktran2::successive_orders {
                 throw std::invalid_argument(
                     "vector successive-orders atmospheric block does not "
                     "match its point angular basis");
+            }
+        }
+        if (!m_synthesis_group_offsets.empty()) {
+            bool valid = m_synthesis_group_offsets.front() == 0 &&
+                         m_synthesis_group_offsets.back() ==
+                             m_layout.atmospheric_blocks();
+            for (std::size_t group = 1;
+                 valid && group < m_synthesis_group_offsets.size(); ++group) {
+                valid = m_synthesis_group_offsets[group] >
+                        m_synthesis_group_offsets[group - 1];
+            }
+            if (!valid) {
+                throw std::invalid_argument(
+                    "vector successive-orders synthesis groups must partition "
+                    "the atmospheric points");
             }
         }
         m_atmospheric_coefficients.setZero();
@@ -1030,8 +1045,11 @@ namespace sasktran2::successive_orders {
         result.angular_basis_bytes = m_basis->storage_bytes();
         if (!m_point_bases.empty()) {
             result.angular_basis_bytes = 0;
+            std::unordered_set<const VectorAngularBasis*> bases;
             for (const auto& basis : m_point_bases) {
-                result.angular_basis_bytes += basis->storage_bytes();
+                if (bases.insert(basis.get()).second) {
+                    result.angular_basis_bytes += basis->storage_bytes();
+                }
             }
         }
         result.atmospheric_value_bytes =
@@ -1079,7 +1097,7 @@ namespace sasktran2::successive_orders {
                     workspace.m_atmospheric_input, m_atmospheric_coefficients,
                     m_active_coefficients, workspace.m_atmospheric_output,
                     workspace.m_angular);
-            } else if (m_point_bases_share_synthesis) {
+            } else if (!m_synthesis_group_offsets.empty()) {
                 const int active_modes =
                     m_active_coefficients * m_active_coefficients;
                 for (auto& moments : workspace.m_angular.moments) {
@@ -1098,9 +1116,30 @@ namespace sasktran2::successive_orders {
                 m_basis->multiply_coefficients_active(
                     m_atmospheric_coefficients, m_active_coefficients,
                     workspace.m_angular);
-                m_basis->synthesize_active(workspace.m_atmospheric_output,
-                                           m_active_coefficients,
-                                           workspace.m_angular);
+                const int groups =
+                    static_cast<int>(m_synthesis_group_offsets.size()) - 1;
+                if (groups == 1) {
+                    // Synthesizing the full batch in place avoids copying the
+                    // group's moment rows; the general path is also exact.
+                    m_point_bases.front()->synthesize_active(
+                        workspace.m_atmospheric_output, m_active_coefficients,
+                        workspace.m_angular);
+                } else {
+                    for (int group = 0; group < groups; ++group) {
+                        const int begin = m_synthesis_group_offsets[group];
+                        const int count =
+                            m_synthesis_group_offsets[group + 1] - begin;
+                        for (int moment = 0; moment < 6; ++moment) {
+                            workspace.m_point_angular.moments[moment] =
+                                workspace.m_angular.moments[moment].middleRows(
+                                    begin, count);
+                        }
+                        m_point_bases[begin]->synthesize_active(
+                            workspace.m_atmospheric_output.middleRows(begin,
+                                                                      count),
+                            m_active_coefficients, workspace.m_point_angular);
+                    }
+                }
                 for (int point = 0; point < m_layout.atmospheric_blocks();
                      ++point) {
                     m_point_bases[point]->add_frame_corrections_active(

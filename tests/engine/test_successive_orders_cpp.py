@@ -234,10 +234,11 @@ def _modis_to_lambertian_ratio(config: sk.Config, solar_azimuth: float) -> np.nd
     return radiances[0] / radiances[1]
 
 
+@pytest.mark.parametrize("legacy_interpolation", [False, True])
 @pytest.mark.parametrize("reduced_horizon", [False, True])
 @pytest.mark.parametrize("solar_azimuth", [0.0, 2.5])
 def test_spherical_modis_surface_matches_discrete_ordinates(
-    reduced_horizon: bool, solar_azimuth: float
+    legacy_interpolation: bool, reduced_horizon: bool, solar_azimuth: float
 ):
     # Roundoff in the spherical reference ground point used to keep Lebedev
     # horizon nodes with mu ~ 1e-17, where the MODIS kernels diverge.
@@ -247,6 +248,7 @@ def test_spherical_modis_surface_matches_discrete_ordinates(
     config.num_successive_orders_incoming = 26
     config.num_successive_orders_outgoing = 26
     config.successive_orders_reduced_horizon_quadrature = reduced_horizon
+    config.successive_orders_legacy_interpolation = legacy_interpolation
     reference_config = sk.Config()
     reference_config.num_threads = 1
     reference_config.multiple_scatter_source = (
@@ -280,6 +282,8 @@ def test_fixed_iteration_solution_agrees_with_legacy_successive_orders(
         iterations=3,
     )
     cpp_config.successive_orders_reduced_horizon_quadrature = False
+    # Compares implementations with identical global grids.
+    cpp_config.successive_orders_legacy_interpolation = True
 
     cpp = _calculate(cpp_config, surface_albedo=0.0).radiance
     legacy = _calculate(legacy_config, surface_albedo=0.0).radiance
@@ -704,3 +708,203 @@ def test_scalar_repeated_vjp_survives_atmosphere_and_engine_lifetimes():
         gc.collect()
 
     assert product_count == 200
+
+
+@pytest.mark.parametrize("num_sza", [1, 3])
+@pytest.mark.parametrize("reduced_horizon", [True, False])
+@pytest.mark.parametrize("num_stokes", [1, 3])
+def test_aligned_grids_make_1d_successive_orders_invariant_to_solar_azimuth_convention(
+    num_stokes: int, reduced_horizon: bool, num_sza: int
+):
+    # Rotating the whole scene about the reference vertical (sun and rays
+    # together) must not change the radiance once grids follow the solar frame.
+    def radiance(solar_azimuth: float, legacy: bool) -> np.ndarray:
+        config = sk.Config()
+        config.num_threads = 1
+        config.num_stokes = num_stokes
+        config.num_streams = 8
+        config.num_sza = num_sza
+        config.single_scatter_source = sk.SingleScatterSource.NoSource
+        config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
+        config.num_successive_orders_incoming = 26
+        config.num_successive_orders_outgoing = 26
+        config.successive_orders_reduced_horizon_quadrature = reduced_horizon
+        config.successive_orders_legacy_interpolation = legacy
+        cos_sza = 0.6
+        geometry = sk.Geometry1D(
+            cos_sza=cos_sza,
+            solar_azimuth=solar_azimuth,
+            earth_radius_m=EARTH_RADIUS_M,
+            altitude_grid_m=np.arange(0.0, 65_001.0, 1_000.0),
+            interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+            geometry_type=sk.GeometryType.Spherical,
+        )
+        viewing = sk.ViewingGeometry()
+        for tangent in (10_000.0, 25_000.0, 40_000.0):
+            viewing.add_ray(
+                sk.TangentAltitudeSolar(
+                    tangent_altitude_m=tangent,
+                    relative_azimuth=0.7,
+                    observer_altitude_m=200_000.0,
+                    cos_sza=cos_sza,
+                )
+            )
+        atmosphere = sk.Atmosphere(
+            geometry,
+            config,
+            wavelengths_nm=np.array([450.0]),
+            calculate_derivatives=False,
+        )
+        sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+        # Rayleigh scattering polarizes, so Q and U are nonzero for vector runs.
+        atmosphere["rayleigh"] = sk.constituent.Rayleigh()
+        atmosphere["surface"] = sk.constituent.LambertianSurface(0.3)
+        engine = sk.Engine(config, geometry, viewing)
+        result = engine.calculate_radiance(atmosphere).radiance
+        return result.transpose(..., "stokes").values
+
+    def change(value: np.ndarray, reference: np.ndarray) -> float:
+        # Relative to each line of sight's intensity, so small Q/U do not
+        # inflate the measure.
+        return float(np.max(np.abs(value - reference) / np.abs(reference[..., :1])))
+
+    # Radiance jumps by about 7e-8 with solar azimuth independently of
+    # successive orders (single-scatter-only runs show it too), so the aligned
+    # bound sits above that floor while staying >100x below the legacy change.
+    aligned_reference = radiance(0.0, False)
+    legacy_reference = radiance(0.0, True)
+    for solar_azimuth in (1.1, 2.5):
+        aligned_change = change(radiance(solar_azimuth, False), aligned_reference)
+        legacy_change = change(radiance(solar_azimuth, True), legacy_reference)
+        assert aligned_change < 1e-6
+        assert legacy_change > 1e-4
+
+
+def _legacy_golden_radiances(*, set_legacy: bool = True) -> dict[str, np.ndarray]:
+    """Small fixed-iteration scenes pinned against upstream main.
+
+    ``set_legacy=False`` leaves the legacy switch untouched so the same code
+    runs on a package that predates it.
+    """
+    results = {}
+    for num_stokes in (1, 3):
+        for reduced_horizon in (False, True):
+            config = _config(
+                sk.MultipleScatterSource.SuccessiveOrders,
+                num_stokes=num_stokes,
+                iterations=3,
+            )
+            config.num_sza = 3
+            config.successive_orders_reduced_horizon_quadrature = reduced_horizon
+            if set_legacy:
+                config.successive_orders_legacy_interpolation = True
+            key = f"1d_stokes{num_stokes}_reduced{int(reduced_horizon)}"
+            results[key] = _calculate(config).radiance.values
+
+    altitudes = np.arange(0.0, 60_001.0, 5_000.0)
+    horizontal = np.linspace(-0.3, 0.3, 13)
+    geometry = sk.Geometry2D(
+        cos_sza=0.6,
+        solar_azimuth=0.4,
+        earth_radius_m=EARTH_RADIUS_M,
+        altitude_grid_m=altitudes,
+        horizontal_angle_grid_radians=horizontal,
+    )
+    viewing = sk.ViewingGeometry()
+    viewing.add_ray(
+        sk.TangentAltitude(
+            tangent_altitude_m=20_000.0,
+            observer_altitude_m=200_000.0,
+            horizontal_angle_radians=0.05,
+            viewing_azimuth_radians=0.3,
+        )
+    )
+    viewing.add_ray(
+        sk.GroundViewingSolar(
+            cos_sza=0.6,
+            relative_azimuth=0.2,
+            cos_viewing_zenith=0.7,
+            observer_altitude_m=100_000.0,
+        )
+    )
+    for num_stokes in (1, 3):
+        config = _config(
+            sk.MultipleScatterSource.SuccessiveOrders,
+            num_stokes=num_stokes,
+            iterations=3,
+        )
+        config.num_sza = 7
+        if set_legacy:
+            config.successive_orders_legacy_interpolation = True
+        atmosphere = sk.Atmosphere(
+            geometry,
+            config,
+            wavelengths_nm=np.array([500.0]),
+            calculate_derivatives=False,
+        )
+        h, altitude = np.meshgrid(horizontal, altitudes, indexing="ij")
+        atmosphere.storage.total_extinction[:, 0] = (
+            1.5e-5 * np.exp(-altitude / 8_000.0) * (1.0 + 0.5 * h)
+        ).ravel()
+        atmosphere.storage.ssa[:] = 0.9
+        atmosphere.leg_coeff.a1[0] = 1.0
+        atmosphere.leg_coeff.a1[2] = 0.5
+        if num_stokes == 3:
+            atmosphere.leg_coeff.a2[2] = 3.0
+            atmosphere.leg_coeff.b1[2] = -np.sqrt(6.0) / 2.0
+        atmosphere.surface.albedo[:] = 0.3
+        engine = sk.Engine(config, geometry, viewing)
+        results[f"2d_stokes{num_stokes}"] = engine.calculate_radiance(
+            atmosphere
+        ).radiance.values
+    return results
+
+
+# Produced by upstream main 942d5494 (which predates the legacy switch) with
+# _legacy_golden_radiances(set_legacy=False).
+_LEGACY_GOLDEN_RADIANCES = {
+    "1d_stokes1_reduced0": [
+        [[0.026572269852096046], [0.08675388969536403]],
+        [[0.02761471105651224], [0.09257399991571393]],
+    ],
+    "1d_stokes1_reduced1": [
+        [[0.0253412759471322], [0.08172744983962374]],
+        [[0.026106660676092797], [0.08668998845829651]],
+    ],
+    "1d_stokes3_reduced0": [
+        [
+            [0.026032784728306016, 0.005172495694170809, 0.0035781636388871516],
+            [0.0872745118096335, 0.005478386905537516, -0.01689320132398022],
+        ],
+        [
+            [0.02694049176587684, 0.006026680041510463, 0.004181291148604776],
+            [0.09321296572385633, 0.005272061523345046, -0.01800752378656626],
+        ],
+    ],
+    "1d_stokes3_reduced1": [
+        [
+            [0.025124592987100586, 0.00517778259704112, 0.003432396930400801],
+            [0.0820650228622118, 0.0072597710690733, -0.01602081237596952],
+        ],
+        [
+            [0.025811060602723555, 0.006052687519389811, 0.004010897284586094],
+            [0.0871079811533518, 0.007429705215567661, -0.017011762909276817],
+        ],
+    ],
+    "2d_stokes1": [[[0.05910817988493479], [0.05738902269870026]]],
+    "2d_stokes3": [
+        [
+            [0.05921083435937947, 0.011468522675200585, 0.0030415829227560566],
+            [0.05704287735350409, 0.007667334081463472, 0.002768958763396873],
+        ]
+    ],
+}
+
+
+def test_legacy_interpolation_reproduces_main():
+    actual = _legacy_golden_radiances()
+    assert actual.keys() == _LEGACY_GOLDEN_RADIANCES.keys()
+    for key, expected in _LEGACY_GOLDEN_RADIANCES.items():
+        np.testing.assert_allclose(
+            actual[key], np.array(expected), rtol=1.0e-10, atol=0.0, err_msg=key
+        )

@@ -139,6 +139,7 @@ def test_cpp_successive_orders_controls_round_trip_and_validation():
     assert config.successive_orders_anderson_depth == 3
     assert config.successive_orders_damping == 1.0
     assert config.successive_orders_reduced_horizon_quadrature is True
+    assert config.successive_orders_legacy_interpolation is False
 
     config.num_successive_orders_iterations = 31
     config.num_successive_orders_incoming = 74
@@ -148,6 +149,7 @@ def test_cpp_successive_orders_controls_round_trip_and_validation():
     config.successive_orders_anderson_depth = 4
     config.successive_orders_damping = 0.85
     config.successive_orders_reduced_horizon_quadrature = False
+    config.successive_orders_legacy_interpolation = True
 
     assert config.num_successive_orders_iterations == 31
     assert config.num_successive_orders_incoming == 74
@@ -157,6 +159,7 @@ def test_cpp_successive_orders_controls_round_trip_and_validation():
     assert config.successive_orders_anderson_depth == 4
     assert config.successive_orders_damping == 0.85
     assert config.successive_orders_reduced_horizon_quadrature is False
+    assert config.successive_orders_legacy_interpolation is True
 
     for invalid in (-1.0, np.nan, np.inf):
         with pytest.raises(RuntimeError, match="finite and non-negative"):
