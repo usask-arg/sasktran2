@@ -4,10 +4,13 @@
 > (`docs/specs/2026-10-02-so-frame-aligned-interpolation-design.md`) is
 > authoritative. For example, aligned grids apply the pole-avoiding
 > pre-rotation to every aligned Lebedev rule rather than only to the
-> reduced-horizon outgoing rule; aligned ground grids are tilted off the
-> horizon; and cubic LOS interpolation falls back to linear weights unless
-> every stencil column is sunlit and the absolute stencil weights sum to at
-> most 2.
+> reduced-horizon outgoing rule; aligned ground grids carry an extra 0.08 rad
+> tilt so that no node lies on the horizon, while every ground hemisphere
+> follows main's horizon rule (#306: nodes within `1e-12 * |location|` are
+> excluded but keep half their weight) instead of the zero/`1e-12` rejection
+> described in Task 3; and cubic LOS interpolation falls back to linear
+> weights unless every stencil column is sunlit and the absolute stencil
+> weights sum to at most 2.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use usask-foundation:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

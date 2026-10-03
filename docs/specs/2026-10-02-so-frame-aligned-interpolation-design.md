@@ -7,15 +7,16 @@ Status: implemented on branch `claude/successive-orders-optimization` (2026-10-0
 Geometry2D successive orders stores the multiple-scatter source on a grid of
 altitudes and horizontal columns and interpolates it along every diffuse and
 observer ray. Memory and runtime are roughly linear in the number of columns
-(PR #304: OMPS orbital plane, 5 columns 9.75 GB, 11 columns 18.85 GB), so the
-goal is to reach today's 11-column accuracy with far fewer columns for SZA
+(OMPS orbital plane, peak physical footprint at the validated checkpoint
+`60de1b4e` in `tools/benchmarks/README.md`: 5 columns 9.747 GB, 11 columns
+18.245 GB; PR #304 quoted 18.854 GB for 11 columns), so the goal is to reach today's 11-column accuracy with far fewer columns for SZA
 below about 85 degrees. Terminator conditions are out of scope.
 
 ## Findings that drive the design
 
-Measured on a limb scan (tangents 10-50 km, 350/525/750 nm, Rayleigh, ozone,
-aerosol, albedo 0.3, 25 source altitudes, 50 directions) against 161-column
-references:
+Prototype measurements, taken before the shipped implementation, on a limb
+scan (tangents 10-50 km, 350/525/750 nm, Rayleigh, ozone, aerosol, albedo 0.3,
+25 source altitudes, 50 directions) against 161-column references:
 
 1. Error is dominated by interpolation between columns, not by the solution
    at the columns.
@@ -31,9 +32,11 @@ references:
 4. With aligned grids, 4-point cubic horizontal interpolation of the LOS source
    is 3-20x more accurate than linear at the same column count. Seven columns
    with aligned grids and cubic LOS interpolation are at least as accurate as
-   today's 11 linear columns in every dayside case tested, with no measurable
-   memory cost in the prototype (1350 MB vs 1884 MB peak RSS at 110
-   directions). The shipped cubic LOS weights do add memory; see section 4.
+   today's 11 linear columns in every dayside case tested. In the prototype
+   seven aligned/cubic columns peaked at 1350 MB RSS against 1884 MB for
+   eleven legacy columns at 110 directions; the saving comes from the smaller
+   column count, not from cubic weights being free. The shipped cubic LOS
+   weights do add memory; see section 4.
 5. Cubic interpolation of diffuse incoming rays is a further accuracy gain but
    doubles transport weights; it is not part of this change.
 
@@ -68,21 +71,37 @@ the existing LOS direction mapping: a direction mapped to a column keeps its
 local zenith and solar azimuth, and therefore has the same canonical
 coordinates at every column.
 
-Every aligned Lebedev rule, interior and ground, is rotated by
+Every aligned interior Lebedev rule is rotated by
 `local_solar_frame(p) * pole_avoiding_rotation()`. The fixed pole-avoiding
 rotation keeps nodes off the canonical poles and mirror ties, so no node lies on
 the local vertical. This is not "the legacy sphere rotated": legacy grids applied
 `pole_avoiding_rotation()` to the reduced-horizon outgoing rule only, and the
-legacy pre-rotation for plain Lebedev grids was the identity. A
+legacy pre-rotation for plain Lebedev grids was the identity. Aligned ground
+Lebedev rules are rotated by `local_solar_frame(p) * ground_pre_rotation()`,
+where `ground_pre_rotation() = pole_avoiding_rotation() * Rx(0.08 rad)`; see
+the ground paragraph below. A
 `RotatedLebedevSphere` wraps a canonical `LebedevSphere` and a rotation; its
 positions are `R * q` and `interpolate` evaluates the canonical sphere at
 `R^T d`.
 
 All interior points in one column share `up` and the solar reference, hence one
 rotation and one shared sphere object. Ground points use the frame at their own
-column location for both the incoming and outgoing spheres. Aligned ground
-hemispheres reject nodes within `1e-12 * |location|` of the horizon; the legacy
-ground grids keep a zero tolerance.
+column location for both the incoming and outgoing spheres.
+
+Ground hemispheres, legacy and aligned, follow main's rule (#306): nodes within
+`1e-12 * |location|` of the horizon are excluded but keep half their weight in
+the normalization. The ground point's local vertical is the canonical z axis,
+so `pole_avoiding_rotation()` alone would leave the canonical y-axis Lebedev
+pair exactly on the horizon, and that rule would then change plain-Lebedev
+ground reflection by about 10% at 26 nodes compared with plain exclusion. The
+extra 0.08 rad tilt about x keeps every node of every Lebedev rule up to 302
+points at least 1e-2 from the horizon (0.01 rad would leave the (1, 1, 0)
+nodes about 3.5e-7 from it), so aligned ground hemispheres contain exactly half
+the nodes and none is ever within the tolerance. The Lambertian factor
+`4 sum(mu w)` of the tilted outgoing hemisphere, 1 for an exact rule, is
+0.950, 0.9992, 1.0010 and 1.0008 at 26, 50, 110 and 194 nodes. Legacy grids
+keep the identity orientation and therefore main's half-weighted horizon
+nodes.
 
 - Reduced-horizon mode (default): outgoing spheres become per-column aligned
   spheres; incoming `ReducedHorizonSphere`s are unchanged (already local).
@@ -97,6 +116,8 @@ ground grids keep a zero tolerance.
 One frame per column is valid only if interior points are altitude-fastest
 within columns that share one direction, and equal altitude indices share one
 radius. A premise check at construction throws `std::logic_error` otherwise.
+`SourceGeometry1D` always builds its source points in that order, so the check
+guards future changes and cannot be reached through public interfaces.
 
 `SourcePoint` gains an `angular_class` index: interior points with equal index
 have identical grids up to a rigid rotation of the same canonical nodes. It
@@ -104,8 +125,9 @@ equals the altitude index in reduced-horizon mode and is zero in Lebedev mode.
 Ground points have `angular_class == -1` and are not shared.
 
 Bitwise equality with legacy in an identity frame is not claimed: the aligned
-grids always include the pole-avoiding rotation, so aligned 1D plain-Lebedev
-single-column results differ from legacy at about 1e-3. The legacy switch is the
+grids always include the pole-avoiding rotation (and the ground tilt), so
+aligned 1D plain-Lebedev single-column results differ from legacy at about
+1e-3. The legacy switch is the
 only bitwise-reproducing path.
 
 ### 2. Angular-basis sharing (`scattering_assembler.cpp`, `scattering.cpp`)
@@ -178,9 +200,11 @@ case), shrinking to about 1e-3 at 194 directions. This applies to:
 - Geometry2D with several columns;
 - spherical Geometry1D, including single-column plain-Lebedev cases (about
   1e-3 against legacy) and any solar azimuth. Aligned 1D results are invariant
-  to the solar-azimuth convention to about 1e-8, against up to 4e-2 (vector)
-  with legacy grids, so Geometry1D runs with a non-zero solar azimuth can
-  change by more than the angular-discretization level;
+  to the solar-azimuth convention to about 1e-7 (a 7e-8 jump that
+  single-scatter-only runs share), against 8e-4 to 7e-3 (scalar) and 3e-2 to
+  4e-2 (vector) with legacy grids in the invariance test, so Geometry1D runs
+  with a non-zero solar azimuth can change by more than the
+  angular-discretization level;
 - multi-SZA Geometry1D.
 
 Measured accuracy: a dayside convergence test gives a maximum relative
@@ -197,10 +221,13 @@ terminator position matter.
 Costs: frame alignment has no memory cost for scalar calculations (bases are
 shared per angular class) or with reduced-horizon quadrature (bases were
 already per point). Plain-Lebedev vector calculations previously shared one
-angular basis and now build one per column. Cubic LOS doubles the LOS source
-weights, and bytes grow about 2.15x because negative weights are
-escape-encoded: roughly 12 KB to 25 KB per LOS, about +135 MB for 10k LOS.
-Diffuse-ray weights, which dominate orbital-plane memory, are unchanged.
+angular basis and now build one per column. Cubic LOS doubles the number of LOS
+source weights, and bytes grow by more than that because negative weights are
+escape-encoded. The per-LOS cost depends on the scene: in the orbital-plane
+benchmark the LOS source weights grow from 1.9 MB to 4.5 MB for 144 LOS, and
+in a reviewer's 2000-LOS Geometry2D case from 23.5 MB to 50.5 MB, about 12 KB
+to 25 KB per LOS (about +135 MB for 10k such LOS). Diffuse-ray weights, which
+dominate orbital-plane memory, are unchanged.
 
 ### Related fixes
 
@@ -208,6 +235,11 @@ Diffuse-ray weights, which dominate orbital-plane memory, are unchanged.
   rays (`7638de57`).
 - A typo in an unreachable branch of `add_od_quadrature` (the `t1 < t0`
   near-radial OD quadrature) is fixed (`494d2420`).
+- Merged from main: ground hemispheres exclude roundoff horizon nodes with half
+  weight (#306), and the 2D tracer no longer truncates upward rays from ground
+  endpoints (#307). The latter caused the vector Geometry2D solar-azimuth jump
+  and the vector-vs-scalar I bias listed as known limitations before the
+  merge.
 
 ## Testing
 
@@ -215,14 +247,23 @@ Diffuse-ray weights, which dominate orbital-plane memory, are unchanged.
   rotated LOS direction at different columns; cubic weights reproduce cubic
   polynomials exactly, sum to one, fall back correctly at edges and with fewer
   than four columns; scalar basis sharing reproduces the per-point operator;
-  vector grouped synthesis equals per-point apply.
+  vector grouped synthesis equals per-point apply; aligned ground Lebedev
+  rules up to 302 points have no node within 1e-6 of the horizon;
+  `refresh_los` recompiles cubic LOS stencils and ground-hit stencils.
 - Python: existing successive-orders, 2D, orbital-plane and linearization tests
   pass (expected-value updates only where results legitimately change);
   JVP/VJP adjoint and finite-difference checks for scalar and vector with both
   quadrature modes; horizontal convergence regression showing seven
   aligned/cubic columns within the error of eleven legacy columns for a dayside
-  case. That the legacy switch reproduces `main` bitwise was verified manually
-  during development (152 arrays); no automated test compares against `main`.
+  case; #306 regressions in both interpolation modes.
+- Legacy reproduces main: the legacy switch is bitwise identical to main except
+  where main produced NaN for exactly radial rays (ray-tracer clamp in a shared
+  header). This was verified manually on 224 arrays against main `942d5494`
+  (1D, 2D and orbital plane; scalar and vector; both quadratures; Lambertian
+  and MODIS surfaces; radiance and all weighting functions).
+  `test_legacy_interpolation_reproduces_main` pins a small set of main's
+  radiances (1D scalar/vector with reduced horizon on and off, 2D with seven
+  columns) at `rtol = 1e-10`.
 
 ## Benchmarks (deliverable)
 
@@ -240,12 +281,16 @@ geometries, plus an orbital-plane run. A reproducible script will live under
 
 ## Known limitations / follow-ups
 
-- A pre-existing vector Geometry2D jump of about 1e-3 under 1e-9 rad
-  solar-azimuth perturbations, also present on `main`, is being investigated
-  separately.
-- Vector I differs from scalar I by 0.15-1.4% in 2D successive orders even with
-  decoupled polarization; pre-existing.
-- The MODIS/SnowKokhanovsky BRDF evaluates an unclamped `sqrt(1 - mu*mu)`; being
-  investigated separately.
+Left open by #307 and pre-existing on main:
+
+- Successive-orders forcing Stokes-frame mismatch: `PhaseHandler` uses
+  local-vertical reference frames while `VectorAngularBasis` uses global-z
+  frames.
+- Geometry2D single-scatter error when an LOS ground hit lands on a grid
+  corner.
+- The MODIS/SnowKokhanovsky BRDF evaluates an unclamped `sqrt(1 - mu*mu)`.
+
+Other:
+
 - Per-column vector synthesis sharing could save memory.
 - `geometry.cpp` could be split.

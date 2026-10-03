@@ -83,7 +83,8 @@ angular nodes. This removes an error floor that did not shrink as columns were
 added, and it makes 1D results insensitive to the solar-azimuth convention. The
 alignment has no memory cost for scalar calculations or with reduced-horizon
 quadrature. Vector calculations with plain Lebedev quadrature build one angular
-basis per column instead of sharing one.
+basis per column instead of sharing one. Ground grids are additionally tilted
+by a small fixed rotation so that no quadrature node lies on the horizon.
 
 For {py:class}`sasktran2.Geometry2D`, the observer line-of-sight source is also
 interpolated cubically in horizontal angle with four-point Lagrange weights.
@@ -95,8 +96,11 @@ Cubic weights can be negative, so the sunlit condition avoids mixing a dark
 night-side column with bright dayside ones; it reduces, but does not guarantee
 freedom from, negative radiances near the terminator. The weight bound rejects
 the large weights that strongly non-uniform explicit column grids produce;
-uniform grids always meet it. Cubic weights roughly double the memory used by
-the line-of-sight source weights.
+uniform grids always meet it. Cubic weights roughly double the number of
+line-of-sight source weights; their memory grows by a little more, about
+2.2-2.4 times (for example from 1.9 MB to 4.5 MB for 144 orbital-plane lines of
+sight, or from about 12 KB to 25 KB per line of sight in a 2000-ray Geometry2D
+scene).
 
 In the scalar dayside benchmark cases (110 directions, solar zenith angles of
 30 to 80 degrees), seven default columns gave a maximum multiple-scatter error

@@ -179,8 +179,11 @@ Orbital-plane scene (16 images × 9 tangent altitudes):
 | default | 11 | 4.0e-4 | 8.3 | 5911 |
 
 Diffuse-ray source weights dominate memory and are unchanged by the default
-interpolation. Cubic line-of-sight weights roughly double the line-of-sight
-weight memory, from 1.9 MB to 4.5 MB for the 144 orbital-plane lines of sight.
+interpolation. Cubic line-of-sight weights roughly double the number of
+line-of-sight weights; because negative weights are escape-encoded, their
+memory grows 2.2-2.4 times: from 1.9 MB to 4.5 MB for the 144 orbital-plane
+lines of sight here, and from 23.5 MB to 50.5 MB (about 12 KB to 25 KB per
+line of sight) in a separate 2000-ray Geometry2D scene.
 
 The errors above measure horizontal (column) discretization. The absolute
 multiple-scatter error at 110 directions is dominated by angular
