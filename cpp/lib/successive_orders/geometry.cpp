@@ -313,17 +313,33 @@ namespace sasktran2::successive_orders {
 
         class GroundUnitSphere final : public sasktran2::math::UnitSphere {
           public:
+            /** Upward hemisphere of a full-sphere rule.
+             *
+             * Lebedev rules place nodes exactly on the horizon whenever the
+             * ground normal lies along a rule axis, and Cartesian roundoff in
+             * the ground location (~1e-10 m) otherwise decides which of them
+             * look up with mu ~ 1e-17. BRDFs with secant terms, such as the
+             * MODIS kernels, are unbounded there, so horizon nodes are
+             * excluded. They keep half their weight in the normalization, as
+             * boundary nodes of the full-sphere rule, so the hemisphere
+             * weights do not depend on that roundoff.
+             */
             GroundUnitSphere(std::unique_ptr<const UnitSphere>&& sphere,
                              const Eigen::Vector3d& location)
                 : m_full_sphere(std::move(sphere)) {
                 m_contributing_map.reserve(m_full_sphere->num_points() / 2);
+                const double horizon_tolerance = 1.0e-12 * location.norm();
                 for (int index = 0; index < m_full_sphere->num_points();
                      ++index) {
-                    if (m_full_sphere->get_quad_position(index).dot(location) >
-                        0) {
+                    const double projection =
+                        m_full_sphere->get_quad_position(index).dot(location);
+                    const double weight =
+                        m_full_sphere->quadrature_weight(index);
+                    if (projection > horizon_tolerance) {
                         m_contributing_map.push_back(index);
-                        m_quadrature_normalization +=
-                            m_full_sphere->quadrature_weight(index);
+                        m_quadrature_normalization += weight;
+                    } else if (projection >= -horizon_tolerance) {
+                        m_quadrature_normalization += 0.5 * weight;
                     }
                 }
             }
