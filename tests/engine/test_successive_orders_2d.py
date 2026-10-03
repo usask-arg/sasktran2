@@ -563,9 +563,10 @@ def test_2d_reduced_horizon_supports_arbitrary_incoming_count(num_stokes: int):
     assert not np.isclose(varying[0, 0, 0], uniform[0, 0, 0], rtol=1.0e-4)
 
 
+@pytest.mark.parametrize("legacy_interpolation", [False, True])
 @pytest.mark.parametrize("reduced_horizon", [False, True])
 def test_2d_polarized_successive_orders_is_continuous_in_solar_azimuth(
-    reduced_horizon: bool,
+    reduced_horizon: bool, legacy_interpolation: bool
 ):
     # Polarized first-order forcing traces an exact solar ray from the ground
     # end of every incoming ray. Those endpoints lie on the surface only to
@@ -589,6 +590,7 @@ def test_2d_polarized_successive_orders_is_continuous_in_solar_azimuth(
         config.num_successive_orders_incoming = 26
         config.num_successive_orders_outgoing = 26
         config.successive_orders_reduced_horizon_quadrature = reduced_horizon
+        config.successive_orders_legacy_interpolation = legacy_interpolation
         viewing = sk.ViewingGeometry()
         viewing.add_ray(
             sk.TangentAltitude(
@@ -1093,8 +1095,10 @@ def test_2d_cubic_los_interpolation_stays_positive_at_the_terminator():
     # at negative horizontal angles are on the night side. Cubic weights there
     # would mix the small night-side source with negative multiples of the
     # sunlit columns' source.
-    # With num_sza=7 over +-20 deg the centre column lies exactly on the
-    # terminator, so the night-side rays exercise only the linear fallback.
+    # The explicit uniform columns at -20 + 19k/3 deg keep the nearest column
+    # 1 deg on the night side of the terminator, so whether it counts as
+    # sunlit does not depend on roundoff (an evenly spaced odd count over
+    # +-20 deg would put the centre column exactly on the terminator).
     altitudes = np.arange(0.0, 60_001.0, 2_000.0)
     horizontal = np.deg2rad(np.arange(-20.0, 20.01, 1.0))
     geometry = sk.Geometry2D(
@@ -1110,7 +1114,9 @@ def test_2d_cubic_los_interpolation_stays_positive_at_the_terminator():
     config.num_successive_orders_iterations = 30
     config.successive_orders_relative_tolerance = 1.0e-8
     config.successive_orders_altitude_grid_m = np.arange(1_000.0, 59_001.0, 4_000.0)
-    config.num_sza = 7
+    config.successive_orders_horizontal_angle_grid_radians = np.deg2rad(
+        np.linspace(-20.0, 18.0, 7)
+    )
     viewing = sk.ViewingGeometry()
     night = [(-10.0, 10_000.0), (-12.0, 20_000.0), (-14.0, 30_000.0)]
     night += [(-10.0, 30_000.0), (-12.0, 10_000.0)]
@@ -1141,7 +1147,7 @@ def test_2d_cubic_los_interpolation_stays_positive_at_the_terminator():
     engine = sk.Engine(config, geometry, viewing)
     radiance = engine.calculate_radiance(atmosphere).radiance.values.ravel()
 
-    # Unguarded cubic weights gave -3.0e-5 at -10 deg, 10 km (reference
-    # +1.2e-4 with 41 columns).
+    # Unguarded cubic weights gave -1.8e-5 at -12 deg, 10 km (+2.8e-5 with
+    # the guard).
     assert np.all(np.isfinite(radiance))
     assert np.all(radiance > 0.0)

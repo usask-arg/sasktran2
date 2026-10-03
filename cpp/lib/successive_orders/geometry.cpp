@@ -110,14 +110,36 @@ namespace sasktran2::successive_orders {
          * rotation preserves every quadrature weight and degree-of-exactness
          * guarantee while moving the nodes away from the singular frame.
          * Legacy grids apply it to the reduced-horizon outgoing rule only.
-         * Frame-aligned grids apply it to every Lebedev rule, interior and
-         * ground, so no node lies on the local vertical and only the
-         * canonical y-axis pair stays on the horizon.
+         * Frame-aligned interior grids apply it to every Lebedev rule, so no
+         * node lies on the local vertical. It leaves the canonical y-axis pair
+         * on the canonical equator; aligned ground rules therefore use
+         * ground_pre_rotation().
          */
         Eigen::Matrix3d pole_avoiding_rotation() {
             return (Eigen::AngleAxisd(0.01, Eigen::Vector3d::UnitZ()) *
                     Eigen::AngleAxisd(0.01, Eigen::Vector3d::UnitY()))
                 .toRotationMatrix();
+        }
+
+        /** The fixed rotation applied to frame-aligned ground Lebedev rules.
+         *
+         * The local vertical of a ground point is the canonical z axis, so
+         * pole_avoiding_rotation() alone leaves the canonical y-axis pair
+         * exactly on the horizon. GroundUnitSphere excludes such nodes and
+         * keeps half their weight in the normalization, which at 26 nodes
+         * changes plain-Lebedev ground reflection by several percent compared
+         * with a hemisphere that has no horizon nodes. An extra tilt about x
+         * lifts that pair off the horizon. 0.08 rad keeps every node of every
+         * Lebedev rule up to 302 points at least 1e-2 from the horizon
+         * (smaller tilts such as 0.01 nearly cancel the pole-avoiding
+         * rotation for the (1, 1, 0) nodes and leave them about 3.5e-7 from
+         * it), so no node is ever within GroundUnitSphere's roundoff
+         * tolerance and every rule contributes exactly half its nodes.
+         */
+        Eigen::Matrix3d ground_pre_rotation() {
+            return pole_avoiding_rotation() *
+                   Eigen::AngleAxisd(0.08, Eigen::Vector3d::UnitX())
+                       .toRotationMatrix();
         }
 
         /** Rotation from canonical sphere axes to a point's local solar frame.
@@ -348,8 +370,8 @@ namespace sasktran2::successive_orders {
              * excluded. They keep half their weight in the normalization, as
              * boundary nodes of the full-sphere rule, so the hemisphere
              * weights do not depend on that roundoff.
-             * Frame-aligned rules keep the canonical y-axis Lebedev pair
-             * exactly on the horizon; the same rule treats it symmetrically.
+             * Frame-aligned ground rules are tilted so that no node lies
+             * within the tolerance (see ground_pre_rotation()).
              */
             GroundUnitSphere(std::unique_ptr<const UnitSphere>&& sphere,
                              const Eigen::Vector3d& location)
@@ -1045,12 +1067,11 @@ namespace sasktran2::successive_orders {
                     m_geometry.coordinates(), ground_index);
             // Frame-only ground rules put Lebedev equator nodes on the horizon
             // and a node on the vertical, where the BRDF azimuth is undefined.
-            // The pre-rotation leaves only the canonical y-axis pair on the
-            // horizon, which GroundUnitSphere treats symmetrically.
+            // The ground pre-rotation moves every node off both.
             const Eigen::Matrix3d ground_frame =
                 aligned
                     ? Eigen::Matrix3d(local_solar_frame(location, m_geometry) *
-                                      pole_avoiding_rotation())
+                                      ground_pre_rotation())
                     : Eigen::Matrix3d::Identity();
             auto ground_grid = std::make_unique<AngularGridPair>();
             if (m_settings.use_reduced_horizon_quadrature) {

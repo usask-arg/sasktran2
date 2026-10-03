@@ -1218,6 +1218,109 @@ TEST_CASE("Successive-orders cubic LOS ground hits use four ground columns",
     }
 }
 
+TEST_CASE("Successive-orders refresh_los recompiles cubic LOS stencils",
+          "[successive_orders][geometry][geometry2d]") {
+    Eigen::VectorXd altitudes = Eigen::VectorXd::LinSpaced(7, 0.0, 60000.0);
+    Eigen::VectorXd horizontal = Eigen::VectorXd::LinSpaced(9, -0.2, 0.2);
+    sasktran2::Geometry2D geometry(0.6, 0.0, 6372000.0, std::move(altitudes),
+                                   std::move(horizontal),
+                                   sasktran2::grids::interpolation::linear);
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+
+    const auto add_nadir_ray =
+        [&](double angle,
+            sasktran2::viewinggeometry::InternalViewingGeometry& los) {
+            sasktran2::viewinggeometry::ViewingRay ray;
+            ray.observer.position =
+                (geometry.coordinates().earth_radius() + 40000.0) *
+                geometry.coordinates().unit_vector_from_angles(angle, 0.0);
+            ray.look_away = -ray.observer.position.normalized();
+            los.traced_rays.emplace_back();
+            raytracer.trace_ray(ray, los.traced_rays.back());
+        };
+    // The initial LOS is one nadir ray between the columns at 0 and 0.1; the
+    // refreshed LOS adds a limb ray and moves the nadir ray elsewhere.
+    sasktran2::viewinggeometry::InternalViewingGeometry initial;
+    add_nadir_ray(0.05, initial);
+    sasktran2::viewinggeometry::InternalViewingGeometry refreshed;
+    add_limb_ray(geometry, raytracer, 20000.0, 0.0, refreshed);
+    add_nadir_ray(-0.05, refreshed);
+    REQUIRE(!refreshed.traced_rays[0].ground_is_hit);
+    REQUIRE(refreshed.traced_rays[1].ground_is_hit);
+
+    for (const bool legacy_interpolation : {false, true}) {
+        DYNAMIC_SECTION("legacy_interpolation=" << legacy_interpolation) {
+            sasktran2::successive_orders::SourceGeometrySettings settings;
+            settings.num_incoming = 14;
+            settings.num_outgoing = 14;
+            settings.num_sza = 5;
+            settings.num_threads = 1;
+            settings.legacy_interpolation = legacy_interpolation;
+            sasktran2::successive_orders::SourceGeometry1D source(raytracer,
+                                                                  geometry);
+            source.initialize(initial, settings);
+            REQUIRE(source.los_interpolation().size() == 1);
+            const auto initial_ground =
+                touched_columns(
+                    source, source.los_interpolation().front().ground(),
+                    source.los_transport_columns_for_ray(0).to_vector())
+                    .ground;
+            source.refresh_los(refreshed);
+
+            sasktran2::successive_orders::SourceGeometry1D fresh(raytracer,
+                                                                 geometry);
+            fresh.initialize(refreshed, settings);
+
+            REQUIRE(source.los_interpolation().size() == 2);
+            const std::size_t stencil = legacy_interpolation ? 2u : 4u;
+            const auto refreshed_layers = los_layer_columns(source);
+            const auto fresh_layers = los_layer_columns(fresh);
+            REQUIRE(refreshed_layers.size() == fresh_layers.size());
+            std::size_t limb_maximum = 0;
+            for (std::size_t ray = 0; ray < refreshed_layers.size(); ++ray) {
+                INFO("ray=" << ray);
+                REQUIRE(refreshed_layers[ray].size() ==
+                        fresh_layers[ray].size());
+                for (std::size_t layer = 0;
+                     layer < refreshed_layers[ray].size(); ++layer) {
+                    const auto& touched = refreshed_layers[ray][layer];
+                    REQUIRE(touched.weight_sum ==
+                            Catch::Approx(1.0).margin(1.0e-12));
+                    REQUIRE(touched.interior ==
+                            fresh_layers[ray][layer].interior);
+                    REQUIRE(touched.weight_sum ==
+                            fresh_layers[ray][layer].weight_sum);
+                    if (ray == 0) {
+                        limb_maximum =
+                            std::max(limb_maximum, touched.interior.size());
+                    } else {
+                        REQUIRE(touched.interior.size() == stencil);
+                    }
+                }
+            }
+            REQUIRE(limb_maximum == stencil);
+
+            const auto& nadir = source.los_interpolation()[1];
+            REQUIRE(nadir.ground_is_hit());
+            const auto ground = touched_columns(
+                source, nadir.ground(),
+                source.los_transport_columns_for_ray(1).to_vector());
+            REQUIRE(ground.interior.empty());
+            REQUIRE(ground.weight_sum == Catch::Approx(1.0).margin(1.0e-12));
+            REQUIRE(ground.ground.size() == stencil);
+            const auto fresh_ground = touched_columns(
+                fresh, fresh.los_interpolation()[1].ground(),
+                fresh.los_transport_columns_for_ray(1).to_vector());
+            REQUIRE(ground.ground == fresh_ground.ground);
+            // The new nadir ray lies between the columns at -0.1 and 0
+            // rather than 0 and 0.1, so its stencil shifts by one column.
+            REQUIRE(initial_ground.size() == stencil);
+            REQUIRE(ground.ground != initial_ground);
+            REQUIRE(*ground.ground.begin() + 1 == *initial_ground.begin());
+        }
+    }
+}
+
 TEST_CASE("Successive-orders LOS stays linear with fewer than four columns",
           "[successive_orders][geometry][geometry2d]") {
     Eigen::VectorXd altitudes = Eigen::VectorXd::LinSpaced(7, 0.0, 60000.0);
@@ -1584,11 +1687,15 @@ TEST_CASE("Successive-orders aligned grids equal legacy grids in the "
     // the local solar frame is the identity up to rounding of the source
     // position, so frame-aligned grids must reproduce the legacy global grids
     // to rounding, with identical weights. Aligned Lebedev rules additionally
-    // carry the pole-avoiding pre-rotation, interior and ground.
+    // carry the pole-avoiding pre-rotation, and aligned ground rules an extra
+    // tilt that keeps every node off the horizon.
     const Eigen::Matrix3d pole_avoiding_rotation =
         (Eigen::AngleAxisd(0.01, Eigen::Vector3d::UnitZ()) *
          Eigen::AngleAxisd(0.01, Eigen::Vector3d::UnitY()))
             .toRotationMatrix();
+    const Eigen::Matrix3d ground_rotation =
+        pole_avoiding_rotation *
+        Eigen::AngleAxisd(0.08, Eigen::Vector3d::UnitX()).toRotationMatrix();
     for (const bool reduced_horizon : {true, false}) {
         DYNAMIC_SECTION("reduced_horizon=" << reduced_horizon) {
             sasktran2::Geometry1D geometry(
@@ -1636,11 +1743,10 @@ TEST_CASE("Successive-orders aligned grids equal legacy grids in the "
             const Eigen::Matrix3d interior_rotation =
                 reduced_horizon ? Eigen::Matrix3d::Identity()
                                 : pole_avoiding_rotation;
-            // Aligned ground Lebedev rules are the pre-rotated full rule
-            // restricted to the upward hemisphere and renormalized. The
-            // pre-rotation keeps only the canonical y-axis pair on the horizon;
-            // those nodes are excluded but keep half their weight in the
-            // normalization.
+            // Aligned ground Lebedev rules are the tilted full rule restricted
+            // to the upward hemisphere and renormalized. No node lies near the
+            // horizon, so exactly half the nodes contribute and the weights
+            // are renormalized over them alone.
             const auto require_tilted_hemisphere =
                 [&](const sasktran2::math::UnitSphere& actual, int num_points,
                     const Eigen::Vector3d& up) {
@@ -1648,23 +1754,23 @@ TEST_CASE("Successive-orders aligned grids equal legacy grids in the "
                     std::vector<int> kept;
                     double normalization = 0.0;
                     for (int node = 0; node < full.num_points(); ++node) {
-                        const double projection = (pole_avoiding_rotation *
-                                                   full.get_quad_position(node))
-                                                      .dot(up);
-                        if (projection > 1.0e-12) {
+                        const double projection =
+                            (ground_rotation * full.get_quad_position(node))
+                                .dot(up);
+                        REQUIRE(std::abs(projection) > 1.0e-6);
+                        if (projection > 0.0) {
                             kept.push_back(node);
                             normalization += full.quadrature_weight(node);
-                        } else if (projection >= -1.0e-12) {
-                            normalization += 0.5 * full.quadrature_weight(node);
                         }
                     }
+                    REQUIRE(2 * static_cast<int>(kept.size()) == num_points);
                     REQUIRE(actual.num_points() ==
                             static_cast<int>(kept.size()));
                     for (std::size_t node = 0; node < kept.size(); ++node) {
                         const int index = static_cast<int>(node);
                         require_same_direction(
                             actual.get_quad_position(index),
-                            pole_avoiding_rotation *
+                            ground_rotation *
                                 full.get_quad_position(kept[node]));
                         REQUIRE(actual.quadrature_weight(index) ==
                                 full.quadrature_weight(kept[node]) /
@@ -1699,6 +1805,95 @@ TEST_CASE("Successive-orders aligned grids equal legacy grids in the "
                     require_same_sphere(actual.outgoing_sphere(),
                                         expected.outgoing_sphere(),
                                         interior_rotation);
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("Successive-orders aligned ground Lebedev grids have no horizon "
+          "nodes",
+          "[successive_orders][geometry]") {
+    // Lebedev rules are symmetric under inversion, so a ground hemisphere
+    // with exactly half the nodes, all at least 1e-6 above the horizon, means
+    // that no node of the rotated full rule lies within 1e-6 of it.
+    const std::array<int, 14> sizes{6,   14,  26,  38,  50,  74,  86,
+                                    110, 146, 170, 194, 230, 266, 302};
+    // Lambertian factor 4 sum(mu w) of the outgoing hemisphere; one for an
+    // exact rule.
+    const std::map<int, double> lambertian_factors{
+        {26, 0.949761}, {50, 0.999219}, {110, 1.000976}, {194, 1.000832}};
+    for (const int size : sizes) {
+        for (const bool reduced_horizon : {false, true}) {
+            DYNAMIC_SECTION("size=" << size
+                                    << " reduced_horizon=" << reduced_horizon) {
+                Eigen::VectorXd altitudes =
+                    Eigen::VectorXd::LinSpaced(3, 0.0, 20000.0);
+                sasktran2::Geometry1D geometry(
+                    0.6, 0.3, 6372000.0, std::move(altitudes),
+                    sasktran2::grids::interpolation::linear,
+                    sasktran2::geometrytype::spherical);
+                sasktran2::raytracing::SphericalShellRayTracer raytracer(
+                    geometry);
+                sasktran2::viewinggeometry::InternalViewingGeometry los;
+                const std::array<double, 2> observer_cos_sza{0.3, 0.8};
+                los.traced_rays.resize(observer_cos_sza.size());
+                for (std::size_t ray_index = 0;
+                     ray_index < observer_cos_sza.size(); ++ray_index) {
+                    sasktran2::viewinggeometry::ViewingRay ray;
+                    ray.observer.position =
+                        geometry.coordinates().solar_coordinate_vector(
+                            observer_cos_sza[ray_index], 0.3, 30000.0);
+                    ray.look_away = -ray.observer.position.normalized();
+                    raytracer.trace_ray(ray, los.traced_rays[ray_index]);
+                }
+                sasktran2::successive_orders::SourceGeometrySettings settings;
+                settings.num_incoming = reduced_horizon ? 14 : size;
+                settings.num_outgoing = size;
+                settings.num_sza = 2;
+                settings.num_threads = 1;
+                settings.use_reduced_horizon_quadrature = reduced_horizon;
+                sasktran2::successive_orders::SourceGeometry1D source(raytracer,
+                                                                      geometry);
+                source.initialize(los, settings);
+                REQUIRE(source.num_ground_points() == 2);
+
+                const auto require_no_horizon_nodes =
+                    [](const sasktran2::math::UnitSphere& sphere,
+                       const Eigen::Vector3d& up, int full_size) {
+                        REQUIRE(2 * sphere.num_points() == full_size);
+                        double weight_sum = 0.0;
+                        for (int node = 0; node < sphere.num_points(); ++node) {
+                            REQUIRE(sphere.get_quad_position(node).dot(up) >
+                                    1.0e-6);
+                            weight_sum += sphere.quadrature_weight(node);
+                        }
+                        REQUIRE(weight_sum ==
+                                Catch::Approx(0.5).margin(1.0e-14));
+                    };
+                for (const auto& point : source.source_points()) {
+                    if (!point.is_ground()) {
+                        continue;
+                    }
+                    const Eigen::Vector3d up =
+                        point.location().position.normalized();
+                    require_no_horizon_nodes(point.outgoing_sphere(), up, size);
+                    if (!reduced_horizon) {
+                        require_no_horizon_nodes(point.incoming_sphere(), up,
+                                                 size);
+                    }
+                    const auto factor = lambertian_factors.find(size);
+                    if (factor != lambertian_factors.end()) {
+                        const auto& sphere = point.outgoing_sphere();
+                        double lambertian = 0.0;
+                        for (int node = 0; node < sphere.num_points(); ++node) {
+                            lambertian +=
+                                4.0 * sphere.get_quad_position(node).dot(up) *
+                                sphere.quadrature_weight(node);
+                        }
+                        REQUIRE(lambertian ==
+                                Catch::Approx(factor->second).margin(1.0e-6));
+                    }
                 }
             }
         }
