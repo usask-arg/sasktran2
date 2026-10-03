@@ -563,6 +563,71 @@ def test_2d_reduced_horizon_supports_arbitrary_incoming_count(num_stokes: int):
     assert not np.isclose(varying[0, 0, 0], uniform[0, 0, 0], rtol=1.0e-4)
 
 
+@pytest.mark.parametrize("reduced_horizon", [False, True])
+def test_2d_polarized_successive_orders_is_continuous_in_solar_azimuth(
+    reduced_horizon: bool,
+):
+    # Polarized first-order forcing traces an exact solar ray from the ground
+    # end of every incoming ray. Those endpoints lie on the surface only to
+    # roundoff, which used to truncate some solar paths and make the forcing
+    # switch by tens of percent under a negligible change in sun direction.
+    altitudes = np.linspace(0.0, 60_000.0, 13)
+    horizontal_angles = np.linspace(-0.3, 0.3, 13)
+
+    def radiance(solar_azimuth: float) -> np.ndarray:
+        geometry = sk.Geometry2D(
+            cos_sza=0.6,
+            solar_azimuth=solar_azimuth,
+            earth_radius_m=EARTH_RADIUS_M,
+            altitude_grid_m=altitudes,
+            horizontal_angle_grid_radians=horizontal_angles,
+        )
+        config = successive_orders_config(
+            num_stokes=3, single_scatter_source=sk.SingleScatterSource.NoSource
+        )
+        config.num_sza = 5
+        config.num_successive_orders_incoming = 26
+        config.num_successive_orders_outgoing = 26
+        config.successive_orders_reduced_horizon_quadrature = reduced_horizon
+        viewing = sk.ViewingGeometry()
+        viewing.add_ray(
+            sk.TangentAltitude(
+                tangent_altitude_m=20_000.0,
+                observer_altitude_m=200_000.0,
+                horizontal_angle_radians=-0.15,
+                viewing_azimuth_radians=0.0,
+            )
+        )
+        scene = sk.Atmosphere(
+            geometry,
+            config,
+            wavelengths_nm=np.array([500.0]),
+            calculate_derivatives=False,
+        )
+        horizontal, altitude = np.meshgrid(horizontal_angles, altitudes, indexing="ij")
+        scene.storage.total_extinction[:, 0] = (
+            1.5e-5 * np.exp(-altitude / 8_000.0) * (1.0 + 0.3 * horizontal)
+        ).ravel()
+        scene.storage.ssa[:] = 0.9
+        scene.leg_coeff.a1[0] = 1.0
+        scene.leg_coeff.a1[2] = 0.5
+        scene.leg_coeff.a2[2] = 3.0
+        scene.leg_coeff.b1[2] = -np.sqrt(6.0) / 2.0
+        scene.surface.albedo[:] = 0.3
+        return (
+            sk.Engine(config, geometry, viewing)
+            .calculate_radiance(scene)
+            .radiance.values
+        )
+
+    base = radiance(0.4)
+    perturbed = radiance(0.4 + 1.0e-9)
+
+    np.testing.assert_allclose(
+        perturbed, base, rtol=0.0, atol=1.0e-7 * abs(base[0, 0, 0])
+    )
+
+
 def test_2d_successive_orders_accepts_explicit_horizontal_source_angles():
     geometry = geometry2d()
     config = successive_orders_config(

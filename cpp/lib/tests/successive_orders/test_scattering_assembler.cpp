@@ -4,6 +4,7 @@
 #include <sasktran2/test_helper.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <memory>
 #include <stdexcept>
@@ -544,6 +545,109 @@ TEST_CASE("Ground scattering supplies finite azimuths for vertical directions",
         REQUIRE_NOTHROW(
             assembler.assemble_values(fixture.atmosphere, 0, scattering));
         REQUIRE(scattering.ground_values().allFinite());
+    }
+}
+
+TEST_CASE("Spherical ground hemispheres exclude roundoff horizon nodes",
+          "[successive_orders][scattering_assembler][ground]") {
+    // The spherical reference ground point carries ~1e-10 m of Cartesian
+    // roundoff, which used to keep Lebedev equator nodes with mu ~ 1e-17.
+    // MODIS kernels evaluated there produced ground blocks near 1e16.
+    constexpr std::array<double, 3> solar_azimuths{0.0, 0.15, 2.5};
+    for (const int num_points : {26, 110}) {
+        for (const bool reduced_horizon : {false, true}) {
+            double reference_weight_sum = 0.0;
+            double reference_reflectance = 0.0;
+            for (const double solar_azimuth : solar_azimuths) {
+                INFO("points=" << num_points << " reduced=" << reduced_horizon
+                               << " saa=" << solar_azimuth);
+                Eigen::VectorXd altitudes(3);
+                altitudes << 0.0, 1000.0, 3000.0;
+                sasktran2::Geometry1D geometry(
+                    0.6, solar_azimuth, 6372000.0, std::move(altitudes),
+                    sasktran2::grids::interpolation::linear,
+                    sasktran2::geometrytype::spherical);
+                sasktran2::raytracing::SphericalShellRayTracer raytracer(
+                    geometry);
+                SourceGeometrySettings settings;
+                settings.num_incoming = num_points;
+                settings.num_outgoing = num_points;
+                settings.num_sza = 1;
+                settings.num_threads = 1;
+                settings.use_reduced_horizon_quadrature = reduced_horizon;
+                SourceGeometry1D source_geometry(raytracer, geometry);
+                sasktran2::viewinggeometry::InternalViewingGeometry viewing;
+                source_geometry.initialize(viewing, settings);
+
+                const auto& ground = source_geometry.source_point(
+                    source_geometry.num_interior_points());
+                double weight_sum = 0.0;
+                double reflectance = 0.0;
+                for (int input = 0; input < ground.num_incoming(); ++input) {
+                    const double mu = ground.location().cos_zenith_angle(
+                        ground.incoming_sphere().get_quad_position(input));
+                    REQUIRE(mu > 1.0e-6);
+                    weight_sum +=
+                        ground.incoming_sphere().quadrature_weight(input);
+                    reflectance +=
+                        4.0 * mu *
+                        ground.incoming_sphere().quadrature_weight(input);
+                }
+                for (int output = 0; output < ground.num_outgoing(); ++output) {
+                    REQUIRE(ground.location().cos_zenith_angle(
+                                ground.outgoing_sphere().get_quad_position(
+                                    output)) > 1.0e-6);
+                }
+                // The hemisphere weights, and so the Lambertian ground
+                // reflectance, must not depend on which horizon nodes roundoff
+                // places above the surface.
+                if (solar_azimuth == solar_azimuths.front()) {
+                    reference_weight_sum = weight_sum;
+                    reference_reflectance = reflectance;
+                }
+                REQUIRE(weight_sum <= 0.5 + 1.0e-14);
+                REQUIRE(weight_sum ==
+                        Catch::Approx(reference_weight_sum).epsilon(1.0e-12));
+                REQUIRE(reflectance ==
+                        Catch::Approx(reference_reflectance).epsilon(1.0e-12));
+
+                sasktran2::atmosphere::Atmosphere<1> scalar_atmosphere(
+                    sasktran2::atmosphere::AtmosphereGridStorageFull<1>(
+                        1, geometry.size(), 3),
+                    sasktran2::atmosphere::Surface<1>(1), false);
+                scalar_atmosphere.surface().set_brdf_object(
+                    std::make_shared<sasktran2::atmosphere::brdf::MODIS<1>>());
+                scalar_atmosphere.surface().brdf_args().col(0) << 0.1, 0.05,
+                    0.02;
+                ScalarScatteringAssembler scalar_assembler(source_geometry, 3);
+                auto scalar_scattering = scalar_assembler.create_operator();
+                scalar_assembler.assemble_values(scalar_atmosphere, 0,
+                                                 scalar_scattering);
+                REQUIRE(scalar_scattering.ground_values().allFinite());
+                REQUIRE(scalar_scattering.ground_block(0)
+                            .rowwise()
+                            .sum()
+                            .cwiseAbs()
+                            .maxCoeff() < 0.5);
+
+                sasktran2::atmosphere::Atmosphere<3> vector_atmosphere(
+                    sasktran2::atmosphere::AtmosphereGridStorageFull<3>(
+                        1, geometry.size(), 3),
+                    sasktran2::atmosphere::Surface<3>(1), false);
+                vector_atmosphere.surface().set_brdf_object(
+                    std::make_shared<sasktran2::atmosphere::brdf::MODIS<3>>());
+                vector_atmosphere.surface().brdf_args().col(0) << 0.1, 0.05,
+                    0.02;
+                VectorScatteringAssembler vector_assembler(source_geometry, 3);
+                auto vector_scattering = vector_assembler.create_operator();
+                vector_assembler.assemble_values(vector_atmosphere, 0,
+                                                 vector_scattering);
+                REQUIRE(vector_scattering.ground_values().allFinite());
+                REQUIRE(
+                    vector_scattering.ground_values().cwiseAbs().maxCoeff() <
+                    0.5);
+            }
+        }
     }
 }
 

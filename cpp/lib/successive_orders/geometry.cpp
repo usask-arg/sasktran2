@@ -340,27 +340,33 @@ namespace sasktran2::successive_orders {
           public:
             /** Upward hemisphere of a full-sphere rule.
              *
-             * Nodes are kept when their dot product with the location exceeds
-             * relative_horizon_tolerance * |location|. Frame-aligned rules
-             * keep the canonical y-axis Lebedev pair exactly on the horizon,
-             * where roundoff would otherwise keep one and reject the other,
-             * so they pass a small positive tolerance. Legacy grids pass
-             * zero, which keeps their original selection unchanged.
+             * Lebedev rules place nodes exactly on the horizon whenever the
+             * ground normal lies along a rule axis, and Cartesian roundoff in
+             * the ground location (~1e-10 m) otherwise decides which of them
+             * look up with mu ~ 1e-17. BRDFs with secant terms, such as the
+             * MODIS kernels, are unbounded there, so horizon nodes are
+             * excluded. They keep half their weight in the normalization, as
+             * boundary nodes of the full-sphere rule, so the hemisphere
+             * weights do not depend on that roundoff.
+             * Frame-aligned rules keep the canonical y-axis Lebedev pair
+             * exactly on the horizon; the same rule treats it symmetrically.
              */
             GroundUnitSphere(std::unique_ptr<const UnitSphere>&& sphere,
-                             const Eigen::Vector3d& location,
-                             double relative_horizon_tolerance)
+                             const Eigen::Vector3d& location)
                 : m_full_sphere(std::move(sphere)) {
                 m_contributing_map.reserve(m_full_sphere->num_points() / 2);
-                const double horizon_tolerance =
-                    relative_horizon_tolerance * location.norm();
+                const double horizon_tolerance = 1.0e-12 * location.norm();
                 for (int index = 0; index < m_full_sphere->num_points();
                      ++index) {
-                    if (m_full_sphere->get_quad_position(index).dot(location) >
-                        horizon_tolerance) {
+                    const double projection =
+                        m_full_sphere->get_quad_position(index).dot(location);
+                    const double weight =
+                        m_full_sphere->quadrature_weight(index);
+                    if (projection > horizon_tolerance) {
                         m_contributing_map.push_back(index);
-                        m_quadrature_normalization +=
-                            m_full_sphere->quadrature_weight(index);
+                        m_quadrature_normalization += weight;
+                    } else if (projection >= -horizon_tolerance) {
+                        m_quadrature_normalization += 0.5 * weight;
                     }
                 }
             }
@@ -1037,45 +1043,43 @@ namespace sasktran2::successive_orders {
             const Eigen::Vector3d location =
                 m_location_interpolator->ground_location(
                     m_geometry.coordinates(), ground_index);
-            // Frame-only ground rules put Lebedev equator nodes on the horizon,
-            // where their exclusion biases the hemisphere quadrature, and a
-            // node on the vertical, where the BRDF azimuth is undefined. The
-            // pre-rotation leaves only the canonical y-axis pair on the
-            // horizon, which the tolerance rejects symmetrically.
+            // Frame-only ground rules put Lebedev equator nodes on the horizon
+            // and a node on the vertical, where the BRDF azimuth is undefined.
+            // The pre-rotation leaves only the canonical y-axis pair on the
+            // horizon, which GroundUnitSphere treats symmetrically.
             const Eigen::Matrix3d ground_frame =
                 aligned
                     ? Eigen::Matrix3d(local_solar_frame(location, m_geometry) *
                                       pole_avoiding_rotation())
                     : Eigen::Matrix3d::Identity();
-            const double horizon_tolerance = aligned ? 1.0e-12 : 0.0;
             auto ground_grid = std::make_unique<AngularGridPair>();
             if (m_settings.use_reduced_horizon_quadrature) {
                 ground_grid->incoming = std::make_shared<GroundUnitSphere>(
                     std::make_unique<ReducedHorizonSphere>(
                         m_source_points[point_index].location().position,
                         surface_radius, m_settings.num_incoming, m_geometry),
-                    location, horizon_tolerance);
+                    location);
             } else if (aligned) {
                 ground_grid->incoming = std::make_shared<GroundUnitSphere>(
                     std::make_unique<RotatedLebedevSphere>(
                         m_settings.num_incoming, ground_frame),
-                    location, horizon_tolerance);
+                    location);
             } else {
                 ground_grid->incoming = std::make_shared<GroundUnitSphere>(
                     std::make_unique<sasktran2::math::LebedevSphere>(
                         m_settings.num_incoming),
-                    location, horizon_tolerance);
+                    location);
             }
             if (aligned) {
                 ground_grid->outgoing = std::make_shared<GroundUnitSphere>(
                     std::make_unique<RotatedLebedevSphere>(
                         m_settings.num_outgoing, ground_frame),
-                    location, horizon_tolerance);
+                    location);
             } else {
                 ground_grid->outgoing = std::make_shared<GroundUnitSphere>(
                     std::make_unique<sasktran2::math::LebedevSphere>(
                         m_settings.num_outgoing),
-                    location, horizon_tolerance);
+                    location);
             }
             auto& point = m_source_points[point_index];
             point.m_incoming_sphere = ground_grid->incoming.get();

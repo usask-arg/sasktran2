@@ -1638,8 +1638,9 @@ TEST_CASE("Successive-orders aligned grids equal legacy grids in the "
                                 : pole_avoiding_rotation;
             // Aligned ground Lebedev rules are the pre-rotated full rule
             // restricted to the upward hemisphere and renormalized. The
-            // pre-rotation keeps only the canonical y-axis pair on the horizon,
-            // which the horizon tolerance rejects.
+            // pre-rotation keeps only the canonical y-axis pair on the horizon;
+            // those nodes are excluded but keep half their weight in the
+            // normalization.
             const auto require_tilted_hemisphere =
                 [&](const sasktran2::math::UnitSphere& actual, int num_points,
                     const Eigen::Vector3d& up) {
@@ -1647,11 +1648,14 @@ TEST_CASE("Successive-orders aligned grids equal legacy grids in the "
                     std::vector<int> kept;
                     double normalization = 0.0;
                     for (int node = 0; node < full.num_points(); ++node) {
-                        if ((pole_avoiding_rotation *
-                             full.get_quad_position(node))
-                                .dot(up) > 1.0e-12) {
+                        const double projection = (pole_avoiding_rotation *
+                                                   full.get_quad_position(node))
+                                                      .dot(up);
+                        if (projection > 1.0e-12) {
                             kept.push_back(node);
                             normalization += full.quadrature_weight(node);
+                        } else if (projection >= -1.0e-12) {
+                            normalization += 0.5 * full.quadrature_weight(node);
                         }
                     }
                     REQUIRE(actual.num_points() ==
