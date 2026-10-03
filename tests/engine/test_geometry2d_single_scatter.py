@@ -649,6 +649,115 @@ def test_ground_shadow_blocks_atmosphere_and_surface_single_scatter():
     assert result.wf_albedo.item() == pytest.approx(0.0, abs=1.0e-15)
 
 
+TWILIGHT_ALTITUDES_M = np.arange(0.0, 60_001.0, 2_000.0)
+TWILIGHT_HORIZONTAL_ANGLES_RAD = np.linspace(-0.6, 0.6, 25)
+TWILIGHT_SCATTER_ALTITUDE_INDEX = 2
+TWILIGHT_EXTINCTION_PER_M = 1.0e-6
+# Shadow limits for a scatterer at 4 km. The refracted limit and path length
+# come from an independent quadrature of the refracted ray equation through
+# the same log-linearly interpolated refractive-index profile.
+STRAIGHT_SHADOW_SZA_DEG = 92.0296
+REFRACTED_SHADOW_SZA_DEG = 92.8703
+REFRACTED_SOLAR_PATH_AT_92_45_DEG_M = 1_129_190.7
+TWILIGHT_SINGLE_SOURCES = [
+    pytest.param(
+        sk.SingleScatterSource.Exact,
+        id="exact",
+        # The exact source retraces from each endpoint toward the sun. Until
+        # the refracted tracer includes the observer's refractive index in the
+        # ray invariant, that retrace reaches the surface beyond the straight
+        # shadow.
+        marks=pytest.mark.xfail(
+            strict=True,
+            reason="needs the inside-observer refracted tracer invariant fix",
+        ),
+    ),
+    pytest.param(sk.SingleScatterSource.Table, id="table"),
+]
+
+
+def refracted_twilight_radiance(
+    sza_deg: float,
+    single_source: sk.SingleScatterSource,
+    solar_refraction: bool = True,
+) -> float:
+    """Nadir single scatter from an isotropic scatterer only at 4 km."""
+    config = single_scatter_config()
+    config.single_scatter_source = single_source
+    config.solar_refraction = solar_refraction
+    cos_sza = np.cos(np.deg2rad(sza_deg))
+    geometry = sk.Geometry2D(
+        cos_sza=cos_sza,
+        solar_azimuth=0.0,
+        earth_radius_m=EARTH_RADIUS_M,
+        altitude_grid_m=TWILIGHT_ALTITUDES_M,
+        horizontal_angle_grid_radians=TWILIGHT_HORIZONTAL_ANGLES_RAD,
+    )
+    geometry.refractive_index = 1.0 + 2.8e-4 * np.exp(-TWILIGHT_ALTITUDES_M / 8000.0)
+    viewing = sk.ViewingGeometry()
+    viewing.add_ray(
+        sk.GroundViewingSolar(
+            cos_sza=cos_sza,
+            relative_azimuth=0.0,
+            cos_viewing_zenith=1.0,
+            observer_altitude_m=200_000.0,
+        )
+    )
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=np.array([500.0]),
+        calculate_derivatives=False,
+    )
+    ssa = np.zeros((TWILIGHT_HORIZONTAL_ANGLES_RAD.size, TWILIGHT_ALTITUDES_M.size))
+    ssa[:, TWILIGHT_SCATTER_ALTITUDE_INDEX] = 1.0
+    atmosphere.storage.total_extinction[:] = TWILIGHT_EXTINCTION_PER_M
+    atmosphere.storage.ssa[:, 0] = ssa.ravel()
+    atmosphere.leg_coeff.a1[0] = 1.0
+
+    result = sk.Engine(config, geometry, viewing).calculate_radiance(atmosphere)
+    return result.radiance.item()
+
+
+@pytest.mark.parametrize("single_source", TWILIGHT_SINGLE_SOURCES)
+def test_solar_refraction_illuminates_points_beyond_straight_shadow(
+    single_source: sk.SingleScatterSource,
+):
+    between_limits = 0.5 * (STRAIGHT_SHADOW_SZA_DEG + REFRACTED_SHADOW_SZA_DEG)
+
+    assert (
+        refracted_twilight_radiance(
+            between_limits, single_source, solar_refraction=False
+        )
+        == 0.0
+    )
+    assert refracted_twilight_radiance(between_limits, single_source) > 0.0
+    assert (
+        refracted_twilight_radiance(REFRACTED_SHADOW_SZA_DEG - 0.02, single_source)
+        > 0.0
+    )
+    assert (
+        refracted_twilight_radiance(REFRACTED_SHADOW_SZA_DEG + 0.02, single_source)
+        == 0.0
+    )
+
+
+@pytest.mark.parametrize("single_source", TWILIGHT_SINGLE_SOURCES)
+def test_refracted_twilight_solar_path_matches_ray_equation(
+    single_source: sk.SingleScatterSource,
+):
+    # With an isotropic phase function and a fixed line of sight, the radiance
+    # ratio to an overhead sun is the ratio of solar transmissions.
+    overhead = refracted_twilight_radiance(0.0, single_source)
+    twilight = refracted_twilight_radiance(92.45, single_source)
+    vertical_path = (
+        TWILIGHT_ALTITUDES_M[-1] - TWILIGHT_ALTITUDES_M[TWILIGHT_SCATTER_ALTITUDE_INDEX]
+    )
+    path = vertical_path - np.log(twilight / overhead) / TWILIGHT_EXTINCTION_PER_M
+
+    np.testing.assert_allclose(path, REFRACTED_SOLAR_PATH_AT_92_45_DEG_M, rtol=5.0e-3)
+
+
 def test_ground_single_scatter_and_surface_derivative_match_1d():
     config = single_scatter_config()
     geometry_1d = geometry1d()

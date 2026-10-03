@@ -475,20 +475,19 @@ namespace sasktran2::solartransmission {
                 two_pi * azimuth_index / static_cast<double>(m_num_azimuths);
             const double impact = m_impact_parameters[impact_index];
             const double top_radius = m_radii.back();
-            const double top_refractive_index =
-                m_config->solar_refraction()
-                    ? m_geometry.refractive_index()[m_radii.size() - 1]
-                    : 1.0;
-            const double geometric_impact = impact / top_refractive_index;
             const double toa_along_sun = std::sqrt(
-                std::max(0.0, top_radius * top_radius -
-                                  geometric_impact * geometric_impact));
+                std::max(0.0, top_radius * top_radius - impact * impact));
             const double observer_radius = top_radius + 1.0;
-            const double observer_along_sun = std::sqrt(
-                std::max(0.0, observer_radius * observer_radius -
-                                  geometric_impact * geometric_impact));
+            const double observer_along_sun = std::sqrt(std::max(
+                0.0, observer_radius * observer_radius - impact * impact));
+            // Outside the atmosphere n = 1, so the straight incoming impact is
+            // itself the refractive invariant n r sin(zenith) conserved by the
+            // tracer. Dividing by the TOA index would lower every
+            // characteristic by p (n_top - 1) and push the grazing ray into the
+            // surface, losing the far-side nodes beyond the straight-line
+            // shadow.
             const Eigen::Vector3d transverse =
-                geometric_impact * impact_direction(azimuth);
+                impact * impact_direction(azimuth);
             const Eigen::Vector3d toa_position =
                 transverse + toa_along_sun * m_sun;
 
