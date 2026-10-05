@@ -31,22 +31,22 @@ namespace sasktran2 {
             m_stokes_C.setOnes();
             m_stokes_S.setZero();
 
-            if (config.stokes_basis() ==
-                sasktran2::Config::StokesBasis::solar) {
-                for (int i = 0; i < m_nlos; ++i) {
-                    auto CS = geometry.coordinates().stokes_standard_to_solar(
-                        internal_viewing.viewing_ray(i).look_away);
+            // The sources are calculated with the Stokes reference in the
+            // plane of the observer position and the look vector, so only the
+            // standard and solar bases need a rotation
+            if (config.stokes_basis() !=
+                sasktran2::Config::StokesBasis::observer) {
+                const auto& coords = geometry.coordinates();
+                const Eigen::Vector3d& to_reference =
+                    config.stokes_basis() ==
+                            sasktran2::Config::StokesBasis::solar
+                        ? coords.sun_unit()
+                        : coords.reference_z();
 
-                    m_stokes_C[i] = CS.first;
-                    m_stokes_S[i] = CS.second;
-                }
-            } else if (config.stokes_basis() ==
-                       sasktran2::Config::StokesBasis::observer) {
                 for (int i = 0; i < m_nlos; ++i) {
-                    auto CS =
-                        geometry.coordinates().stokes_standard_to_observer(
-                            internal_viewing.viewing_ray(i).look_away,
-                            internal_viewing.viewing_ray(i).observer.position);
+                    const auto& ray = internal_viewing.viewing_ray(i);
+                    auto CS = coords.stokes_rotation(
+                        ray.look_away, ray.observer.position, to_reference);
 
                     m_stokes_C[i] = CS.first;
                     m_stokes_S[i] = CS.second;

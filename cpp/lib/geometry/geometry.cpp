@@ -1,4 +1,3 @@
-#include "sasktran2/math/scattering.h"
 #include <sasktran2/geometry.h>
 #include <sasktran2/math/trig.h>
 #include <sasktran2/validation/validation.h>
@@ -230,169 +229,30 @@ namespace sasktran2 {
         return vertical_transform.matrix() * horiz_look;
     }
 
-    std::pair<double, double> Coordinates::stokes_standard_to_solar(
-        const Eigen::Vector3d& look_vector) const {
-        // Project the z-unit and the *unrotated* sun into perpindicular
-        // componets to the look vector
+    std::pair<double, double>
+    Coordinates::stokes_rotation(const Eigen::Vector3d& look_vector,
+                                 const Eigen::Vector3d& from_reference,
+                                 const Eigen::Vector3d& to_reference) {
+        // Project both references perpendicular to the look vector
+        const Eigen::Vector3d perp_from =
+            from_reference - from_reference.dot(look_vector) * look_vector;
+        const Eigen::Vector3d perp_to =
+            to_reference - to_reference.dot(look_vector) * look_vector;
 
-        if ((abs(m_sun_unit.dot(look_vector)) >= 1) ||
-            (abs(m_z_unit.dot(look_vector)) >= 1)) {
-            // Parallel sun, not sure what to do...
-            // TODO: CHeck this
+        constexpr double parallel_tolerance = 1e-8;
+        if (perp_from.norm() <= parallel_tolerance * from_reference.norm() ||
+            perp_to.norm() <= parallel_tolerance * to_reference.norm()) {
+            // A reference along the look vector does not define a basis
             return std::make_pair(1.0, 0.0);
         }
 
-        auto perp_z =
-            (m_z_unit - m_z_unit.dot(look_vector) * look_vector).normalized();
-        auto perp_true_sun =
-            (m_sun_unit - m_sun_unit.dot(look_vector) * look_vector)
-                .normalized();
+        // Signed angle from perp_from to perp_to about the propagation
+        // direction, -look_vector.  The sign is required, the reference can
+        // turn either way
+        const double angle = atan2(-look_vector.dot(perp_from.cross(perp_to)),
+                                   perp_from.dot(perp_to));
 
-        // Find the angle between them and use that as the Stokes rotation angle
-        double cos_angle = perp_z.dot(perp_true_sun);
-
-        if (cos_angle > 1) {
-            cos_angle = 1;
-        }
-        if (cos_angle < -1) {
-            cos_angle = -1;
-        }
-
-        double rot_rangle = acos(cos_angle);
-
-        std::pair<double, double> result;
-
-        result.first = cos(2 * rot_rangle);
-        result.second = -1 * sin(2 * rot_rangle);
-
-        return result;
-    }
-
-    std::pair<double, double> Coordinates::stokes_standard_to_observer(
-        const Eigen::Vector3d& look_vector,
-        const Eigen::Vector3d& position) const {
-        // Project the z-unit and the observer into perpindicular
-        // componets to the look vector
-
-        if ((abs(position.normalized().dot(look_vector)) >= 1) ||
-            (abs(m_z_unit.dot(look_vector)) >= 1)) {
-            // Parallel, not sure what to do...
-            // TODO: CHeck this
-            return std::make_pair(1.0, 0.0);
-        }
-
-        auto perp_z =
-            (m_z_unit - m_z_unit.dot(look_vector) * look_vector).normalized();
-        auto perp_obs = (position.normalized() -
-                         position.normalized().dot(look_vector) * look_vector)
-                            .normalized();
-
-        // Find the angle between them and use that as the Stokes rotation angle
-        double cos_angle = perp_z.dot(position.normalized());
-
-        if (cos_angle > 1) {
-            cos_angle = 1;
-        }
-        if (cos_angle < -1) {
-            cos_angle = -1;
-        }
-
-        double rot_rangle = acos(cos_angle);
-
-        std::pair<double, double> result;
-
-        result.first = cos(2 * rot_rangle);
-        result.second = sin(2 * rot_rangle);
-
-        return result;
-    }
-
-    std::pair<double, double> Coordinates::stokes_standard_to_observer_z(
-        const Eigen::Vector3d& look_vector,
-        const Eigen::Vector3d& position) const {
-
-        auto position_norm = position.normalized();
-
-        // obs lat
-        double cos_obs_lat = position_norm.dot(m_z_unit);
-        if (cos_obs_lat >= 1 - 1e-4) {
-            std::pair<double, double> result;
-            result.first = 1.0;
-            result.second = 0.0;
-        }
-
-        // Rotate in this plane so the observer is on the z-axis
-        Eigen::AngleAxis<double> to_z_transform(
-            -acos(cos_obs_lat), m_z_unit.cross(position_norm).normalized());
-
-        Eigen::Vector3d rotated_look = to_z_transform.matrix() * look_vector;
-
-        Eigen::Vector3d rotated_sun = to_z_transform.matrix() * m_sun_unit;
-
-        auto perp_z_start =
-            (m_z_unit - m_z_unit.dot(look_vector) * look_vector).normalized();
-        auto perp_true_sun_start =
-            (m_sun_unit - m_sun_unit.dot(look_vector) * look_vector)
-                .normalized();
-
-        auto perp_z_rot =
-            (m_z_unit - m_z_unit.dot(rotated_look) * rotated_look).normalized();
-        auto perp_true_sun_rot =
-            (rotated_sun - rotated_sun.dot(rotated_look) * rotated_look)
-                .normalized();
-
-        double cos_angle_start = perp_z_start.dot(perp_true_sun_start);
-        double cos_angle_rot = perp_z_rot.dot(perp_true_sun_rot);
-
-        if (cos_angle_start > 1) {
-            cos_angle_start = 1;
-        }
-        if (cos_angle_start < -1) {
-            cos_angle_start = -1;
-        }
-
-        if (cos_angle_rot > 1) {
-            cos_angle_rot = 1;
-        }
-        if (cos_angle_rot < -1) {
-            cos_angle_rot = -1;
-        }
-
-        double rot_rangle_start = acos(cos_angle_start);
-        double rot_rangle_rot = acos(cos_angle_rot);
-
-        std::pair<double, double> result;
-
-        result.first = cos(2 * (rot_rangle_start - rot_rangle_rot));
-        result.second = -sin(2 * (rot_rangle_start - rot_rangle_rot));
-
-        if (result.first != result.first || result.second != result.second) {
-            static bool message = true;
-            if (message) {
-                spdlog::error(
-                    "NaN in stokes_standard_to_observer_z calculation");
-                message = false;
-                std::cout << "look_vector: " << look_vector.transpose() << "\n";
-                std::cout << "position: " << position.transpose() << "\n";
-                std::cout << "rotated_look: " << rotated_look.transpose()
-                          << "\n";
-                std::cout << "rotated_sun: " << rotated_sun.transpose() << "\n";
-                std::cout << "perp_z_start: " << perp_z_start.transpose()
-                          << "\n";
-                std::cout << "perp_true_sun_start: "
-                          << perp_true_sun_start.transpose() << "\n";
-                std::cout << "perp_z_rot: " << perp_z_rot.transpose() << "\n";
-                std::cout << "perp_true_sun_rot: "
-                          << perp_true_sun_rot.transpose() << "\n";
-                std::cout << "cos_angle_start: " << cos_angle_start << "\n";
-                std::cout << "cos_angle_rot: " << cos_angle_rot << "\n";
-                std::cout << "rot_rangle_start: " << rot_rangle_start << "\
-n";
-                std::cout << "rot_rangle_rot: " << rot_rangle_rot << "\n";
-            }
-        }
-
-        return result;
+        return std::make_pair(cos(2 * angle), -sin(2 * angle));
     }
 
 } // namespace sasktran2
