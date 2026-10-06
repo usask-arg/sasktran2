@@ -1,5 +1,6 @@
 #include "sasktran2/geometry.h"
 #include <sasktran2/solartransmission.h>
+#include <sasktran2/refraction.h>
 #include <type_traits>
 #include <unordered_map>
 
@@ -533,10 +534,18 @@ namespace sasktran2::solartransmission {
         Eigen::VectorXd cos_sza_grid_values;
 
         if (m_geometry.coordinates().geometry_type() ==
-            sasktran2::geometrytype::spherical) {
+                sasktran2::geometrytype::spherical &&
+            min_max_cos_sza.second - min_max_cos_sza.first > 1e-10) {
             // TODO: configure this resolution
             cos_sza_grid_values.setLinSpaced(100, min_max_cos_sza.first,
                                              min_max_cos_sza.second);
+        } else if (m_geometry.coordinates().geometry_type() ==
+                   sasktran2::geometrytype::spherical) {
+            // All endpoints share one solar zenith angle, for example a
+            // vertical line of sight, and a spread grid would be degenerate
+            cos_sza_grid_values.resize(1);
+            cos_sza_grid_values(0) =
+                0.5 * (min_max_cos_sza.first + min_max_cos_sza.second);
         } else {
             // TODO: Can we handle pseudo-spherical here?
             cos_sza_grid_values.resize(1);
@@ -563,37 +572,156 @@ namespace sasktran2::solartransmission {
                                  m_geometry.size());
         m_geometry_matrix.setZero();
 
-        m_ground_hit_flag.resize(
-            m_location_interpolator->num_interior_points());
+        const int num_nodes = m_location_interpolator->num_interior_points();
+        m_ground_hit_flag.assign(num_nodes, false);
+
+        m_refracted = m_config != nullptr && m_config->solar_refraction() &&
+                      m_geometry.coordinates().geometry_type() ==
+                          sasktran2::geometrytype::spherical;
+        m_node_bending.setZero(num_nodes);
+
+        const Eigen::Vector3d& sun = m_geometry.coordinates().sun_unit();
+        const auto zenith_angle = [](const Eigen::Vector3d& up,
+                                     const Eigen::Vector3d& direction) {
+            return std::atan2(up.cross(direction).norm(), up.dot(direction));
+        };
 
         sasktran2::viewinggeometry::ViewingRay ray_to_sun;
-
-        ray_to_sun.look_away = m_geometry.coordinates().sun_unit();
+        ray_to_sun.look_away = sun;
 
         raytracing::TracedRay traced_ray;
+        std::vector<std::pair<int, double>> index_weights;
 
-        for (int i = 0; i < m_location_interpolator->num_interior_points();
-             ++i) {
+        for (int i = 0; i < num_nodes; ++i) {
             ray_to_sun.observer.position =
                 m_location_interpolator->grid_location(m_geometry.coordinates(),
                                                        i);
 
-            // This method specifically does not allow for refraction
-            m_raytracer->trace_ray(ray_to_sun, traced_ray, false);
+            if (m_refracted) {
+                if (!raytracing::refraction::refracted_direction_to_sun(
+                        *m_geometry_1d, ray_to_sun.observer.position,
+                        ray_to_sun.look_away, index_weights)) {
+                    m_ground_hit_flag[i] = true;
+                    continue;
+                }
+                const Eigen::Vector3d up =
+                    ray_to_sun.observer.position.normalized();
+                m_node_bending(i) = zenith_angle(up, sun) -
+                                    zenith_angle(up, ray_to_sun.look_away);
+            }
+            m_raytracer->trace_ray(ray_to_sun, traced_ray, m_refracted);
 
             if (!traced_ray.ground_is_hit) {
                 assign_dense_matrix_column(i, traced_ray, m_geometry_matrix);
-                m_ground_hit_flag[i] = false;
             } else {
                 m_ground_hit_flag[i] = true;
             }
         }
+
+        // Refraction lets the sun be seen below the geometric horizon of the
+        // straight solar rays, tabulate how far on the altitude grid
+        const auto& altitudes = m_geometry_1d->altitude_grid().grid();
+        m_visibility_limit_increase.setZero(altitudes.size());
+        if (m_refracted) {
+            const double earth_radius = m_geometry.coordinates().earth_radius();
+            const double ground_radius = earth_radius + altitudes(0);
+            for (Eigen::Index k = 0; k < altitudes.size(); ++k) {
+                const double radius = earth_radius + altitudes(k);
+                m_visibility_limit_increase(k) =
+                    raytracing::refraction::refracted_visibility_limit(
+                        *m_geometry_1d, radius, index_weights) -
+                    (EIGEN_PI -
+                     std::asin(std::min(1.0, ground_radius / radius)));
+            }
+        }
+    }
+
+    bool SolarTransmissionTable::endpoint_interpolation(
+        const sasktran2::Location& location,
+        std::vector<std::pair<int, double>>& weights,
+        Eigen::Vector3d* solar_propagation_direction) const {
+        const Eigen::Vector3d& sun = m_geometry.coordinates().sun_unit();
+        if (solar_propagation_direction != nullptr) {
+            *solar_propagation_direction = -sun;
+        }
+        weights.clear();
+
+        Eigen::Vector3d up = Eigen::Vector3d::UnitZ();
+        double geometric_zenith = 0.0;
+        if (m_geometry.coordinates().geometry_type() ==
+            sasktran2::geometrytype::spherical) {
+            const auto& altitudes = m_geometry_1d->altitude_grid().grid();
+            const double earth_radius = m_geometry.coordinates().earth_radius();
+            const double radius = location.radius();
+            up = location.position / radius;
+            geometric_zenith = std::atan2(up.cross(sun).norm(),
+                                          std::clamp(up.dot(sun), -1.0, 1.0));
+
+            // Straight solar rays clear the surface up to this zenith angle
+            const double ground_radius = earth_radius + altitudes(0);
+            double visibility_limit =
+                EIGEN_PI - std::asin(std::min(1.0, ground_radius / radius));
+            if (m_refracted) {
+                std::array<int, 2> index;
+                std::array<double, 2> weight;
+                int num_contributing;
+                m_geometry_1d->altitude_grid().calculate_interpolation_weights(
+                    radius - earth_radius, index, weight, num_contributing);
+                for (int k = 0; k < num_contributing; ++k) {
+                    visibility_limit +=
+                        weight[k] * m_visibility_limit_increase(index[k]);
+                }
+            }
+            if (geometric_zenith > visibility_limit) {
+                return false;
+            }
+        }
+
+        int num_weights = 0;
+        m_location_interpolator->interior_interpolation_weights(
+            m_geometry.coordinates(), location, weights, num_weights);
+        weights.resize(num_weights);
+
+        // Shadowed table nodes carry no optical depth, interpolate from the
+        // illuminated nodes only
+        double total_weight = 0.0;
+        double bending = 0.0;
+        std::size_t write = 0;
+        for (const auto& [node, weight] : weights) {
+            if (weight == 0.0 || m_ground_hit_flag[node]) {
+                continue;
+            }
+            total_weight += weight;
+            bending += weight * m_node_bending(node);
+            weights[write++] = {node, weight};
+        }
+        weights.resize(write);
+        if (total_weight <= 0.0) {
+            return false;
+        }
+        for (auto& weight : weights) {
+            weight.second /= total_weight;
+        }
+
+        if (m_refracted && solar_propagation_direction != nullptr) {
+            Eigen::Vector3d horizontal = sun - up.dot(sun) * up;
+            if (horizontal.squaredNorm() > 0.0) {
+                horizontal.normalize();
+                const double apparent_zenith =
+                    geometric_zenith - bending / total_weight;
+                *solar_propagation_direction =
+                    -(std::cos(apparent_zenith) * up +
+                      std::sin(apparent_zenith) * horizontal);
+            }
+        }
+        return true;
     }
 
     void SolarTransmissionTable::generate_interpolation_matrix(
         const std::vector<sasktran2::raytracing::TracedRay>& rays,
         Eigen::SparseMatrix<double, Eigen::RowMajor>& interpolator,
-        std::vector<bool>& ground_hit_flag) const {
+        std::vector<bool>& ground_hit_flag,
+        std::vector<Eigen::Vector3d>* solar_propagation_directions) const {
         // First calculate the number of points we need to create the matrix for
         // We calculate solar transmission at the boundaries of layers, so it is
         // nlayer+1 for each ray
@@ -608,43 +736,49 @@ namespace sasktran2::solartransmission {
 
         // Have to handle rays that hit the ground separately since they have no
         // solar transmission
-        ground_hit_flag.resize(numpoints, false);
+        ground_hit_flag.assign(numpoints, false);
+        if (solar_propagation_directions != nullptr) {
+            solar_propagation_directions->assign(
+                numpoints, -m_geometry.coordinates().sun_unit());
+        }
 
         typedef Eigen::Triplet<double> T;
         std::vector<T> tripletList;
 
         std::vector<std::pair<int, double>> interpolator_storage;
-        int num_interp;
+
+        const auto append_endpoint = [&](const sasktran2::Location& location,
+                                         int row) {
+            if (!endpoint_interpolation(
+                    location, interpolator_storage,
+                    solar_propagation_directions != nullptr
+                        ? &(*solar_propagation_directions)[row]
+                        : nullptr)) {
+                ground_hit_flag[row] = true;
+                return;
+            }
+            for (const auto& [node, weight] : interpolator_storage) {
+                tripletList.emplace_back(T(row, node, weight));
+            }
+        };
 
         int row = 0;
         for (int i = 0; i < rays.size(); ++i) {
             const auto& ray = rays[i];
+            if (ray.layers.empty()) {
+                // Empty rays still own one row so that rows stay aligned with
+                // the endpoint indexing of the following rays
+                ++row;
+                continue;
+            }
             for (int j = 0; j < ray.layers.size(); ++j) {
                 const auto& layer = ray.layers[j];
 
                 if (j == 0) {
                     // End layer at TOA, need to use layer exit
-                    m_location_interpolator->interior_interpolation_weights(
-                        m_geometry.coordinates(), layer.exit,
-                        interpolator_storage, num_interp);
-
-                    for (int k = 0; k < num_interp; ++k) {
-                        tripletList.emplace_back(
-                            T(row, interpolator_storage[k].first,
-                              interpolator_storage[k].second));
-                    }
-                    ++row;
+                    append_endpoint(layer.exit, row++);
                 }
-
-                m_location_interpolator->interior_interpolation_weights(
-                    m_geometry.coordinates(), layer.entrance,
-                    interpolator_storage, num_interp);
-                for (int k = 0; k < num_interp; ++k) {
-                    tripletList.emplace_back(T(row,
-                                               interpolator_storage[k].first,
-                                               interpolator_storage[k].second));
-                }
-                ++row;
+                append_endpoint(layer.entrance, row++);
             }
         }
         interpolator.setFromTriplets(tripletList.begin(), tripletList.end());
@@ -670,28 +804,33 @@ namespace sasktran2::solartransmission {
         }
 
         std::vector<std::pair<int, double>> weights;
-        int num_weights = 0;
+        std::size_t row = 0;
+        const auto append_endpoint = [&](const sasktran2::Location& location) {
+            if (!endpoint_interpolation(
+                    location, weights,
+                    solar_propagation_directions != nullptr
+                        ? &(*solar_propagation_directions)[row]
+                        : nullptr)) {
+                ground_hit_flag[row] = true;
+                weights.clear();
+            }
+            interpolator.append_row(weights);
+            ++row;
+        };
         for (const auto& ray : rays) {
             if (ray.layers.empty()) {
                 weights.clear();
                 interpolator.append_row(weights);
+                ++row;
                 continue;
             }
             for (int layer_index = 0; layer_index < ray.layers.size();
                  ++layer_index) {
                 const auto& layer = ray.layers[layer_index];
                 if (layer_index == 0) {
-                    m_location_interpolator->interior_interpolation_weights(
-                        m_geometry.coordinates(), layer.exit, weights,
-                        num_weights);
-                    weights.resize(num_weights);
-                    interpolator.append_row(weights);
+                    append_endpoint(layer.exit);
                 }
-                m_location_interpolator->interior_interpolation_weights(
-                    m_geometry.coordinates(), layer.entrance, weights,
-                    num_weights);
-                weights.resize(num_weights);
-                interpolator.append_row(weights);
+                append_endpoint(layer.entrance);
             }
         }
         interpolator.finalize();

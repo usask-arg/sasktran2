@@ -108,9 +108,20 @@ namespace {
             for (std::size_t index = 0; index < od_weights.size(); ++index) {
                 integrated_weight_sum += od_weights[index].second;
             }
-            REQUIRE(
-                integrated_weight_sum ==
-                Catch::Approx(effective_distance).epsilon(2e-12).margin(1e-9));
+            // The start and end weights are differences of terms of size
+            // r * distance divided by the radial extent of the layer, so the
+            // sum identity holds to roundoff amplified by r / |dr|. Refracted
+            // tangent layers just below a grid level can be thin.
+            const double radial_extent =
+                std::abs(layer.exit.radius() - layer.entrance.radius());
+            const double sum_tolerance =
+                std::max(2e-12, 64.0 * std::numeric_limits<double>::epsilon() *
+                                    layer.entrance.radius() /
+                                    std::max(radial_extent, 1.0));
+            CAPTURE(radial_extent);
+            REQUIRE(integrated_weight_sum == Catch::Approx(effective_distance)
+                                                 .epsilon(sum_tolerance)
+                                                 .margin(1e-9));
 
             int nonzero_count = 0;
             for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator it(

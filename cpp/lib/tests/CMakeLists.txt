@@ -11,6 +11,7 @@ add_executable(
   geometry/test_geometry2d.cpp
   grids/test_grid.cpp
   raytracing/test_spherical_shell.cpp
+  raytracing/test_refraction.cpp
   raytracing/test_plane_parallel.cpp
   raytracing/test_od_weights.cpp
   raytracing/test_rust_raytracer_parity.cpp

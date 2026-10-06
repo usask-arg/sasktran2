@@ -1,5 +1,6 @@
 #pragma once
 #include "sasktran2/grids.h"
+#include <array>
 #include <sasktran2/internal_common.h>
 #include <sasktran2/math/scattering.h>
 
@@ -22,12 +23,18 @@ namespace sasktran2::raytracing::refraction {
         const sasktran2::Geometry1D& geometry, double altitude_m,
         std::vector<std::pair<int, double>>& index_weights) {
 
-        // Create a location object with the required altitude
-        sasktran2::Location loc;
-        loc.position = geometry.coordinates().reference_point(altitude_m);
-
-        // Get interpolation weights
-        geometry.assign_interpolation_weights(loc, index_weights);
+        // Same weights as Geometry1D::assign_interpolation_weights for a
+        // location at this altitude, without constructing the location. This
+        // is evaluated at every quadrature node of the refraction integrals.
+        std::array<int, 2> index;
+        std::array<double, 2> weight;
+        int num_contributing;
+        geometry.altitude_grid().calculate_interpolation_weights(
+            altitude_m, index, weight, num_contributing);
+        index_weights.resize(num_contributing);
+        for (int i = 0; i < num_contributing; ++i) {
+            index_weights[i] = {index[i], weight[i]};
+        }
 
         // Interpolate log of refractive index
         double log_n = 0;
@@ -39,12 +46,36 @@ namespace sasktran2::raytracing::refraction {
     }
 
     /**
+     * Refractive index that enters the ray invariant n r sin(zenith) for a
+     * ray starting at the given radius. Points at or above the top of the
+     * atmosphere are treated as being in vacuum.
+     *
+     * @param geometry The geometry object
+     * @param radius_m Radius of the ray start point in [m]
+     * @param index_weights Workspace memory
+     * @return double The refractive index at the start point
+     */
+    inline double observer_refractive_index(
+        const sasktran2::Geometry1D& geometry, double radius_m,
+        std::vector<std::pair<int, double>>& index_weights) {
+        const double altitude_m =
+            radius_m - geometry.coordinates().earth_radius();
+        if (altitude_m >=
+            geometry.altitude_grid().grid()(Eigen::placeholders::last)) {
+            return 1.0;
+        }
+        return refractive_index_at_altitude(geometry, altitude_m,
+                                            index_weights);
+    }
+
+    /**
      * Calculates the tangent radius of a ray taking into account refraction.
      * This assumes that the refractive index varies only in altitude.
      *
      * @param geometry The geometry object
-     * @param straight_line_tangent_radius_m The tangent radius of the ray if
-     * there were no refraction
+     * @param straight_line_tangent_radius_m The ray invariant n r sin(zenith)
+     * evaluated at the start of the ray. For a ray starting in vacuum this is
+     * the tangent radius the ray would have without refraction.
      * @param index_weights Workspace memory
      * @return double The tangent radius of the ray taking into account
      * refraction
@@ -110,4 +141,47 @@ namespace sasktran2::raytracing::refraction {
     integrate_path(const sasktran2::Geometry1D& geometry, double rt, double nt,
                    double r1, double r2,
                    std::vector<std::pair<int, double>>& index_weights);
+
+    /**
+     * Finds the apparent direction of the sun at a point in a spherically
+     * symmetric refracting atmosphere.
+     *
+     * The returned direction is the local tangent of the refracted ray that
+     * leaves the point and, after bending through the atmosphere, travels
+     * parallel to the geometric sun direction above the top of the
+     * atmosphere. Its negative is the local propagation direction of the
+     * direct solar beam. Tracing a refracted ray from the point along the
+     * returned direction reproduces the solar path.
+     *
+     * Points whose geometric sun direction is within the near-zenith cutoff
+     * used by the ray tracer return the geometric sun direction unchanged.
+     *
+     * @param geometry The geometry object, must be spherical
+     * @param position Location of the point
+     * @param direction_to_sun Output apparent unit direction to the sun
+     * @param index_weights Workspace memory
+     * @return false if every ray from the point that reaches the sun
+     * intersects the surface, i.e. the point is in the refracted shadow of
+     * the Earth. direction_to_sun is set to the geometric sun direction in
+     * that case.
+     */
+    bool refracted_direction_to_sun(
+        const sasktran2::Geometry1D& geometry, const Eigen::Vector3d& position,
+        Eigen::Vector3d& direction_to_sun,
+        std::vector<std::pair<int, double>>& index_weights);
+
+    /**
+     * Largest geometric solar zenith angle for which a point at the given
+     * radius is illuminated through the refracting atmosphere. This is the
+     * asymptotic direction of the ray that leaves the point and grazes the
+     * surface.
+     *
+     * @param geometry The geometry object, must be spherical
+     * @param radius_m Radius of the point in [m]
+     * @param index_weights Workspace memory
+     * @return double Geometric solar zenith angle in [rad]
+     */
+    double refracted_visibility_limit(
+        const sasktran2::Geometry1D& geometry, double radius_m,
+        std::vector<std::pair<int, double>>& index_weights);
 } // namespace sasktran2::raytracing::refraction

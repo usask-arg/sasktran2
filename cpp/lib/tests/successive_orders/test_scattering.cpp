@@ -4,6 +4,7 @@
 #include <sasktran2/test_helper.h>
 
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <stdexcept>
 #include <memory>
@@ -818,4 +819,105 @@ TEST_CASE("Successive-orders scattering rejects mismatched dimensions",
     REQUIRE_THROWS_AS(scattering.apply(bad_input, output, workspace),
                       std::invalid_argument);
     REQUIRE_THROWS_AS(scattering.ground_block(1), std::out_of_range);
+}
+
+namespace {
+    class TestRotatedSphere final : public sasktran2::math::UnitSphere {
+      public:
+        TestRotatedSphere(int npoints, const Eigen::Matrix3d& rotation)
+            : m_sphere(npoints), m_rotation(rotation) {}
+        int num_points() const override { return m_sphere.num_points(); }
+        Eigen::Vector3d get_quad_position(int index) const override {
+            return m_rotation * m_sphere.get_quad_position(index);
+        }
+        double quadrature_weight(int index) const override {
+            return m_sphere.quadrature_weight(index);
+        }
+        void interpolate(const Eigen::Vector3d& direction,
+                         std::vector<std::pair<int, double>>& index_weights,
+                         int& num_interp) const override {
+            m_sphere.interpolate(m_rotation.transpose() * direction,
+                                 index_weights, num_interp);
+        }
+
+      private:
+        sasktran2::math::LebedevSphere m_sphere;
+        Eigen::Matrix3d m_rotation;
+    };
+} // namespace
+
+TEST_CASE("Vector successive-orders synthesis groups match per-point products",
+          "[successive_orders][scattering][vector]") {
+    using sasktran2::successive_orders::ScatteringBlockLayout;
+    using sasktran2::successive_orders::ScatteringOperator;
+    using sasktran2::successive_orders::VectorAngularBasis;
+    constexpr int points = 4;
+    constexpr int num_coefficients = 3;
+    const sasktran2::math::LebedevSphere incoming(6);
+    const sasktran2::math::LebedevSphere first_outgoing(14);
+    const TestRotatedSphere second_outgoing(
+        14,
+        Eigen::AngleAxisd(0.3, Eigen::Vector3d::UnitY()).toRotationMatrix());
+    std::vector<std::shared_ptr<const VectorAngularBasis>> bases;
+    for (int point = 0; point < points; ++point) {
+        const sasktran2::math::UnitSphere& outgoing =
+            point < 2 ? static_cast<const sasktran2::math::UnitSphere&>(
+                            first_outgoing)
+                      : second_outgoing;
+        bases.push_back(std::make_shared<const VectorAngularBasis>(
+            incoming, outgoing, num_coefficients));
+    }
+    Eigen::MatrixXd coefficients =
+        Eigen::MatrixXd::Random(points, 4 * num_coefficients);
+    coefficients.col(0).setOnes();
+    const auto make = [&](std::vector<int> offsets) {
+        ScatteringOperator<3> scattering(
+            ScatteringBlockLayout(points, 0, incoming.num_points(),
+                                  first_outgoing.num_points(), 1, 2, 3),
+            bases, std::move(offsets));
+        scattering.set_atmospheric_coefficients(coefficients);
+        return scattering;
+    };
+    auto per_point = make({});
+    auto grouped = make({0, 2, 4});
+    auto single_group = make({0, 4});
+
+    const Eigen::VectorXd incoming_values =
+        Eigen::VectorXd::Random(per_point.input_size());
+    Eigen::VectorXd expected(per_point.output_size());
+    Eigen::VectorXd actual(per_point.output_size());
+    Eigen::VectorXd wrong(per_point.output_size());
+    auto workspace = per_point.make_workspace();
+    per_point.apply(incoming_values, expected, workspace);
+    grouped.apply(incoming_values, actual, workspace);
+    single_group.apply(incoming_values, wrong, workspace);
+
+    REQUIRE((actual - expected).norm() <= 1.0e-12 * expected.norm());
+    REQUIRE((wrong - expected).norm() > 1.0e-6 * expected.norm());
+
+    // Grouped forward products stay adjoint to the per-point transpose.
+    const Eigen::VectorXd cotangent =
+        Eigen::VectorXd::Random(grouped.output_size());
+    Eigen::VectorXd transposed(grouped.input_size());
+    grouped.apply_transpose(cotangent, transposed, workspace);
+    const double forward_dot = actual.dot(cotangent);
+    REQUIRE(std::abs(forward_dot - incoming_values.dot(transposed)) <=
+            1.0e-12 * std::abs(forward_dot));
+
+    // An incoming-only JVP is the per-point forward product.
+    const Eigen::VectorXd primal =
+        Eigen::VectorXd::Random(grouped.input_size());
+    const Eigen::MatrixXd coefficient_tangent =
+        Eigen::MatrixXd::Zero(grouped.atmospheric_coefficients().rows(),
+                              grouped.atmospheric_coefficients().cols());
+    const Eigen::VectorXd ground_tangent =
+        Eigen::VectorXd::Zero(grouped.ground_value_size());
+    Eigen::VectorXd tangent(grouped.output_size());
+    grouped.apply_jvp(primal, incoming_values, coefficient_tangent,
+                      ground_tangent, tangent, workspace);
+    REQUIRE((tangent - actual).norm() <= 1.0e-12 * actual.norm());
+
+    REQUIRE_THROWS_AS(make({0, 3}), std::invalid_argument);
+    REQUIRE_THROWS_AS(make({1, 4}), std::invalid_argument);
+    REQUIRE_THROWS_AS(make({0, 2, 2, 4}), std::invalid_argument);
 }

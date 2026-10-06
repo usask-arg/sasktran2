@@ -105,20 +105,24 @@ impl VerticalRayTracer {
         result.is_straight = refraction_profile.is_none();
         result.tangent_radius = match self.grid.geometry() {
             GeometryKind::Spherical => refraction_profile
-                .map(|profile| profile.tangent_radius(straight_tangent_radius))
+                .map(|profile| {
+                    // The ray invariant n r sin(zenith) includes the refractive
+                    // index at an observer inside the atmosphere.
+                    let observer_index =
+                        if self.grid.altitude_at(ray.origin) >= self.grid.top_altitude() {
+                            1.0
+                        } else {
+                            profile.refractive_index_at_radius(ray.origin.norm())
+                        };
+                    profile.tangent_radius(straight_tangent_radius * observer_index)
+                })
                 .unwrap_or(straight_tangent_radius),
             GeometryKind::PlaneParallel => f64::NAN,
         };
 
         match self.grid.geometry() {
             GeometryKind::Spherical => {
-                if !self.build_spherical_events(
-                    ray,
-                    result.tangent_radius,
-                    straight_tangent_radius,
-                    scratch,
-                    result,
-                ) {
+                if !self.build_spherical_events(ray, result.tangent_radius, scratch, result) {
                     return;
                 }
                 self.build_spherical_layers_from_events(scratch, result);
@@ -172,7 +176,6 @@ impl VerticalRayTracer {
         &self,
         ray: Ray,
         tangent_radius: f64,
-        straight_tangent_radius: f64,
         scratch: &mut TraceScratch,
         result: &mut TracedRay,
     ) -> bool {
@@ -181,8 +184,6 @@ impl VerticalRayTracer {
         let cos_viewing = ray.cos_zenith_at_origin();
         let tangent_altitude =
             self.snap_to_vertical_boundary(tangent_radius - self.grid.earth_radius());
-        let straight_tangent_altitude =
-            self.snap_to_vertical_boundary(straight_tangent_radius - self.grid.earth_radius());
 
         if tangent_altitude >= self.grid.top_altitude() || (observer_outside && cos_viewing > 0.0) {
             result.ground_is_hit = false;
@@ -226,14 +227,14 @@ impl VerticalRayTracer {
         } else if tangent_altitude > self.grid.ground_altitude() {
             result.ground_is_hit = false;
             let observer_index = upper_bound(altitudes, observer_altitude);
-            // C++ chooses the limb branch from the refracted tangent radius,
-            // then sequences inside-limb layer boundaries from the straight
-            // tangent altitude.
-            let above_tangent_idx = upper_bound(altitudes, straight_tangent_altitude);
+            // The refracted tangent radius is never above the observer for an
+            // altitude-decreasing refractive index; guard pathological profiles.
+            let tangent_altitude = tangent_altitude.min(observer_altitude);
+            let above_tangent_idx = upper_bound(altitudes, tangent_altitude);
             for index in (above_tangent_idx..observer_index).rev() {
                 self.push_boundary_event(scratch, &mut sequence, index);
             }
-            self.push_tangent_event(scratch, &mut sequence, straight_tangent_altitude);
+            self.push_tangent_event(scratch, &mut sequence, tangent_altitude);
             for index in above_tangent_idx..altitudes.len() {
                 self.push_boundary_event(scratch, &mut sequence, index);
             }
@@ -807,6 +808,53 @@ mod tests {
                 .iter()
                 .any(|layer| layer.layer_type == LayerType::Partial)
         );
+    }
+
+    #[test]
+    fn refracted_observer_inside_conserves_ray_invariant() {
+        let earth_radius = 6_372_000.0;
+        let altitudes: Vec<f64> = (0..=65).map(|i| 1000.0 * f64::from(i)).collect();
+        let refractive_index = altitudes
+            .iter()
+            .map(|altitude| 1.0 + 2.8e-4 * (-altitude / 8000.0).exp())
+            .collect();
+        let grid = VerticalGrid1D::new(
+            earth_radius,
+            altitudes.clone(),
+            InterpolationMethod::Linear,
+            GeometryKind::Spherical,
+        )
+        .unwrap();
+        let tracer = VerticalRayTracer::new(grid);
+        let profile = RefractiveProfile::new(earth_radius, altitudes, refractive_index).unwrap();
+
+        for (altitude, zenith_degrees) in [(2000.0, 91.0), (5000.0, 92.0), (20000.0, 94.0_f64)] {
+            let radius = earth_radius + altitude;
+            let zenith = zenith_degrees.to_radians();
+            let ray = Ray::new(
+                Vec3::new(0.0, 0.0, radius),
+                Vec3::new(zenith.sin(), 0.0, zenith.cos()),
+            );
+            let traced = tracer.trace(
+                ray,
+                TraceOptions {
+                    solar: None,
+                    refraction: Some(&profile),
+                },
+            );
+
+            assert!(!traced.ground_is_hit);
+            // n r sin(zenith) is conserved from the observer to the tangent point
+            let invariant = profile.refractive_index_at_radius(radius) * radius * zenith.sin();
+            let tangent_invariant =
+                profile.refractive_index_at_radius(traced.tangent_radius) * traced.tangent_radius;
+            assert!((tangent_invariant - invariant).abs() < 1e-3);
+            // and the layers reach down to the refracted tangent point
+            assert!(
+                (min_endpoint_altitude(&traced) - (traced.tangent_radius - earth_radius)).abs()
+                    < 1e-3
+            );
+        }
     }
 
     #[test]

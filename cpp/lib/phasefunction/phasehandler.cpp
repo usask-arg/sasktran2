@@ -183,7 +183,7 @@ namespace sasktran2::solartransmission {
                                               const sasktran2::raytracing::
                                                   TracedRay& ray) {
             const auto result =
-                m_geometry.coordinates().stokes_standard_to_observer_z(
+                m_geometry.coordinates().stokes_standard_to_observer(
                     scatter_layer.average_look_away,
                     ray.observer_and_look.observer.position);
             math::stokes_scattering_factors(solar_propagation.normalized(),

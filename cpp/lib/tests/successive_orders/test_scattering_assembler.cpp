@@ -3,17 +3,21 @@
 #include <sasktran2/hr/diffuse_point.h>
 #include <sasktran2/test_helper.h>
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <memory>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace {
     using namespace sasktran2::successive_orders;
 
+    template <int NSTOKES>
     Eigen::MatrixXd
-    materialize_atmospheric_block(const ScatteringOperator<3>& scattering,
+    materialize_atmospheric_block(const ScatteringOperator<NSTOKES>& scattering,
                                   int block) {
         const int rows = scattering.layout().output_block_size(block);
         const int columns = scattering.layout().input_block_size(block);
@@ -544,6 +548,124 @@ TEST_CASE("Ground scattering supplies finite azimuths for vertical directions",
     }
 }
 
+TEST_CASE("Spherical ground hemispheres exclude roundoff horizon nodes",
+          "[successive_orders][scattering_assembler][ground]") {
+    // The spherical reference ground point carries ~1e-10 m of Cartesian
+    // roundoff, which used to keep Lebedev equator nodes with mu ~ 1e-17.
+    // MODIS kernels evaluated there produced ground blocks near 1e16.
+    constexpr std::array<double, 3> solar_azimuths{0.0, 0.15, 2.5};
+    // Main's horizon rule applies to the legacy global grids and to the
+    // frame-aligned grids, whose ground rules are tilted off the horizon.
+    for (const bool legacy_interpolation : {false, true}) {
+        for (const int num_points : {26, 110}) {
+            for (const bool reduced_horizon : {false, true}) {
+                double reference_weight_sum = 0.0;
+                double reference_reflectance = 0.0;
+                for (const double solar_azimuth : solar_azimuths) {
+                    INFO("legacy=" << legacy_interpolation
+                                   << " points=" << num_points
+                                   << " reduced=" << reduced_horizon
+                                   << " saa=" << solar_azimuth);
+                    Eigen::VectorXd altitudes(3);
+                    altitudes << 0.0, 1000.0, 3000.0;
+                    sasktran2::Geometry1D geometry(
+                        0.6, solar_azimuth, 6372000.0, std::move(altitudes),
+                        sasktran2::grids::interpolation::linear,
+                        sasktran2::geometrytype::spherical);
+                    sasktran2::raytracing::SphericalShellRayTracer raytracer(
+                        geometry);
+                    SourceGeometrySettings settings;
+                    settings.num_incoming = num_points;
+                    settings.num_outgoing = num_points;
+                    settings.num_sza = 1;
+                    settings.num_threads = 1;
+                    settings.use_reduced_horizon_quadrature = reduced_horizon;
+                    settings.legacy_interpolation = legacy_interpolation;
+                    SourceGeometry1D source_geometry(raytracer, geometry);
+                    sasktran2::viewinggeometry::InternalViewingGeometry viewing;
+                    source_geometry.initialize(viewing, settings);
+
+                    const auto& ground = source_geometry.source_point(
+                        source_geometry.num_interior_points());
+                    double weight_sum = 0.0;
+                    double reflectance = 0.0;
+                    for (int input = 0; input < ground.num_incoming();
+                         ++input) {
+                        const double mu = ground.location().cos_zenith_angle(
+                            ground.incoming_sphere().get_quad_position(input));
+                        REQUIRE(mu > 1.0e-6);
+                        weight_sum +=
+                            ground.incoming_sphere().quadrature_weight(input);
+                        reflectance +=
+                            4.0 * mu *
+                            ground.incoming_sphere().quadrature_weight(input);
+                    }
+                    for (int output = 0; output < ground.num_outgoing();
+                         ++output) {
+                        REQUIRE(ground.location().cos_zenith_angle(
+                                    ground.outgoing_sphere().get_quad_position(
+                                        output)) > 1.0e-6);
+                    }
+                    // The hemisphere weights, and so the Lambertian ground
+                    // reflectance, must not depend on which horizon nodes
+                    // roundoff places above the surface.
+                    if (solar_azimuth == solar_azimuths.front()) {
+                        reference_weight_sum = weight_sum;
+                        reference_reflectance = reflectance;
+                    }
+                    REQUIRE(weight_sum <= 0.5 + 1.0e-14);
+                    REQUIRE(
+                        weight_sum ==
+                        Catch::Approx(reference_weight_sum).epsilon(1.0e-12));
+                    REQUIRE(
+                        reflectance ==
+                        Catch::Approx(reference_reflectance).epsilon(1.0e-12));
+
+                    sasktran2::atmosphere::Atmosphere<1> scalar_atmosphere(
+                        sasktran2::atmosphere::AtmosphereGridStorageFull<1>(
+                            1, geometry.size(), 3),
+                        sasktran2::atmosphere::Surface<1>(1), false);
+                    scalar_atmosphere.surface().set_brdf_object(
+                        std::make_shared<
+                            sasktran2::atmosphere::brdf::MODIS<1>>());
+                    scalar_atmosphere.surface().brdf_args().col(0) << 0.1, 0.05,
+                        0.02;
+                    ScalarScatteringAssembler scalar_assembler(source_geometry,
+                                                               3);
+                    auto scalar_scattering = scalar_assembler.create_operator();
+                    scalar_assembler.assemble_values(scalar_atmosphere, 0,
+                                                     scalar_scattering);
+                    REQUIRE(scalar_scattering.ground_values().allFinite());
+                    REQUIRE(scalar_scattering.ground_block(0)
+                                .rowwise()
+                                .sum()
+                                .cwiseAbs()
+                                .maxCoeff() < 0.5);
+
+                    sasktran2::atmosphere::Atmosphere<3> vector_atmosphere(
+                        sasktran2::atmosphere::AtmosphereGridStorageFull<3>(
+                            1, geometry.size(), 3),
+                        sasktran2::atmosphere::Surface<3>(1), false);
+                    vector_atmosphere.surface().set_brdf_object(
+                        std::make_shared<
+                            sasktran2::atmosphere::brdf::MODIS<3>>());
+                    vector_atmosphere.surface().brdf_args().col(0) << 0.1, 0.05,
+                        0.02;
+                    VectorScatteringAssembler vector_assembler(source_geometry,
+                                                               3);
+                    auto vector_scattering = vector_assembler.create_operator();
+                    vector_assembler.assemble_values(vector_atmosphere, 0,
+                                                     vector_scattering);
+                    REQUIRE(vector_scattering.ground_values().allFinite());
+                    REQUIRE(vector_scattering.ground_values()
+                                .cwiseAbs()
+                                .maxCoeff() < 0.5);
+                }
+            }
+        }
+    }
+}
+
 TEST_CASE("Scalar scattering assembler native JVP matches finite differences",
           "[successive_orders][scattering_assembler][jvp]") {
     AssemblyFixture fixture;
@@ -954,3 +1076,126 @@ TEST_CASE("Vector scattering assembler completes delta-M scaling",
     REQUIRE(parameter_forward ==
             Catch::Approx(tangent.dot(native_gradient)).epsilon(5.0e-12));
 }
+
+#ifdef SKTRAN_RUST_SUPPORT
+namespace {
+    template <int NSTOKES> struct FrameAlignedAssemblyCase {
+        using Assembler =
+            std::conditional_t<NSTOKES == 1, ScalarScatteringAssembler,
+                               VectorScatteringAssembler>;
+        using Basis = std::conditional_t<NSTOKES == 1, ScalarAngularBasis,
+                                         VectorAngularBasis>;
+        static constexpr int num_coefficients = 3;
+
+        explicit FrameAlignedAssemblyCase(bool reduced_horizon,
+                                          bool legacy_interpolation = false)
+            : geometry(0.6, 0.4, 6372000.0, altitudes(), horizontal_angles(),
+                       sasktran2::grids::interpolation::linear),
+              raytracer(geometry), source_geometry(raytracer, geometry),
+              atmosphere(
+                  sasktran2::atmosphere::AtmosphereGridStorageFull<NSTOKES>(
+                      1, geometry.size(), num_coefficients),
+                  sasktran2::atmosphere::Surface<NSTOKES>(1), false) {
+            SourceGeometrySettings settings;
+            settings.num_incoming = 26;
+            settings.num_outgoing = 14;
+            settings.num_sza = 3;
+            settings.num_threads = 1;
+            settings.altitude_grid_m = {500.0, 1500.0};
+            settings.use_reduced_horizon_quadrature = reduced_horizon;
+            settings.legacy_interpolation = legacy_interpolation;
+            sasktran2::viewinggeometry::InternalViewingGeometry viewing;
+            source_geometry.initialize(viewing, settings);
+
+            const int stored_coefficients =
+                NSTOKES == 1 ? num_coefficients : 4 * num_coefficients;
+            for (int location = 0; location < geometry.size(); ++location) {
+                for (int coefficient = 0; coefficient < stored_coefficients;
+                     ++coefficient) {
+                    atmosphere.storage().leg_coeff(coefficient, location, 0) =
+                        0.08 + 0.013 * coefficient + 0.021 * location;
+                }
+            }
+            atmosphere.surface().brdf_args().setConstant(0.24);
+        }
+
+        static Eigen::VectorXd altitudes() {
+            return (Eigen::Vector3d() << 0.0, 1000.0, 2000.0).finished();
+        }
+
+        static Eigen::VectorXd horizontal_angles() {
+            return (Eigen::Vector3d() << -0.3, 0.0, 0.3).finished();
+        }
+
+        sasktran2::Geometry2D geometry;
+        sasktran2::raytracing::RustRayTracer2D raytracer;
+        SourceGeometry1D source_geometry;
+        sasktran2::atmosphere::Atmosphere<NSTOKES> atmosphere;
+    };
+
+    template <int NSTOKES>
+    void require_frame_aligned_blocks_match_exact_bases(bool reduced_horizon) {
+        using Case = FrameAlignedAssemblyCase<NSTOKES>;
+        Case fixture(reduced_horizon);
+        typename Case::Assembler assembler(fixture.source_geometry,
+                                           Case::num_coefficients);
+        auto assembled = assembler.create_operator();
+        assembler.assemble_values(fixture.atmosphere, 0, assembled);
+
+        std::vector<std::shared_ptr<const typename Case::Basis>> exact;
+        for (int point = 0;
+             point < fixture.source_geometry.num_interior_points(); ++point) {
+            const auto& source_point =
+                fixture.source_geometry.source_point(point);
+            exact.push_back(std::make_shared<const typename Case::Basis>(
+                source_point.incoming_sphere(), source_point.outgoing_sphere(),
+                Case::num_coefficients));
+        }
+        ScatteringOperator<NSTOKES> reference(assembler.layout(), exact);
+        reference.set_atmospheric_coefficients(
+            static_cast<const ScatteringOperator<NSTOKES>&>(assembled)
+                .atmospheric_coefficients());
+
+        REQUIRE(fixture.source_geometry.num_interior_points() == 6);
+        for (int point = 0;
+             point < fixture.source_geometry.num_interior_points(); ++point) {
+            const Eigen::MatrixXd expected =
+                materialize_atmospheric_block(reference, point);
+            const Eigen::MatrixXd actual =
+                materialize_atmospheric_block(assembled, point);
+            const double scale = std::max(1.0, expected.cwiseAbs().maxCoeff());
+            const double maximum_error =
+                (actual - expected).cwiseAbs().maxCoeff();
+            INFO("point=" << point << " max error=" << maximum_error
+                          << " scale=" << scale);
+            REQUIRE(maximum_error < 5.0e-13 * scale);
+        }
+    }
+} // namespace
+
+TEST_CASE("Frame-aligned scattering blocks match exact per-point bases",
+          "[successive_orders][scattering_assembler][geometry2d]") {
+    for (const bool reduced_horizon : {true, false}) {
+        DYNAMIC_SECTION("scalar reduced_horizon=" << reduced_horizon) {
+            require_frame_aligned_blocks_match_exact_bases<1>(reduced_horizon);
+        }
+        DYNAMIC_SECTION("vector reduced_horizon=" << reduced_horizon) {
+            require_frame_aligned_blocks_match_exact_bases<3>(reduced_horizon);
+        }
+    }
+}
+
+TEST_CASE("Frame-aligned scalar bases are shared per source altitude",
+          "[successive_orders][scattering_assembler][geometry2d]"
+          "[reduced_horizon]") {
+    FrameAlignedAssemblyCase<1> aligned(true);
+    FrameAlignedAssemblyCase<1> legacy(true, true);
+    const ScalarScatteringAssembler aligned_assembler(
+        aligned.source_geometry, FrameAlignedAssemblyCase<1>::num_coefficients);
+    const ScalarScatteringAssembler legacy_assembler(
+        legacy.source_geometry, FrameAlignedAssemblyCase<1>::num_coefficients);
+    // Aligned grids share analysis per altitude, legacy grids per point.
+    REQUIRE(aligned_assembler.storage_bytes() <
+            legacy_assembler.storage_bytes());
+}
+#endif

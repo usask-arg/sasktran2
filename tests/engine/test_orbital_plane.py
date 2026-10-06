@@ -1375,6 +1375,97 @@ def test_successive_orders_runs_across_multiple_groups_without_single_scatter():
         )
 
 
+def test_successive_orders_cubic_los_interpolation_linearizes_across_groups():
+    # Five evenly spaced source columns per local group select the
+    # four-column cubic LOS stencil. With the sun overhead at the track centre
+    # every column is sunlit (solar zenith angle below about 22 degrees).
+    geometry = orbital_geometry()
+    viewing = limb_viewing(
+        geometry,
+        np.array([-0.2, 0.2]),
+        tangent_altitude_m=np.array([15_000.0, 25_000.0]),
+    )
+    config = sk.Config()
+    config.num_threads = 1
+    config.single_scatter_source = sk.SingleScatterSource.NoSource
+    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
+    config.num_sza = 5
+    config.successive_orders_altitude_grid_m = np.array(
+        [5_000.0, 15_000.0, 25_000.0, 45_000.0]
+    )
+    config.num_successive_orders_incoming = 14
+    config.num_successive_orders_outgoing = 14
+    config.num_successive_orders_iterations = 60
+    config.successive_orders_relative_tolerance = 1.0e-11
+    config.successive_orders_absolute_tolerance = 1.0e-13
+    config.successive_orders_anderson_depth = 3
+    engine = sk.OrbitalPlaneEngine(
+        config,
+        geometry,
+        viewing,
+        time_group_duration_s=20,
+        sun_vectors_ecef=np.tile([0.0, 0.0, 1.0], (2, 1)),
+    )
+    for diagnostics in engine.group_diagnostics:
+        horizontal = np.asarray(diagnostics["horizontal_angles"])
+        columns = np.linspace(horizontal.min(), horizontal.max(), 5)
+        # A limb ray tangent at 15 km or higher stays within 0.12 rad of its
+        # tangent point below the 60 km top, so it lies inside the columns.
+        for angle in diagnostics["ray_horizontal_angles"]:
+            assert columns[0] + 0.12 < angle < columns[-1] - 0.12
+
+    atmosphere = raw_atmosphere(geometry, config)
+    atmosphere.storage.ssa[:] = 0.9
+    atmosphere.storage.solar_irradiance[:] = 1.0
+    atmosphere.leg_coeff.a1[0] = 1.0
+    atmosphere.leg_coeff.a1[2] = 0.3
+    atmosphere.surface.albedo[:] = 0.2
+
+    radiance = engine.calculate_radiance(atmosphere).radiance
+    assert np.all(np.isfinite(radiance))
+    assert np.all(radiance.sel(stokes="I") > 0)
+
+    linearization = engine.linearize(atmosphere)
+    tangent = linearization.tangent_template[["extinction", "ssa"]]
+    rng = np.random.default_rng(42)
+    tangent["extinction"].values[:] = 1.0e-6 * rng.normal(size=geometry.shape)
+    tangent["ssa"].values[:] = 0.01 * rng.normal(size=geometry.shape)
+    cotangent = xr.DataArray(
+        rng.normal(size=linearization.value.shape),
+        dims=linearization.value.dims,
+        coords=linearization.value.coords,
+    )
+    jvp = linearization.jvp(tangent)
+    gradient = linearization.vjp(cotangent, parameters=["extinction", "ssa"])
+    assert np.all(np.isfinite(jvp))
+    np.testing.assert_allclose(
+        float((jvp * cotangent).sum()),
+        float(
+            (tangent.extinction * gradient.extinction).sum()
+            + (tangent.ssa * gradient.ssa).sum()
+        ),
+        rtol=1.0e-9,
+        atol=1.0e-14,
+    )
+
+    # Central difference along the tangent; storage is altitude-fastest.
+    step = 1.0e-2
+    extinction = atmosphere.storage.total_extinction.copy()
+    ssa = atmosphere.storage.ssa.copy()
+    perturbed = []
+    for sign in (1.0, -1.0):
+        atmosphere.storage.total_extinction[:] = (
+            extinction + sign * step * tangent.extinction.values.reshape(-1, 1)
+        )
+        atmosphere.storage.ssa[:] = ssa + sign * step * tangent.ssa.values.reshape(
+            -1, 1
+        )
+        atmosphere.mark_changed()
+        perturbed.append(engine.calculate_radiance(atmosphere).radiance)
+    finite_difference = (perturbed[0] - perturbed[1]) / (2.0 * step)
+    np.testing.assert_allclose(jvp, finite_difference, rtol=1.0e-6, atol=1.0e-12)
+
+
 def test_engine_exposes_normalized_solar_and_execution_settings_without_mutation():
     geometry = orbital_geometry()
     viewing = limb_viewing(geometry, np.array([-0.1, 0.1]))

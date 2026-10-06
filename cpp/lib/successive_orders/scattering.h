@@ -243,11 +243,24 @@ namespace sasktran2::successive_orders {
         ScatteringOperator(
             ScatteringBlockLayout layout,
             std::shared_ptr<const VectorAngularBasis> angular_basis);
+        /** Point-specific bases with optional shared synthesis groups.
+         *
+         * synthesis_group_offsets holds CSR boundaries over atmospheric
+         * points. Empty disables shared synthesis. Otherwise front() is 0,
+         * back() is atmospheric_blocks(), offsets strictly increase, and
+         * every point in [offsets[g], offsets[g + 1]) has a basis whose
+         * synthesis equals that of angular_bases[offsets[g]].
+         *
+         * Groups only affect the forward apply(). The transpose, JVP, and
+         * VJP always use per-point bases; the synthesis-equality
+         * precondition is what keeps them adjoint to the grouped forward
+         * product.
+         */
         ScatteringOperator(
             ScatteringBlockLayout layout,
             std::vector<std::shared_ptr<const VectorAngularBasis>>
                 angular_bases,
-            bool point_bases_share_synthesis = false);
+            std::vector<int> synthesis_group_offsets = {});
 
         const ScatteringBlockLayout& layout() const { return m_layout; }
         const std::vector<int>& input_offsets() const {
@@ -319,7 +332,7 @@ namespace sasktran2::successive_orders {
         ScatteringBlockLayout m_layout;
         std::shared_ptr<const VectorAngularBasis> m_basis;
         std::vector<std::shared_ptr<const VectorAngularBasis>> m_point_bases;
-        bool m_point_bases_share_synthesis = false;
+        std::vector<int> m_synthesis_group_offsets;
         std::vector<int> m_ground_value_offsets;
         Eigen::MatrixXd m_atmospheric_coefficients;
         Eigen::VectorXd m_ground_values;

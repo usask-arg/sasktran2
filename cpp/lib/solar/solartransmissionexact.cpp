@@ -1,4 +1,5 @@
 #include <sasktran2/solartransmission.h>
+#include <sasktran2/refraction.h>
 
 #include <spdlog/spdlog.h>
 
@@ -60,6 +61,12 @@ namespace sasktran2::solartransmission {
         int row = 0;
         for (int i = 0; i < rays.size(); ++i) {
             const auto& ray = rays[i];
+            if (ray.layers.empty()) {
+                // Empty rays still own one row so that rows stay aligned with
+                // the endpoint indexing of the following rays
+                ++row;
+                continue;
+            }
             for (int j = 0; j < ray.layers.size(); ++j) {
                 const auto& layer = ray.layers[j];
 
@@ -67,7 +74,8 @@ namespace sasktran2::solartransmission {
                     // End layer at TOA, need to use layer exit
                     ray_to_sun.observer = layer.exit;
 
-                    // Always don't use refraction for this
+                    // Refracted solar rays are handled by
+                    // generate_refracted_geometry_matrix
                     m_raytracer->trace_ray(ray_to_sun, traced_ray, false);
 
                     if (!traced_ray.ground_is_hit) {
@@ -88,6 +96,59 @@ namespace sasktran2::solartransmission {
                 }
 
                 ++row;
+            }
+        }
+    }
+
+    void SolarTransmissionExact::generate_refracted_geometry_matrix(
+        const std::vector<sasktran2::raytracing::TracedRay>& rays,
+        Eigen::MatrixXd& od_matrix, std::vector<bool>& ground_hit_flag,
+        std::vector<Eigen::Vector3d>& solar_propagation_directions) const {
+        int numpoints = 0;
+        for (const auto& ray : rays) {
+            numpoints += (int)ray.layers.size() + 1;
+        }
+
+        od_matrix.resize(numpoints, m_geometry.size());
+        od_matrix.setZero();
+        ground_hit_flag.assign(numpoints, false);
+        solar_propagation_directions.assign(
+            numpoints, -m_geometry.coordinates().sun_unit());
+
+        sasktran2::viewinggeometry::ViewingRay ray_to_sun;
+        raytracing::TracedRay traced_ray;
+        std::vector<std::pair<int, double>> index_weights;
+
+        const auto append_endpoint = [&](const Location& endpoint, int row) {
+            ray_to_sun.observer = endpoint;
+            if (!raytracing::refraction::refracted_direction_to_sun(
+                    *m_geometry_1d, endpoint.position, ray_to_sun.look_away,
+                    index_weights)) {
+                ground_hit_flag[row] = true;
+                return;
+            }
+            solar_propagation_directions[row] = -ray_to_sun.look_away;
+
+            m_raytracer->trace_ray(ray_to_sun, traced_ray, true);
+            if (traced_ray.ground_is_hit) {
+                ground_hit_flag[row] = true;
+            } else {
+                assign_dense_matrix_column(row, traced_ray, od_matrix);
+            }
+        };
+
+        int row = 0;
+        for (const auto& ray : rays) {
+            if (ray.layers.empty()) {
+                ++row;
+                continue;
+            }
+            for (int j = 0; j < ray.layers.size(); ++j) {
+                if (j == 0) {
+                    // End layer at TOA, need to use layer exit
+                    append_endpoint(ray.layers[j].exit, row++);
+                }
+                append_endpoint(ray.layers[j].entrance, row++);
             }
         }
     }
