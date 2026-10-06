@@ -660,18 +660,7 @@ STRAIGHT_SHADOW_SZA_DEG = 92.0296
 REFRACTED_SHADOW_SZA_DEG = 92.8703
 REFRACTED_SOLAR_PATH_AT_92_45_DEG_M = 1_129_190.7
 TWILIGHT_SINGLE_SOURCES = [
-    pytest.param(
-        sk.SingleScatterSource.Exact,
-        id="exact",
-        # The exact source retraces from each endpoint toward the sun. Until
-        # the refracted tracer includes the observer's refractive index in the
-        # ray invariant, that retrace reaches the surface beyond the straight
-        # shadow.
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="needs the inside-observer refracted tracer invariant fix",
-        ),
-    ),
+    pytest.param(sk.SingleScatterSource.Exact, id="exact"),
     pytest.param(sk.SingleScatterSource.Table, id="table"),
 ]
 
