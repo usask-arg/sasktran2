@@ -501,6 +501,28 @@ class Config:
         self._config.successive_orders_reduced_horizon_quadrature = value
 
     @property
+    def successive_orders_legacy_interpolation(self) -> bool:
+        """Restore the legacy successive-orders source interpolation.
+
+        Disabled by default, in which case spherical successive-orders
+        calculations rotate each source column's angular grid into its local
+        solar frame, so neighbouring columns sample identical local
+        directions, and Geometry2D interpolates the observer line-of-sight
+        source cubically in horizontal angle when at least four horizontal
+        source columns exist, the solar zenith angle is below 90 degrees at
+        every column of the stencil, and the absolute stencil weights sum to at
+        most 2; otherwise bilinearly. The weight bound can only reject
+        stencils on non-uniform explicit column grids; uniform grids always
+        meet it. Set this to ``True`` to use one globally oriented angular grid
+        and bilinear line-of-sight interpolation.
+        """
+        return self._config.successive_orders_legacy_interpolation
+
+    @successive_orders_legacy_interpolation.setter
+    def successive_orders_legacy_interpolation(self, value: bool):
+        self._config.successive_orders_legacy_interpolation = value
+
+    @property
     def successive_orders_altitude_grid_m(self) -> np.ndarray | None:
         """Explicit source-altitude grid for ``SuccessiveOrders``, in metres.
 

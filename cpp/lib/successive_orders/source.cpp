@@ -326,6 +326,8 @@ namespace sasktran2::successive_orders {
                 config.multiple_scatter_refraction();
             m_geometry_settings.use_reduced_horizon_quadrature =
                 config.successive_orders_reduced_horizon_quadrature();
+            m_geometry_settings.legacy_interpolation =
+                config.successive_orders_legacy_interpolation();
             m_geometry_settings.altitude_grid_m =
                 config.successive_orders_altitude_grid_m();
             m_geometry_settings.horizontal_angle_grid_radians =

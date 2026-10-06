@@ -234,10 +234,11 @@ def _modis_to_lambertian_ratio(config: sk.Config, solar_azimuth: float) -> np.nd
     return radiances[0] / radiances[1]
 
 
+@pytest.mark.parametrize("legacy_interpolation", [False, True])
 @pytest.mark.parametrize("reduced_horizon", [False, True])
 @pytest.mark.parametrize("solar_azimuth", [0.0, 2.5])
 def test_spherical_modis_surface_matches_discrete_ordinates(
-    reduced_horizon: bool, solar_azimuth: float
+    legacy_interpolation: bool, reduced_horizon: bool, solar_azimuth: float
 ):
     # Roundoff in the spherical reference ground point used to keep Lebedev
     # horizon nodes with mu ~ 1e-17, where the MODIS kernels diverge.
@@ -247,6 +248,7 @@ def test_spherical_modis_surface_matches_discrete_ordinates(
     config.num_successive_orders_incoming = 26
     config.num_successive_orders_outgoing = 26
     config.successive_orders_reduced_horizon_quadrature = reduced_horizon
+    config.successive_orders_legacy_interpolation = legacy_interpolation
     reference_config = sk.Config()
     reference_config.num_threads = 1
     reference_config.multiple_scatter_source = (
@@ -280,6 +282,8 @@ def test_fixed_iteration_solution_agrees_with_legacy_successive_orders(
         iterations=3,
     )
     cpp_config.successive_orders_reduced_horizon_quadrature = False
+    # Compares implementations with identical global grids.
+    cpp_config.successive_orders_legacy_interpolation = True
 
     cpp = _calculate(cpp_config, surface_albedo=0.0).radiance
     legacy = _calculate(legacy_config, surface_albedo=0.0).radiance
@@ -704,3 +708,213 @@ def test_scalar_repeated_vjp_survives_atmosphere_and_engine_lifetimes():
         gc.collect()
 
     assert product_count == 200
+
+
+@pytest.mark.parametrize("num_sza", [1, 3])
+@pytest.mark.parametrize("reduced_horizon", [True, False])
+@pytest.mark.parametrize("num_stokes", [1, 3])
+def test_aligned_grids_make_1d_successive_orders_invariant_to_solar_azimuth_convention(
+    num_stokes: int, reduced_horizon: bool, num_sza: int
+):
+    # Rotating the whole scene about the reference vertical (sun and rays
+    # together) must not change the radiance once grids follow the solar frame.
+    def radiance(solar_azimuth: float, legacy: bool) -> np.ndarray:
+        config = sk.Config()
+        config.num_threads = 1
+        config.num_stokes = num_stokes
+        config.num_streams = 8
+        config.num_sza = num_sza
+        config.single_scatter_source = sk.SingleScatterSource.NoSource
+        config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
+        config.num_successive_orders_incoming = 26
+        config.num_successive_orders_outgoing = 26
+        config.successive_orders_reduced_horizon_quadrature = reduced_horizon
+        config.successive_orders_legacy_interpolation = legacy
+        cos_sza = 0.6
+        geometry = sk.Geometry1D(
+            cos_sza=cos_sza,
+            solar_azimuth=solar_azimuth,
+            earth_radius_m=EARTH_RADIUS_M,
+            altitude_grid_m=np.arange(0.0, 65_001.0, 1_000.0),
+            interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+            geometry_type=sk.GeometryType.Spherical,
+        )
+        viewing = sk.ViewingGeometry()
+        for tangent in (10_000.0, 25_000.0, 40_000.0):
+            viewing.add_ray(
+                sk.TangentAltitudeSolar(
+                    tangent_altitude_m=tangent,
+                    relative_azimuth=0.7,
+                    observer_altitude_m=200_000.0,
+                    cos_sza=cos_sza,
+                )
+            )
+        atmosphere = sk.Atmosphere(
+            geometry,
+            config,
+            wavelengths_nm=np.array([450.0]),
+            calculate_derivatives=False,
+        )
+        sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+        # Rayleigh scattering polarizes, so Q and U are nonzero for vector runs.
+        atmosphere["rayleigh"] = sk.constituent.Rayleigh()
+        atmosphere["surface"] = sk.constituent.LambertianSurface(0.3)
+        engine = sk.Engine(config, geometry, viewing)
+        result = engine.calculate_radiance(atmosphere).radiance
+        return result.transpose(..., "stokes").values
+
+    def change(value: np.ndarray, reference: np.ndarray) -> float:
+        # Relative to each line of sight's intensity, so small Q/U do not
+        # inflate the measure.
+        return float(np.max(np.abs(value - reference) / np.abs(reference[..., :1])))
+
+    # Radiance jumps by about 7e-8 with solar azimuth independently of
+    # successive orders (single-scatter-only runs show it too), so the aligned
+    # bound sits above that floor while staying >100x below the legacy change.
+    aligned_reference = radiance(0.0, False)
+    legacy_reference = radiance(0.0, True)
+    for solar_azimuth in (1.1, 2.5):
+        aligned_change = change(radiance(solar_azimuth, False), aligned_reference)
+        legacy_change = change(radiance(solar_azimuth, True), legacy_reference)
+        assert aligned_change < 1e-6
+        assert legacy_change > 1e-4
+
+
+def _legacy_golden_radiances(*, set_legacy: bool = True) -> dict[str, np.ndarray]:
+    """Small fixed-iteration scenes pinned against upstream main.
+
+    ``set_legacy=False`` leaves the legacy switch untouched so the same code
+    runs on a package that predates it.
+    """
+    results = {}
+    for num_stokes in (1, 3):
+        for reduced_horizon in (False, True):
+            config = _config(
+                sk.MultipleScatterSource.SuccessiveOrders,
+                num_stokes=num_stokes,
+                iterations=3,
+            )
+            config.num_sza = 3
+            config.successive_orders_reduced_horizon_quadrature = reduced_horizon
+            if set_legacy:
+                config.successive_orders_legacy_interpolation = True
+            key = f"1d_stokes{num_stokes}_reduced{int(reduced_horizon)}"
+            results[key] = _calculate(config).radiance.values
+
+    altitudes = np.arange(0.0, 60_001.0, 5_000.0)
+    # An even grid keeps the ground-viewing ray's hit (at the reference point,
+    # horizontal angle 0) off an atmosphere grid corner. Corner hits are a
+    # known roundoff-decided case in Geometry2D single scatter that differs
+    # between x86-64 and arm64 builds.
+    horizontal = np.linspace(-0.3, 0.3, 12)
+    geometry = sk.Geometry2D(
+        cos_sza=0.6,
+        solar_azimuth=0.4,
+        earth_radius_m=EARTH_RADIUS_M,
+        altitude_grid_m=altitudes,
+        horizontal_angle_grid_radians=horizontal,
+    )
+    viewing = sk.ViewingGeometry()
+    viewing.add_ray(
+        sk.TangentAltitude(
+            tangent_altitude_m=20_000.0,
+            observer_altitude_m=200_000.0,
+            horizontal_angle_radians=0.05,
+            viewing_azimuth_radians=0.3,
+        )
+    )
+    viewing.add_ray(
+        sk.GroundViewingSolar(
+            cos_sza=0.6,
+            relative_azimuth=0.2,
+            cos_viewing_zenith=0.7,
+            observer_altitude_m=100_000.0,
+        )
+    )
+    for num_stokes in (1, 3):
+        config = _config(
+            sk.MultipleScatterSource.SuccessiveOrders,
+            num_stokes=num_stokes,
+            iterations=3,
+        )
+        config.num_sza = 7
+        if set_legacy:
+            config.successive_orders_legacy_interpolation = True
+        atmosphere = sk.Atmosphere(
+            geometry,
+            config,
+            wavelengths_nm=np.array([500.0]),
+            calculate_derivatives=False,
+        )
+        h, altitude = np.meshgrid(horizontal, altitudes, indexing="ij")
+        atmosphere.storage.total_extinction[:, 0] = (
+            1.5e-5 * np.exp(-altitude / 8_000.0) * (1.0 + 0.5 * h)
+        ).ravel()
+        atmosphere.storage.ssa[:] = 0.9
+        atmosphere.leg_coeff.a1[0] = 1.0
+        atmosphere.leg_coeff.a1[2] = 0.5
+        if num_stokes == 3:
+            atmosphere.leg_coeff.a2[2] = 3.0
+            atmosphere.leg_coeff.b1[2] = -np.sqrt(6.0) / 2.0
+        atmosphere.surface.albedo[:] = 0.3
+        engine = sk.Engine(config, geometry, viewing)
+        results[f"2d_stokes{num_stokes}"] = engine.calculate_radiance(
+            atmosphere
+        ).radiance.values
+    return results
+
+
+# Produced by upstream main 922f3156 (which predates the legacy switch) with
+# _legacy_golden_radiances(set_legacy=False).
+_LEGACY_GOLDEN_RADIANCES = {
+    "1d_stokes1_reduced0": [
+        [[0.026572269852096046], [0.08675388969536403]],
+        [[0.02761471105651224], [0.09257399991571393]],
+    ],
+    "1d_stokes1_reduced1": [
+        [[0.0253412759471322], [0.08172744983962374]],
+        [[0.026106660676092797], [0.08668998845829651]],
+    ],
+    "1d_stokes3_reduced0": [
+        [
+            [0.0260574203497507, 0.005211998120877652, 0.003578076041958406],
+            [0.08745818865522942, 0.005599449139964889, -0.016882596537915955],
+        ],
+        [
+            [0.0269753913072721, 0.006081992175728306, 0.004181184920771906],
+            [0.09344978975567675, 0.005413719928904526, -0.017993721352662067],
+        ],
+    ],
+    "1d_stokes3_reduced1": [
+        [
+            [0.025124841924910983, 0.005177355196471327, 0.0034322509982462807],
+            [0.0820725702731285, 0.007223883991855643, -0.016021192170630912],
+        ],
+        [
+            [0.02581140214433228, 0.006052102622075082, 0.004010698478911972],
+            [0.08712049072941071, 0.0073754567655385855, -0.017013176116562074],
+        ],
+    ],
+    "2d_stokes1": [[[0.0590861239141752], [0.05738820889922289]]],
+    "2d_stokes3": [
+        [
+            [0.05911891368921024, 0.011674947240516837, 0.0027855365290887658],
+            [0.05704322458036998, 0.007666988688476472, 0.002768480773530306],
+        ]
+    ],
+}
+
+
+def test_legacy_interpolation_reproduces_main():
+    # The pinned values come from an arm64 macOS build of main, which the
+    # branch's legacy mode reproduces bitwise on the same platform. x86-64
+    # builds (Linux, Windows, Intel macOS) differ from them by ~5e-9 relative
+    # through platform arithmetic alone, so the tolerance allows for that while
+    # staying far below the smallest legacy-vs-default difference in these
+    # scenes (5.7e-4, 2D scalar).
+    actual = _legacy_golden_radiances()
+    assert actual.keys() == _LEGACY_GOLDEN_RADIANCES.keys()
+    for key, expected in _LEGACY_GOLDEN_RADIANCES.items():
+        np.testing.assert_allclose(
+            actual[key], np.array(expected), rtol=1.0e-6, atol=0.0, err_msg=key
+        )

@@ -24,6 +24,10 @@ namespace sasktran2::successive_orders {
         bool include_refraction = false;
         bool use_reduced_horizon_quadrature = false;
 
+        /** Use one globally oriented angular grid and bilinear observer-LOS
+         * interpolation instead of frame-aligned grids and cubic LOS. */
+        bool legacy_interpolation = false;
+
         /** Empty selects one source altitude at each atmosphere-layer
          * midpoint. */
         std::vector<double> altitude_grid_m;
@@ -53,6 +57,17 @@ namespace sasktran2::successive_orders {
         int incoming_offset() const { return m_incoming_offset; }
         int outgoing_offset() const { return m_outgoing_offset; }
 
+        /** Rotation class of this point's angular grids.
+         *
+         * Interior points with equal class have scattering operators related
+         * by one rigid rotation applied to both their incoming and outgoing
+         * grids. Frame-aligned reduced-horizon grids use the altitude index,
+         * plain Lebedev grids (aligned or legacy) use 0, legacy
+         * reduced-horizon grids use the point index, and ground points use
+         * -1.
+         */
+        int angular_class() const { return m_angular_class; }
+
         const std::vector<InterpolationWeight>& atmosphere_weights() const {
             return m_atmosphere_weights;
         }
@@ -66,6 +81,7 @@ namespace sasktran2::successive_orders {
         std::vector<InterpolationWeight> m_atmosphere_weights;
         int m_incoming_offset = 0;
         int m_outgoing_offset = 0;
+        int m_angular_class = 0;
         bool m_is_ground = false;
     };
 
@@ -254,6 +270,10 @@ namespace sasktran2::successive_orders {
 
         std::unique_ptr<sasktran2::grids::SourceLocationInterpolator>
             m_location_interpolator;
+        /** Observer-LOS interpolation when it differs from diffuse-ray
+         * interpolation; null otherwise. */
+        std::unique_ptr<sasktran2::grids::SourceLocationInterpolator>
+            m_los_location_interpolator;
         std::vector<std::unique_ptr<AngularGridPair>> m_angular_grids;
         std::vector<SourcePoint> m_source_points;
         std::vector<int> m_incoming_point_offsets;

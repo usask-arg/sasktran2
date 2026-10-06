@@ -88,6 +88,10 @@ int sk_config_get_successive_orders_reduced_horizon_quadrature(Config* config,
                                                                int* enabled);
 int sk_config_set_successive_orders_reduced_horizon_quadrature(Config* config,
                                                                int enabled);
+int sk_config_get_successive_orders_legacy_interpolation(Config* config,
+                                                         int* enabled);
+int sk_config_set_successive_orders_legacy_interpolation(Config* config,
+                                                         int enabled);
 int sk_config_get_num_successive_orders_altitudes(Config* config,
                                                   int* num_altitudes);
 int sk_config_get_successive_orders_altitude_grid_m(Config* config,
