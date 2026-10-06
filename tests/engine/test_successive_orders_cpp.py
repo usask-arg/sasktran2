@@ -802,7 +802,11 @@ def _legacy_golden_radiances(*, set_legacy: bool = True) -> dict[str, np.ndarray
             results[key] = _calculate(config).radiance.values
 
     altitudes = np.arange(0.0, 60_001.0, 5_000.0)
-    horizontal = np.linspace(-0.3, 0.3, 13)
+    # An even grid keeps the ground-viewing ray's hit (at the reference point,
+    # horizontal angle 0) off an atmosphere grid corner. Corner hits are a
+    # known roundoff-decided case in Geometry2D single scatter that differs
+    # between x86-64 and arm64 builds.
+    horizontal = np.linspace(-0.3, 0.3, 12)
     geometry = sk.Geometry2D(
         cos_sza=0.6,
         solar_azimuth=0.4,
@@ -860,7 +864,7 @@ def _legacy_golden_radiances(*, set_legacy: bool = True) -> dict[str, np.ndarray
     return results
 
 
-# Produced by upstream main 942d5494 (which predates the legacy switch) with
+# Produced by upstream main 922f3156 (which predates the legacy switch) with
 # _legacy_golden_radiances(set_legacy=False).
 _LEGACY_GOLDEN_RADIANCES = {
     "1d_stokes1_reduced0": [
@@ -873,29 +877,29 @@ _LEGACY_GOLDEN_RADIANCES = {
     ],
     "1d_stokes3_reduced0": [
         [
-            [0.026032784728306016, 0.005172495694170809, 0.0035781636388871516],
-            [0.0872745118096335, 0.005478386905537516, -0.01689320132398022],
+            [0.0260574203497507, 0.005211998120877652, 0.003578076041958406],
+            [0.08745818865522942, 0.005599449139964889, -0.016882596537915955],
         ],
         [
-            [0.02694049176587684, 0.006026680041510463, 0.004181291148604776],
-            [0.09321296572385633, 0.005272061523345046, -0.01800752378656626],
+            [0.0269753913072721, 0.006081992175728306, 0.004181184920771906],
+            [0.09344978975567675, 0.005413719928904526, -0.017993721352662067],
         ],
     ],
     "1d_stokes3_reduced1": [
         [
-            [0.025124592987100586, 0.00517778259704112, 0.003432396930400801],
-            [0.0820650228622118, 0.0072597710690733, -0.01602081237596952],
+            [0.025124841924910983, 0.005177355196471327, 0.0034322509982462807],
+            [0.0820725702731285, 0.007223883991855643, -0.016021192170630912],
         ],
         [
-            [0.025811060602723555, 0.006052687519389811, 0.004010897284586094],
-            [0.0871079811533518, 0.007429705215567661, -0.017011762909276817],
+            [0.02581140214433228, 0.006052102622075082, 0.004010698478911972],
+            [0.08712049072941071, 0.0073754567655385855, -0.017013176116562074],
         ],
     ],
-    "2d_stokes1": [[[0.05910817988493479], [0.05738902269870026]]],
+    "2d_stokes1": [[[0.0590861239141752], [0.05738820889922289]]],
     "2d_stokes3": [
         [
-            [0.05921083435937947, 0.011468522675200585, 0.0030415829227560566],
-            [0.05704287735350409, 0.007667334081463472, 0.002768958763396873],
+            [0.05911891368921024, 0.011674947240516837, 0.0027855365290887658],
+            [0.05704322458036998, 0.007666988688476472, 0.002768480773530306],
         ]
     ],
 }
@@ -907,7 +911,7 @@ def test_legacy_interpolation_reproduces_main():
     # builds (Linux, Windows, Intel macOS) differ from them by ~5e-9 relative
     # through platform arithmetic alone, so the tolerance allows for that while
     # staying far below the smallest legacy-vs-default difference in these
-    # scenes (5.8e-4, 2D scalar).
+    # scenes (5.7e-4, 2D scalar).
     actual = _legacy_golden_radiances()
     assert actual.keys() == _LEGACY_GOLDEN_RADIANCES.keys()
     for key, expected in _LEGACY_GOLDEN_RADIANCES.items():
