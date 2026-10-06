@@ -232,6 +232,20 @@ impl StructuredRayTracer2D {
         for primitive in &self.primitives {
             primitive.intersections(ray, self.epsilon, &mut scratch.intersections);
         }
+        // Ray endpoints on the lower boundary, such as the ground end of a
+        // line of sight that a solar ray is traced from, are only known to
+        // roundoff. The surface root at such an observer can then land a few
+        // epsilon ahead of it as an exiting crossing. That root is the observer
+        // leaving the surface, not a ground hit, and must not truncate the ray.
+        // An outward ray cannot exit the surface again, so every exiting
+        // surface root ahead of it is this one.
+        let observer_leaves_surface =
+            ray.origin.dot(ray.direction) > 0.0 && self.observer_on_surface(ray.origin);
+        let is_observer_surface_exit = |intersection: &Intersection| {
+            observer_leaves_surface
+                && intersection.boundary.is_surface()
+                && intersection.crossing == Crossing::Exiting
+        };
         scratch.events.push(Event2D {
             distance: 0.0,
             boundaries: BoundarySet::new(),
@@ -239,6 +253,9 @@ impl StructuredRayTracer2D {
             is_tangent: false,
         });
         for intersection in &scratch.intersections {
+            if is_observer_surface_exit(intersection) {
+                continue;
+            }
             let mut boundaries = BoundarySet::new();
             boundaries.push(intersection.boundary);
             scratch.events.push(Event2D {
@@ -267,7 +284,9 @@ impl StructuredRayTracer2D {
             .intersections
             .iter()
             .filter(|intersection| {
-                intersection.boundary.is_surface() && intersection.distance > self.epsilon
+                intersection.boundary.is_surface()
+                    && intersection.distance > self.epsilon
+                    && !is_observer_surface_exit(intersection)
             })
             .map(|intersection| intersection.distance)
             .min_by(f64::total_cmp);
@@ -310,6 +329,15 @@ impl StructuredRayTracer2D {
 
         result.ground_is_hit = !result.layers.is_empty() && far_boundaries.contains_surface();
         result.layers.reverse();
+    }
+
+    /// True when `origin` lies on the lower boundary to within the roundoff
+    /// of a Cartesian position at that radius.
+    fn observer_on_surface(&self, origin: Vec3) -> bool {
+        let surface_altitude = self.grid.altitudes()[0];
+        let surface_radius = self.grid.earth_radius() + surface_altitude;
+        let tolerance = 64.0 * f64::EPSILON * surface_radius.abs().max(1.0);
+        (self.grid.altitude_at(origin) - surface_altitude).abs() <= tolerance
     }
 
     fn cell_after_straight_event(
@@ -1098,6 +1126,97 @@ mod tests {
             traced.layers[0].entrance.event.kind,
             TraceEventKind::Observer
         );
+    }
+
+    fn earth_sized_tracer() -> StructuredRayTracer2D {
+        let altitudes = (0..13).map(|index| 5_000.0 * index as f64).collect();
+        let horizontal_angles = (0..13).map(|index| -0.3 + 0.05 * index as f64).collect();
+        StructuredRayTracer2D::new(
+            StructuredGrid2D::new(
+                6_372_000.0,
+                altitudes,
+                horizontal_angles,
+                InterpolationMethod::Linear,
+            )
+            .unwrap(),
+        )
+    }
+
+    /// Surface points with the radius roundoff of a traced ground endpoint.
+    fn surface_points(earth_radius: f64) -> impl Iterator<Item = Vec3> {
+        (0..400).map(move |sample| {
+            let angle = -0.3 + 0.6 * (f64::from(sample) + 0.5) / 400.0;
+            let out_of_plane = 0.05 * f64::from((sample * 7) % 11) - 0.25;
+            earth_radius
+                * Vec3::new(
+                    angle.sin() * out_of_plane.cos(),
+                    out_of_plane.sin(),
+                    angle.cos() * out_of_plane.cos(),
+                )
+                .normalized()
+        })
+    }
+
+    #[test]
+    fn surface_observer_looking_up_traverses_the_atmosphere() {
+        // A ray traced upward from a ground endpoint, such as the solar ray of
+        // a ground-viewing line of sight, starts within roundoff of the
+        // surface. The surface root at the observer itself is not a ground
+        // hit and must not truncate the path.
+        let tracer = earth_sized_tracer();
+        let earth_radius = tracer.grid().earth_radius();
+        let top_radius = earth_radius + 60_000.0;
+        let sun = Vec3::new(0.8 * 0.4_f64.cos(), 0.8 * 0.4_f64.sin(), 0.6);
+        for origin in surface_points(earth_radius) {
+            let ray = Ray::new(origin, sun);
+            let traced = tracer.trace(ray, TraceOptions2D::default());
+
+            let projected = origin.dot(ray.direction);
+            let expected = -projected
+                + (projected * projected - (origin.norm_squared() - top_radius * top_radius))
+                    .sqrt();
+            let total: f64 = traced
+                .layers
+                .iter()
+                .map(|layer| layer.geometric_distance)
+                .sum();
+            assert!(!traced.ground_is_hit, "origin {origin:?}");
+            assert!(
+                (total - expected).abs() <= 1e-6,
+                "origin {origin:?}: traced {total} m, expected {expected} m"
+            );
+        }
+    }
+
+    #[test]
+    fn surface_observer_looking_down_still_stops_at_the_surface() {
+        let tracer = earth_sized_tracer();
+        let earth_radius = tracer.grid().earth_radius();
+        for origin in surface_points(earth_radius) {
+            for direction in [
+                -origin.normalized(),
+                Vec3::new(0.8, 0.0, 0.0) - 0.6 * origin.normalized(),
+            ] {
+                let traced = tracer.trace(Ray::new(origin, direction), TraceOptions2D::default());
+                let total: f64 = traced
+                    .layers
+                    .iter()
+                    .map(|layer| layer.geometric_distance)
+                    .sum();
+                assert!(total <= 1e-6, "origin {origin:?}: traced {total} m");
+            }
+        }
+    }
+
+    #[test]
+    fn observer_below_surface_is_not_traced_through_the_planet() {
+        let tracer = earth_sized_tracer();
+        let earth_radius = tracer.grid().earth_radius();
+        let origin = (earth_radius - 100.0) * Vec3::new(0.0, 0.0, 1.0);
+        for direction in [Vec3::new(0.0, 0.0, -1.0), Vec3::new(0.6, 0.0, -0.8)] {
+            let traced = tracer.trace(Ray::new(origin, direction), TraceOptions2D::default());
+            assert!(traced.layers.is_empty());
+        }
     }
 
     #[test]
