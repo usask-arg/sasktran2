@@ -183,7 +183,7 @@ namespace sasktran2::solartransmission {
                                               const sasktran2::raytracing::
                                                   TracedRay& ray) {
             const auto result =
-                m_geometry.coordinates().stokes_standard_to_observer_z(
+                m_geometry.coordinates().stokes_standard_to_observer(
                     scatter_layer.average_look_away,
                     ray.observer_and_look.observer.position);
             math::stokes_scattering_factors(solar_propagation.normalized(),
@@ -242,7 +242,7 @@ namespace sasktran2::solartransmission {
             // scattering angle, scattering angle does not change along the ray
             if (ray.is_straight) {
                 auto result =
-                    m_geometry.coordinates().stokes_standard_to_observer_z(
+                    m_geometry.coordinates().stokes_standard_to_observer(
                         ray.layers[0].average_look_away,
                         ray.observer_and_look.observer.position);
 
@@ -269,7 +269,7 @@ namespace sasktran2::solartransmission {
                 if (!ray.is_straight) {
                     const auto& scatter_layer = ray.layers[0];
                     auto result =
-                        m_geometry.coordinates().stokes_standard_to_observer_z(
+                        m_geometry.coordinates().stokes_standard_to_observer(
                             scatter_layer.average_look_away,
                             ray.observer_and_look.observer.position);
 
