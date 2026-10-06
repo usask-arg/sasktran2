@@ -236,29 +236,38 @@ namespace sasktran2 {
                                  double cos_viewing) const;
 
         /**
-         * @brief Calculates the Stokes rotation factors (cos(2theta),
-         * sin(2theta)) to convert from the standard basis to the solar basis
+         * @brief Calculates the Stokes rotation factors (C, S) that move the
+         * Stokes reference direction from from_reference to to_reference,
+         * both projected perpendicular to the look vector.  The factors are
+         * applied as Q' = C Q - S U, U' = S Q + C U.
          *
-         * @param look_vector
-         * @return std::pair<double, double>
+         * @param look_vector Unit look vector, opposite to the propagation
+         * direction
+         * @param from_reference
+         * @param to_reference
+         * @return std::pair<double, double> (C, S), or (1, 0) if either
+         * reference is parallel to the look vector
          */
-        std::pair<double, double>
-        stokes_standard_to_solar(const Eigen::Vector3d& look_vector) const;
+        static std::pair<double, double>
+        stokes_rotation(const Eigen::Vector3d& look_vector,
+                        const Eigen::Vector3d& from_reference,
+                        const Eigen::Vector3d& to_reference);
 
         /**
-         * @brief Calculates the Stokes rotation factors (cos(2theta),
-         * sin(2theta)) to convert from the standard basis to the observer
+         * @brief Calculates the Stokes rotation factors (C, S) to convert
+         * from the standard basis (reference in the plane of the z-axis and
+         * the look vector) to the observer basis (reference in the plane of
+         * the observer position and the look vector)
          *
          * @param look_vector
+         * @param position Observer position
          * @return std::pair<double, double>
          */
         std::pair<double, double>
         stokes_standard_to_observer(const Eigen::Vector3d& look_vector,
-                                    const Eigen::Vector3d& position) const;
-
-        std::pair<double, double>
-        stokes_standard_to_observer_z(const Eigen::Vector3d& look_vector,
-                                      const Eigen::Vector3d& position) const;
+                                    const Eigen::Vector3d& position) const {
+            return stokes_rotation(look_vector, m_z_unit, position);
+        }
 
         /**
          * @brief Calculates the vector position above the earth at the
