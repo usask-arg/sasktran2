@@ -19,7 +19,12 @@ namespace sasktran2::raytracing {
             sqrt(std::max(0.0, 1 - ray.cos_viewing() * ray.cos_viewing()));
 
         if (!result.is_straight) {
-            // If including refraction, adjust the tangent radius
+            // If including refraction, adjust the tangent radius. The ray
+            // invariant n r sin(zenith) includes the refractive index at the
+            // observer when the observer is inside the atmosphere.
+            rt *= refraction::observer_refractive_index(
+                m_geometry, ray.observer.radius(),
+                result.interpolation_index_weights);
             rt = refraction::tangent_radius(m_geometry, rt,
                                             result.interpolation_index_weights);
         }
@@ -472,9 +477,10 @@ namespace sasktran2::raytracing {
                              ray.observer.radius() - m_earth_radius);
         size_t observer_idx = std::distance(m_alt_grid.grid().begin(), it);
 
-        double rt = ray.observer.radius() *
-                    sqrt(1 - ray.cos_viewing() * ray.cos_viewing());
-        double tangent_altitude = rt - m_earth_radius;
+        // Already includes refraction if the ray is refracted
+        double tangent_altitude =
+            std::min(tracedray.tangent_radius, ray.observer.radius()) -
+            m_earth_radius;
 
         // Find the index to the first altitude ABOVE the tangent altitude
         auto it_tangent =

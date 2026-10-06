@@ -297,6 +297,14 @@ const GQ64_WEIGHTS: [f64; 32] = [
     0.048690957009139720383,
 ];
 
+/// Straight line distance between radii `tangent_radius <= r1 <= r2` for a ray
+/// with the given tangent radius. Factored so the argument is exactly zero at
+/// the tangent point.
+fn straight_path(tangent_radius: f64, r1: f64, r2: f64) -> f64 {
+    ((r2 - tangent_radius) * (r2 + tangent_radius)).sqrt()
+        - ((r1 - tangent_radius) * (r1 + tangent_radius)).sqrt()
+}
+
 pub fn integrate_path(
     profile: &RefractiveProfile,
     tangent_radius: f64,
@@ -305,25 +313,22 @@ pub fn integrate_path(
     mut r2: f64,
 ) -> PathIntegral {
     const MIN_CELL_LENGTH: f64 = 0.1;
-    const RADIUS_DITHER: f64 = 1e-6;
 
     if r2 < r1 {
         std::mem::swap(&mut r1, &mut r2);
     }
 
-    let min_radius = tangent_radius + RADIUS_DITHER;
-    if r1 <= min_radius {
-        r1 = min_radius;
-    }
-    if r2 <= min_radius {
-        r2 = min_radius;
-    }
+    // The integrands are regular at the tangent point in x = sqrt(r - rt), so
+    // integrate all the way down to it. Roundoff can place r1 or r2 marginally
+    // below the tangent radius.
+    r1 = r1.max(tangent_radius);
+    r2 = r2.max(tangent_radius);
 
     if (r1 - r2).abs() < MIN_CELL_LENGTH {
         return PathIntegral {
-            path_length: (r2 * r2 - tangent_radius * tangent_radius).sqrt()
-                - (r1 * r1 - tangent_radius * tangent_radius).sqrt(),
-            deflection_angle: (tangent_radius / r2).acos() - (tangent_radius / r1).acos(),
+            path_length: straight_path(tangent_radius, r1, r2),
+            deflection_angle: (tangent_radius / r2).min(1.0).acos()
+                - (tangent_radius / r1).min(1.0).acos(),
         };
     }
 
@@ -384,11 +389,8 @@ pub fn integrate_path(
     extra_path *= half_width;
     deflection_angle *= half_width;
 
-    let straight_path = (r2 * r2 - tangent_radius * tangent_radius).sqrt()
-        - (r1 * r1 - tangent_radius * tangent_radius).sqrt();
-
     let mut result = PathIntegral {
-        path_length: straight_path + extra_path,
+        path_length: straight_path(tangent_radius, r1, r2) + extra_path,
         deflection_angle,
     };
 
@@ -504,7 +506,7 @@ mod tests {
     }
 
     #[test]
-    fn near_tangent_integral_applies_radius_dither() {
+    fn near_tangent_integral_is_finite() {
         let profile =
             RefractiveProfile::new(10.0, vec![0.0, 10.0, 20.0], vec![1.1, 1.05, 1.0]).unwrap();
         let result = profile.integrate_path(15.0, 15.0, 15.05);
@@ -512,5 +514,16 @@ mod tests {
         assert!(result.path_length.is_finite());
         assert!(result.deflection_angle.is_finite());
         assert!(result.path_length >= 0.0);
+    }
+
+    #[test]
+    fn unity_integral_from_tangent_point_matches_straight_line() {
+        let tangent_radius: f64 = 15.0;
+        let radius: f64 = 20.0;
+        let result = unity_profile().integrate_path(tangent_radius, tangent_radius, radius);
+
+        let straight_path = (radius * radius - tangent_radius * tangent_radius).sqrt();
+        assert!((result.path_length - straight_path).abs() < 1e-12 * straight_path);
+        assert!((result.deflection_angle - (tangent_radius / radius).acos()).abs() < 1e-12);
     }
 }

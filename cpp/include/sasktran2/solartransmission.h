@@ -453,6 +453,17 @@ namespace sasktran2::solartransmission {
             Eigen::MatrixXd& od_matrix,
             std::vector<bool>& ground_hit_flag) const;
 
+        /**
+         * Generates the solar optical depth matrix for a spherical Geometry1D
+         * with refracted solar rays. Each endpoint is traced along its
+         * apparent sun direction, which is also returned as the local
+         * propagation direction of the direct beam for the phase function.
+         */
+        void generate_refracted_geometry_matrix(
+            const std::vector<sasktran2::raytracing::TracedRay>& rays,
+            Eigen::MatrixXd& od_matrix, std::vector<bool>& ground_hit_flag,
+            std::vector<Eigen::Vector3d>& solar_propagation_directions) const;
+
 #ifdef SKTRAN_RUST_SUPPORT
         SolarTransmissionExact(
             const Geometry2D& geometry,
@@ -477,10 +488,31 @@ namespace sasktran2::solartransmission {
       private:
         std::unique_ptr<sasktran2::grids::SourceLocationInterpolator>
             m_location_interpolator;
-        const sasktran2::Config* m_config;
+        const sasktran2::Config* m_config = nullptr;
         Eigen::MatrixXd m_geometry_matrix;
 
+        // Table nodes in the shadow of the Earth
         std::vector<bool> m_ground_hit_flag;
+
+        // True if the table was built with refracted solar rays
+        bool m_refracted = false;
+        // Apparent elevation of the sun above its geometric direction at each
+        // table node, [rad]. Zero for straight solar rays.
+        Eigen::VectorXd m_node_bending;
+        // Increase of the largest illuminated geometric solar zenith angle
+        // due to refraction at each altitude grid level, [rad]
+        Eigen::VectorXd m_visibility_limit_increase;
+
+        /**
+         * Table interpolation weights for an endpoint. Shadowed table nodes
+         * are excluded and the remaining weights renormalized.
+         *
+         * @return false if the endpoint is in the shadow of the Earth
+         */
+        bool endpoint_interpolation(
+            const sasktran2::Location& location,
+            std::vector<std::pair<int, double>>& weights,
+            Eigen::Vector3d* solar_propagation_direction) const;
 
       public:
         SolarTransmissionTable(
@@ -499,7 +531,9 @@ namespace sasktran2::solartransmission {
         void generate_interpolation_matrix(
             const std::vector<sasktran2::raytracing::TracedRay>& rays,
             Eigen::SparseMatrix<double, Eigen::RowMajor>& interpolator,
-            std::vector<bool>& ground_hit_flag) const;
+            std::vector<bool>& ground_hit_flag,
+            std::vector<Eigen::Vector3d>* solar_propagation_directions =
+                nullptr) const;
 
         void generate_interpolation(
             const std::vector<sasktran2::raytracing::TracedRay>& rays,
@@ -1126,6 +1160,23 @@ namespace sasktran2::solartransmission {
         Eigen::MatrixXd m_geometry_matrix;
         SolarGeometryMatrix m_geometry_sparse;
         std::vector<bool> m_ground_hit_flag;
+
+        // The 1D table stores interpolation weights into its nodes in
+        // m_geometry_sparse. Derivative propagation needs optical depth rows
+        // indexed by atmosphere grid point, which are only materialized when
+        // derivatives are requested.
+        SolarGeometryMatrix m_table_optical_depth_rows;
+        const SolarGeometryMatrix& solar_derivative_rows() const {
+            if constexpr (std::is_same_v<S, SolarTransmissionTable>) {
+                // Without derivatives the iterators are constructed but never
+                // advanced, so any matrix with the endpoint rows will do
+                return m_table_optical_depth_rows.rows() > 0
+                           ? m_table_optical_depth_rows
+                           : m_geometry_sparse;
+            } else {
+                return m_geometry_sparse;
+            }
+        }
 
         std::vector<Eigen::VectorXd> m_solar_trans;
         using RowMajorMatrix = Eigen::Matrix<double, Eigen::Dynamic,
