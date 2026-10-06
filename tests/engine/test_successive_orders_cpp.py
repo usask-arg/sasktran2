@@ -902,9 +902,15 @@ _LEGACY_GOLDEN_RADIANCES = {
 
 
 def test_legacy_interpolation_reproduces_main():
+    # The pinned values come from an arm64 macOS build of main, which the
+    # branch's legacy mode reproduces bitwise on the same platform. x86-64
+    # builds (Linux, Windows, Intel macOS) differ from them by ~5e-9 relative
+    # through platform arithmetic alone, so the tolerance allows for that while
+    # staying far below the smallest legacy-vs-default difference in these
+    # scenes (5.8e-4, 2D scalar).
     actual = _legacy_golden_radiances()
     assert actual.keys() == _LEGACY_GOLDEN_RADIANCES.keys()
     for key, expected in _LEGACY_GOLDEN_RADIANCES.items():
         np.testing.assert_allclose(
-            actual[key], np.array(expected), rtol=1.0e-10, atol=0.0, err_msg=key
+            actual[key], np.array(expected), rtol=1.0e-6, atol=0.0, err_msg=key
         )
