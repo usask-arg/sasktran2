@@ -114,7 +114,7 @@ namespace sasktran2::solartransmission {
                     count_endpoint(ray.entrance_weights(layer_index));
                     const auto exit_weights = ray.exit_weights(layer_index);
                     const bool can_share_exit =
-                        layer_index > 0 &&
+                        ray.is_straight && layer_index > 0 &&
                         same_nonzero_indices(
                             exit_weights,
                             ray.entrance_weights(layer_index - 1));
@@ -238,56 +238,23 @@ namespace sasktran2::solartransmission {
                 continue;
             }
 
+            const Eigen::Vector3d solar_propagation =
+                -m_geometry.coordinates().sun_unit();
+
             // Straight rays we can just use the first layer to get the
             // scattering angle, scattering angle does not change along the ray
             if (ray.is_straight) {
-                auto result =
-                    m_geometry.coordinates().stokes_standard_to_observer_z(
-                        ray.layers[0].average_look_away,
-                        ray.observer_and_look.observer.position);
-
-                math::stokes_scattering_factors(
-                    -1 * m_geometry.coordinates().sun_unit(),
-                    -1 * ray.layers[0].average_look_away, theta, C1, C2, S1, S2,
-                    negation);
-                if constexpr (NSTOKES == 3) {
-                    double adjusted_C2 = C2 * result.first - S2 * result.second;
-                    double adjusted_S2 = C2 * result.second + S2 * result.first;
-
-                    m_scatter_angles.push_back(
-                        {theta, adjusted_C2, adjusted_S2});
-                } else {
-                    m_scatter_angles.push_back({theta});
-                }
+                append_scatter_angle(solar_propagation, ray.layers[0], ray);
             }
 
             for (int j = 0; j < ray.layers.size(); ++j) {
                 const auto flat_layer =
                     m_geometry_layer_offsets[i] + static_cast<std::uint32_t>(j);
 
-                // If the ray isn't straight every layer has a scattering angle
+                // If the ray isn't straight every layer has its own direction
+                // and therefore its own scattering angle
                 if (!ray.is_straight) {
-                    const auto& scatter_layer = ray.layers[0];
-                    auto result =
-                        m_geometry.coordinates().stokes_standard_to_observer_z(
-                            scatter_layer.average_look_away,
-                            ray.observer_and_look.observer.position);
-
-                    math::stokes_scattering_factors(
-                        -1 * m_geometry.coordinates().sun_unit(),
-                        -1 * scatter_layer.average_look_away, theta, C1, C2, S1,
-                        S2, negation);
-                    if constexpr (NSTOKES == 3) {
-                        double adjusted_C2 =
-                            C2 * result.first - S2 * result.second;
-                        double adjusted_S2 =
-                            C2 * result.second + S2 * result.first;
-
-                        m_scatter_angles.push_back(
-                            {theta, adjusted_C2, adjusted_S2});
-                    } else {
-                        m_scatter_angles.push_back({theta});
-                    }
+                    append_scatter_angle(solar_propagation, ray.layers[j], ray);
                 }
 
                 const auto entrance_weights = ray.entrance_weights(j);
@@ -298,9 +265,12 @@ namespace sasktran2::solartransmission {
 
                 append_endpoint(entrance_weights);
 
+                // The previous layer's entrance phase can only be reused when
+                // both layers share a scattering angle
                 const bool can_share_exit =
-                    j > 0 && same_nonzero_indices(exit_weights,
-                                                  ray.entrance_weights(j - 1));
+                    ray.is_straight && j > 0 &&
+                    same_nonzero_indices(exit_weights,
+                                         ray.entrance_weights(j - 1));
 
                 auto& exit_offset = m_geometry_exit_offsets[flat_layer];
                 if (!can_share_exit) {
