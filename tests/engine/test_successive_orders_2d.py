@@ -563,9 +563,10 @@ def test_2d_reduced_horizon_supports_arbitrary_incoming_count(num_stokes: int):
     assert not np.isclose(varying[0, 0, 0], uniform[0, 0, 0], rtol=1.0e-4)
 
 
+@pytest.mark.parametrize("legacy_interpolation", [False, True])
 @pytest.mark.parametrize("reduced_horizon", [False, True])
 def test_2d_polarized_successive_orders_is_continuous_in_solar_azimuth(
-    reduced_horizon: bool,
+    reduced_horizon: bool, legacy_interpolation: bool
 ):
     # Polarized first-order forcing traces an exact solar ray from the ground
     # end of every incoming ray. Those endpoints lie on the surface only to
@@ -589,6 +590,7 @@ def test_2d_polarized_successive_orders_is_continuous_in_solar_azimuth(
         config.num_successive_orders_incoming = 26
         config.num_successive_orders_outgoing = 26
         config.successive_orders_reduced_horizon_quadrature = reduced_horizon
+        config.successive_orders_legacy_interpolation = legacy_interpolation
         viewing = sk.ViewingGeometry()
         viewing.add_ray(
             sk.TangentAltitude(
@@ -655,25 +657,51 @@ def test_2d_successive_orders_rejects_source_angles_outside_geometry():
 
 
 @pytest.mark.parametrize(
-    ("num_stokes", "reduced_horizon"), [(1, False), (1, True), (3, True)]
+    ("num_stokes", "reduced_horizon", "cubic_los"),
+    [
+        (1, False, False),
+        (1, True, False),
+        (3, False, False),
+        (3, True, False),
+        (1, False, True),
+        (3, False, True),
+        (3, True, True),
+    ],
 )
 def test_2d_successive_orders_native_products_are_adjoint(
-    num_stokes: int, reduced_horizon: bool
+    num_stokes: int, reduced_horizon: bool, cubic_los: bool
 ):
     geometry = geometry2d()
     config = successive_orders_config(
         num_stokes=num_stokes, single_scatter_source=sk.SingleScatterSource.NoSource
     )
+    # The Config default prefers reduced-horizon quadrature, so the plain
+    # Lebedev cases must disable it explicitly.
+    config.successive_orders_reduced_horizon_quadrature = reduced_horizon
     if reduced_horizon:
         config.num_sza = 3
         config.num_successive_orders_incoming = 37
         config.num_successive_orders_outgoing = 14
-        config.successive_orders_reduced_horizon_quadrature = True
+    viewing = viewing_geometry()
+    if cubic_los:
+        # Five sunlit source columns and a limb ray between them select the
+        # four-column LOS stencil. The outermost column has cos SZA ~ 0.044,
+        # so the cubic path depends on geometry2d() keeping all five columns
+        # sunlit; a darker geometry would silently fall back to bilinear.
+        config.num_sza = 5
+        viewing.add_ray(
+            sk.TangentAltitude(
+                tangent_altitude_m=10_000.0,
+                observer_altitude_m=600_000.0,
+                horizontal_angle_radians=0.1,
+                viewing_azimuth_radians=0.0,
+            )
+        )
     config.num_successive_orders_iterations = 60
     config.successive_orders_relative_tolerance = 1.0e-11
     config.successive_orders_absolute_tolerance = 1.0e-13
     config.successive_orders_anderson_depth = 3
-    linearization = sk.Engine(config, geometry, viewing_geometry()).linearize(
+    linearization = sk.Engine(config, geometry, viewing).linearize(
         atmosphere(geometry, config, horizontal_slope=0.4, calculate_derivatives=True)
     )
 
@@ -996,3 +1024,130 @@ def test_2d_rejects_legacy_successive_orders_source():
 
     with pytest.raises(NotImplementedError, match="successive-orders"):
         sk.Engine(config, geometry2d(), viewing_geometry())
+
+
+def _convergence_radiance(num_columns: int, *, legacy: bool) -> np.ndarray:
+    altitudes = np.arange(0.0, 60_001.0, 2_000.0)
+    horizontal = np.deg2rad(np.arange(-15.0, 15.01, 1.0))
+    geometry = sk.Geometry2D(
+        cos_sza=float(np.cos(np.deg2rad(60.0))),
+        solar_azimuth=0.0,
+        earth_radius_m=EARTH_RADIUS_M,
+        altitude_grid_m=altitudes,
+        horizontal_angle_grid_radians=horizontal,
+    )
+    config = successive_orders_config(
+        single_scatter_source=sk.SingleScatterSource.NoSource
+    )
+    config.num_threads = 4
+    config.num_successive_orders_incoming = 26
+    config.num_successive_orders_outgoing = 26
+    config.num_successive_orders_iterations = 30
+    config.successive_orders_relative_tolerance = 1.0e-8
+    config.successive_orders_altitude_grid_m = np.arange(1_000.0, 59_001.0, 4_000.0)
+    config.num_sza = num_columns
+    config.successive_orders_legacy_interpolation = legacy
+    viewing = sk.ViewingGeometry()
+    for tangent in (15_000.0, 25_000.0, 35_000.0):
+        viewing.add_ray(
+            sk.TangentAltitude(
+                tangent_altitude_m=tangent,
+                observer_altitude_m=600_000.0,
+                horizontal_angle_radians=0.0,
+                viewing_azimuth_radians=0.0,
+            )
+        )
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=np.array([450.0]),
+        calculate_derivatives=False,
+    )
+    _, altitude = np.meshgrid(horizontal, altitudes, indexing="ij")
+    atmosphere.storage.total_extinction[:, 0] = (
+        1.2e-5 * np.exp(-altitude / 7_500.0)
+    ).ravel()
+    atmosphere.storage.ssa[:, 0] = 0.999
+    atmosphere.leg_coeff.a1[0] = 1.0
+    atmosphere.leg_coeff.a1[2] = 0.5
+    atmosphere.surface.albedo[:] = 0.3
+    engine = sk.Engine(config, geometry, viewing)
+    return engine.calculate_radiance(atmosphere).radiance.values.ravel()
+
+
+def test_2d_aligned_cubic_interpolation_needs_fewer_columns():
+    aligned_reference = _convergence_radiance(31, legacy=False)
+    legacy_reference = _convergence_radiance(31, legacy=True)
+    aligned_error = np.max(
+        np.abs(_convergence_radiance(7, legacy=False) / aligned_reference - 1)
+    )
+    legacy_error = np.max(
+        np.abs(_convergence_radiance(11, legacy=True) / legacy_reference - 1)
+    )
+    # Measured: aligned (cubic LOS, 7 columns) 5.8e-5 against legacy
+    # (bilinear LOS, 11 columns) 5.1e-4. Aligned grids with a bilinear LOS
+    # gave 6.3e-4 at 7 columns.
+    assert aligned_error < legacy_error / 2
+
+
+def test_2d_cubic_los_interpolation_stays_positive_at_the_terminator():
+    # The sun is on the horizon at the reference point, so the source columns
+    # at negative horizontal angles are on the night side. Cubic weights there
+    # would mix the small night-side source with negative multiples of the
+    # sunlit columns' source.
+    # The explicit uniform columns at -20 + 19k/3 deg keep the nearest column
+    # 1 deg on the night side of the terminator, so whether it counts as
+    # sunlit does not depend on roundoff (an evenly spaced odd count over
+    # +-20 deg would put the centre column exactly on the terminator).
+    altitudes = np.arange(0.0, 60_001.0, 2_000.0)
+    horizontal = np.deg2rad(np.arange(-20.0, 20.01, 1.0))
+    geometry = sk.Geometry2D(
+        cos_sza=0.0,
+        solar_azimuth=0.0,
+        earth_radius_m=EARTH_RADIUS_M,
+        altitude_grid_m=altitudes,
+        horizontal_angle_grid_radians=horizontal,
+    )
+    config = successive_orders_config()
+    config.num_successive_orders_incoming = 26
+    config.num_successive_orders_outgoing = 26
+    config.num_successive_orders_iterations = 30
+    config.successive_orders_relative_tolerance = 1.0e-8
+    config.successive_orders_altitude_grid_m = np.arange(1_000.0, 59_001.0, 4_000.0)
+    config.successive_orders_horizontal_angle_grid_radians = np.deg2rad(
+        np.linspace(-20.0, 18.0, 7)
+    )
+    viewing = sk.ViewingGeometry()
+    night = [(-10.0, 10_000.0), (-12.0, 20_000.0), (-14.0, 30_000.0)]
+    night += [(-10.0, 30_000.0), (-12.0, 10_000.0)]
+    day = [(10.0, 20_000.0), (12.0, 30_000.0)]
+    for angle_deg, tangent in night + day:
+        viewing.add_ray(
+            sk.TangentAltitude(
+                tangent_altitude_m=tangent,
+                observer_altitude_m=600_000.0,
+                horizontal_angle_radians=float(np.deg2rad(angle_deg)),
+                viewing_azimuth_radians=0.0,
+            )
+        )
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=np.array([450.0]),
+        calculate_derivatives=False,
+    )
+    _, altitude = np.meshgrid(horizontal, altitudes, indexing="ij")
+    atmosphere.storage.total_extinction[:, 0] = (
+        1.2e-5 * np.exp(-altitude / 7_500.0)
+    ).ravel()
+    atmosphere.storage.ssa[:, 0] = 0.999
+    atmosphere.leg_coeff.a1[0] = 1.0
+    atmosphere.leg_coeff.a1[2] = 0.5
+    atmosphere.surface.albedo[:] = 0.3
+    engine = sk.Engine(config, geometry, viewing)
+    radiance = engine.calculate_radiance(atmosphere).radiance.values.ravel()
+
+    # Unguarded cubic weights gave -1.8e-5 at -12 deg, 10 km (+2.8e-5 with
+    # the guard).
+    assert np.all(np.isfinite(radiance))
+    assert np.all(radiance > 0.0)

@@ -536,7 +536,7 @@ namespace sasktran2::raytracing {
 
             double t0 = r0 * costheta0;
             double t1 = r1 * costheta1;
-            double rt = r0 * sqrt(1.0 - costheta0 * costheta0);
+            double rt = r0 * sqrt(std::max(0.0, 1.0 - costheta0 * costheta0));
 
             double dt1;
             double dt2;
@@ -552,7 +552,7 @@ namespace sasktran2::raytracing {
             } else {
                 dt1 = t0 - t1;
                 if (abs(rt) < 10) {
-                    dt2 = 0.5 * ((r0 + t0 - r1 * t1));
+                    dt2 = 0.5 * (r0 * t0 - r1 * t1);
                 } else {
                     dt2 = 0.5 * ((r0 * t0 - r1 * t1) +
                                  rt * rt * log((r0 + t0) / (r1 + t1)));

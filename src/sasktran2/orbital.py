@@ -141,6 +141,7 @@ def _structural_config_signature(config: sk.Config) -> tuple:
         "successive_orders_anderson_depth",
         "successive_orders_damping",
         "successive_orders_reduced_horizon_quadrature",
+        "successive_orders_legacy_interpolation",
         "successive_orders_altitude_grid_m",
         "successive_orders_horizontal_angle_grid_radians",
         "init_successive_orders_with_discrete_ordinates",

@@ -7,9 +7,10 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <unordered_set>
 #include <limits>
 #include <stdexcept>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace sasktran2::successive_orders {
@@ -164,31 +165,45 @@ namespace sasktran2::successive_orders {
         : m_geometry(&geometry), m_layout(make_layout(geometry)),
           m_angular_basis(make_basis(geometry, num_coefficients)) {
         if (geometry.settings().use_reduced_horizon_quadrature) {
+            const auto& first_point = geometry.source_point(0);
+            // Points of one angular class have grids related by one rigid
+            // rotation, which leaves the scalar operator unchanged.
+            std::unordered_map<int, std::shared_ptr<const ScalarAngularBasis>>
+                class_bases;
+            class_bases.emplace(first_point.angular_class(), m_angular_basis);
             m_point_angular_bases.reserve(geometry.num_interior_points());
-            m_point_angular_bases.push_back(m_angular_basis);
-            for (int point_index = 1;
+            for (int point_index = 0;
                  point_index < geometry.num_interior_points(); ++point_index) {
                 const auto& point = geometry.source_point(point_index);
-                const auto& first_point = geometry.source_point(0);
-                if (&point.outgoing_sphere() ==
-                    &first_point.outgoing_sphere()) {
-                    m_point_angular_bases.push_back(
-                        std::make_shared<const ScalarAngularBasis>(
-                            point.incoming_sphere(), *m_angular_basis));
-                } else {
-                    m_point_angular_bases.push_back(
-                        std::make_shared<const ScalarAngularBasis>(
+                auto found = class_bases.find(point.angular_class());
+                if (found == class_bases.end()) {
+                    std::shared_ptr<const ScalarAngularBasis> basis;
+                    if (&point.outgoing_sphere() ==
+                        &first_point.outgoing_sphere()) {
+                        basis = std::make_shared<const ScalarAngularBasis>(
+                            point.incoming_sphere(), *m_angular_basis);
+                    } else {
+                        basis = std::make_shared<const ScalarAngularBasis>(
                             point.incoming_sphere(), point.outgoing_sphere(),
-                            num_coefficients));
+                            num_coefficients);
+                    }
+                    found =
+                        class_bases
+                            .emplace(point.angular_class(), std::move(basis))
+                            .first;
                 }
+                m_point_angular_bases.push_back(found->second);
             }
             if (std::getenv("SASKTRAN2_PROFILE_MEMORY") != nullptr) {
                 std::size_t analysis_bytes = 0;
                 std::size_t logical_synthesis_bytes = 0;
                 std::size_t unique_synthesis_bytes = 0;
+                std::unordered_set<const ScalarAngularBasis*> analyses;
                 std::unordered_set<const void*> generations;
                 for (const auto& basis : m_point_angular_bases) {
-                    analysis_bytes += basis->analysis_storage_bytes();
+                    if (analyses.insert(basis.get()).second) {
+                        analysis_bytes += basis->analysis_storage_bytes();
+                    }
                     logical_synthesis_bytes += basis->synthesis_storage_bytes();
                     if (generations.insert(basis->synthesis_storage_id())
                             .second) {
@@ -625,17 +640,50 @@ namespace sasktran2::successive_orders {
             atmospheric_point.incoming_sphere(),
             atmospheric_point.outgoing_sphere(), num_coefficients);
 
-        if (geometry.settings().use_reduced_horizon_quadrature) {
+        bool shares_grids = true;
+        for (int point_index = 1; point_index < geometry.num_interior_points();
+             ++point_index) {
+            const auto& point = geometry.source_point(point_index);
+            if (&point.incoming_sphere() !=
+                    &atmospheric_point.incoming_sphere() ||
+                &point.outgoing_sphere() !=
+                    &atmospheric_point.outgoing_sphere()) {
+                shares_grids = false;
+                break;
+            }
+        }
+        // Reduced horizon keeps the legacy point-basis path (also for one
+        // interior point).
+        if (geometry.settings().use_reduced_horizon_quadrature ||
+            !shares_grids) {
+            // Q/U use global spin-harmonic frames, so points only share a
+            // basis when they share both sphere objects, and synthesis only
+            // when they share the outgoing sphere object.
             m_point_angular_bases.reserve(geometry.num_interior_points());
-            m_point_angular_bases.push_back(m_angular_basis);
-            for (int point_index = 1;
+            m_synthesis_group_offsets.assign(1, 0);
+            const sasktran2::math::UnitSphere* previous_incoming = nullptr;
+            const sasktran2::math::UnitSphere* previous_outgoing = nullptr;
+            std::shared_ptr<const VectorAngularBasis> basis;
+            for (int point_index = 0;
                  point_index < geometry.num_interior_points(); ++point_index) {
                 const auto& point = geometry.source_point(point_index);
-                m_point_angular_bases.push_back(
-                    std::make_shared<const VectorAngularBasis>(
+                if (point_index != 0 &&
+                    &point.outgoing_sphere() != previous_outgoing) {
+                    m_synthesis_group_offsets.push_back(point_index);
+                }
+                if (point_index == 0) {
+                    basis = m_angular_basis;
+                } else if (&point.incoming_sphere() != previous_incoming ||
+                           &point.outgoing_sphere() != previous_outgoing) {
+                    basis = std::make_shared<const VectorAngularBasis>(
                         point.incoming_sphere(), point.outgoing_sphere(),
-                        num_coefficients));
+                        num_coefficients);
+                }
+                m_point_angular_bases.push_back(basis);
+                previous_incoming = &point.incoming_sphere();
+                previous_outgoing = &point.outgoing_sphere();
             }
+            m_synthesis_group_offsets.push_back(geometry.num_interior_points());
         }
 
         for (int point_index = 0; point_index < geometry.num_interior_points();
@@ -698,7 +746,8 @@ namespace sasktran2::successive_orders {
 
     ScatteringOperator<3> VectorScatteringAssembler::create_operator() const {
         if (!m_point_angular_bases.empty()) {
-            return ScatteringOperator<3>(m_layout, m_point_angular_bases, true);
+            return ScatteringOperator<3>(m_layout, m_point_angular_bases,
+                                         m_synthesis_group_offsets);
         }
         return ScatteringOperator<3>(m_layout, m_angular_basis);
     }
@@ -1014,8 +1063,11 @@ namespace sasktran2::successive_orders {
         std::size_t angular_bytes = m_angular_basis->storage_bytes();
         if (!m_point_angular_bases.empty()) {
             angular_bytes = 0;
+            std::unordered_set<const VectorAngularBasis*> bases;
             for (const auto& basis : m_point_angular_bases) {
-                angular_bytes += basis->storage_bytes();
+                if (bases.insert(basis.get()).second) {
+                    angular_bytes += basis->storage_bytes();
+                }
             }
         }
         std::size_t result =

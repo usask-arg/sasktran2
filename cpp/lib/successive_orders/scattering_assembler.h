@@ -166,6 +166,7 @@ namespace sasktran2::successive_orders {
         std::shared_ptr<const VectorAngularBasis> m_angular_basis;
         std::vector<std::shared_ptr<const VectorAngularBasis>>
             m_point_angular_bases;
+        std::vector<int> m_synthesis_group_offsets;
         std::vector<int> m_ground_value_offsets;
         std::vector<GroundAngularGeometry> m_ground_geometry;
     };
