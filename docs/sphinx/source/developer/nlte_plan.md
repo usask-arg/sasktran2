@@ -479,6 +479,28 @@ GRANADA's $r$ is relative to LTE populations normalised over only the modelled s
   - The second row is the cost of TUV's resolution and parameterisations. For O3 → O(³P), the cause is entirely the grid ending at 735 nm: 1.2–2.8% of the line-resolved rate comes from longer wavelengths. For O2, it is Koppers & Murtagh against the resolved bands, plus bin-averaged continuum cross sections where the continuum is optically thick.
 - **Bug found along the way.** MUSICA arrays are views into memory owned by their map objects. The comparison scripts now keep the maps alive and copy, which explains the earlier "garbage" `wavelength_grid()` edges.
 
+**Phase 4, first step: `sk.nlte.add_photochemical_species`.**
+
+- **Interface.** `add_photochemical_species(atmosphere, ["O2(b)"], cos_sza=..., background=...)` takes an `sk.Atmosphere` that already has its state and absorbers. It then:
+  - runs `ActinicFlux` and the oxygen rate presets;
+  - solves the bundled mechanism;
+  - adds a `PopulationEmissionRate` constituent (`"O2(b) emission"`: the A band with its 1-1 hot band, and the B band);
+  - returns the solution and rates for inspection.
+
+  Inputs come from `background`, then from the atmosphere's `VMRAltitudeAbsorber` constituents, then constant N2 and CO2 mixing ratios. Atomic oxygen must be in `background`.
+- **Engine setting.** Emission needs `config.emission_source = sk.EmissionSource.VolumeEmissionRate`; the function warns otherwise.
+- **Not yet available.** `O2(a)` (no a-X band emission yet) and `O(1S)` (the mechanism has no source) raise `NotImplementedError`. The γ band (2-0) is not in `PopulationEmissionRate` yet.
+- **Checks.**
+  - Optically thin limb radiance equals ∫VER ds/4π to 0.01%.
+  - A daytime ERS limb case (april+00, 755–775 nm at 0.001 nm) takes 10 s for the photochemistry. The A band is 7× the in-band Rayleigh radiance at a 60 km tangent and 290× at 90 km.
+- **Against GRANADA** (`tools/nlte/validate_oxygen_ers.py`, april+00). The O2 conversion assumes electronic degeneracies in GRANADA's LTE weights; the level file that would confirm this is not in the archive.
+
+  | Altitude | O(¹D) | O2(a) | O2(b) |
+  |---|---|---|---|
+  | 40–110 km | 0.83–1.06 | 0.60–0.93 | 3.4–4.7× too high at 40–70 km; 1.0–1.5 at 90–110 km |
+
+  O(¹D) agreeing confirms the photolysis source. The O2(b) excess comes from a missing reaction: the bundled mechanism, like the legacy photchem model it was translated from, has no O2(b, v=0) + N2 quenching. Adding it (JPL 19-5, 1.8e-15 exp(45/T) cm³ s⁻¹) gives O2(b) 0.52–0.58× GRANADA at 40–80 km and 0.75–1.06× above, and O2(a) 0.88–0.96×. The fix changes the legacy goldens, so it waits for a decision.
+
 **Phase 3, remaining:**
 
 - O2 cross sections for 121.9–130 nm (between Lyman-α and `O2UV`).

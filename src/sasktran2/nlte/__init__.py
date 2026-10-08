@@ -18,7 +18,13 @@ import xarray as xr
 
 from sasktran2._core_rust import PyMechanism
 
-__all__ = ["Mechanism", "budget", "solve"]
+__all__ = [
+    "PHOTOCHEMICAL_SPECIES",
+    "Mechanism",
+    "add_photochemical_species",
+    "budget",
+    "solve",
+]
 
 
 class Mechanism:
@@ -214,3 +220,10 @@ def budget(mechanism: Mechanism, solution: xr.Dataset, state: str) -> xr.DataArr
     contributions.attrs["units"] = "m^-3 s^-1"
     contributions.name = f"budget {state}"
     return contributions
+
+
+# Uses Mechanism and solve above.
+from .photochemistry import (  # noqa: E402
+    PHOTOCHEMICAL_SPECIES,
+    add_photochemical_species,
+)
