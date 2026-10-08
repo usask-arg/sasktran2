@@ -10,7 +10,11 @@ pub const MCDADE_OXYGEN_GREEN_LINE_C2: f64 = 15.0;
 pub const O2_A_BAND_CENTER_WAVELENGTH_NM: f64 = 762.0;
 pub const O2_A_BAND_TOTAL_EINSTEIN_A_S: f64 = 7.58e-2;
 pub const O2_B0_X0_EINSTEIN_A_S: f64 = 7.58e-2;
-pub const O2_B1_X0_EINSTEIN_A_S: f64 = 7.0e-2;
+/// O2 b-X(1,0), the B band: the 16O2 HITRAN2020 lines from each upper level,
+/// summed and averaged at 220 K. Measured: 7.2e-3 s^-1 (Yankovsky and
+/// Vorobeva 2020, Table 3). About 0.08 of the 0-0 band, as the Franck-Condon
+/// factors require.
+pub const O2_B1_X0_EINSTEIN_A_S: f64 = 7.34e-3;
 pub const O2_B1_X1_EINSTEIN_A_S: f64 = 7.0e-2;
 pub const O2_B2_X2_EINSTEIN_A_S: f64 = 5.4e-2;
 pub const O2_A_BAND_MIN_WAVELENGTH_NM: f64 = 759.0;

@@ -91,7 +91,7 @@ Rules that apply to every entry:
 
 ## Reactions
 
-**Products.** Give exactly one of:
+**Products.** Reactions and photolysis entries give exactly one of:
 - `products`, a single channel with yield 1; or
 - `channels`, a list of branches sharing one total rate:
 

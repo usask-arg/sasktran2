@@ -9,14 +9,17 @@ mod template;
 
 use crate::prelude::*;
 use crate::rates::{RateLaw, order_and_si_factor};
-use file::{MechanismFile, RateEntry};
+use file::{ChannelEntry, MechanismFile, RateEntry};
 use std::collections::{BTreeMap, HashSet};
 use template::{canonical_species, levels, substitute};
 
-const BUNDLED: &[(&str, &str)] = &[(
-    "oxygen_yankovsky",
-    include_str!("../../mechanisms/oxygen_yankovsky.toml"),
-)];
+const BUNDLED: &[(&str, &str)] = &[
+    ("oxygen", include_str!("../../mechanisms/oxygen.toml")),
+    (
+        "oxygen_yankovsky",
+        include_str!("../../mechanisms/oxygen_yankovsky.toml"),
+    ),
+];
 
 /// A participant in a process: either an unknown state population or a
 /// background number density supplied as input.
@@ -207,27 +210,7 @@ impl Builder {
             for v in levels(&entry.id, entry.for_v)? {
                 let id = substitute(&entry.id, v)?;
                 let reactants = self.resolve_all(&entry.reactants, v, &id)?;
-                let channels = match (&entry.products, &entry.channels) {
-                    (Some(products), None) => vec![Channel {
-                        fraction: 1.0,
-                        products: self.resolve_all(products, v, &id)?,
-                    }],
-                    (None, Some(channels)) => channels
-                        .iter()
-                        .map(|channel| {
-                            Ok(Channel {
-                                fraction: channel.fraction,
-                                products: self.resolve_all(&channel.products, v, &id)?,
-                            })
-                        })
-                        .collect::<Result<Vec<_>>>()?,
-                    _ => {
-                        return Err(anyhow!(
-                            "Reaction '{id}' needs exactly one of 'products' or 'channels'"
-                        ));
-                    }
-                };
-                validate_channels(&id, &channels)?;
+                let channels = self.channels(&entry.products, &entry.channels, v, &id)?;
                 let rate = rate_law(&id, &entry.rate, v, reactants.len())?;
                 self.push(
                     Process {
@@ -248,7 +231,7 @@ impl Builder {
             for v in levels(&entry.id, entry.for_v)? {
                 let id = substitute(&entry.id, v)?;
                 let reactant = self.resolve(&entry.reactant, v, &id)?;
-                let products = self.resolve_all(&entry.products, v, &id)?;
+                let channels = self.channels(&entry.products, &entry.channels, v, &id)?;
                 let input = self.rate_input(&substitute(&entry.rate_input, v)?, &id)?;
                 self.push(
                     Process {
@@ -257,10 +240,7 @@ impl Builder {
                         reference: entry.reference.clone(),
                         coefficient: Coefficient::Input(input),
                         reactants: vec![reactant],
-                        channels: vec![Channel {
-                            fraction: 1.0,
-                            products,
-                        }],
+                        channels,
                         wavelength_nm: None,
                     },
                     &entry.reference,
@@ -335,6 +315,39 @@ impl Builder {
             .collect()
     }
 
+    /// The product channels of a reaction or photolysis entry, given either
+    /// `products` (one channel with unit yield) or `channels`.
+    fn channels(
+        &self,
+        products: &Option<Vec<String>>,
+        channels: &Option<Vec<ChannelEntry>>,
+        v: Option<u32>,
+        process: &str,
+    ) -> Result<Vec<Channel>> {
+        let channels = match (products, channels) {
+            (Some(products), None) => vec![Channel {
+                fraction: 1.0,
+                products: self.resolve_all(products, v, process)?,
+            }],
+            (None, Some(channels)) => channels
+                .iter()
+                .map(|channel| {
+                    Ok(Channel {
+                        fraction: channel.fraction,
+                        products: self.resolve_all(&channel.products, v, process)?,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?,
+            _ => {
+                return Err(anyhow!(
+                    "'{process}' needs exactly one of 'products' or 'channels'"
+                ));
+            }
+        };
+        validate_channels(process, &channels)?;
+        Ok(channels)
+    }
+
     fn rate_input(&mut self, name: &str, process: &str) -> Result<usize> {
         if name.trim().is_empty() {
             return Err(anyhow!("'{process}' has an empty rate_input"));
@@ -375,13 +388,13 @@ impl Builder {
 
 fn validate_channels(id: &str, channels: &[Channel]) -> Result<()> {
     if channels.is_empty() {
-        return Err(anyhow!("Reaction '{id}' has no channels"));
+        return Err(anyhow!("'{id}' has no channels"));
     }
     let mut total = 0.0;
     for channel in channels {
         if !(channel.fraction.is_finite() && (0.0..=1.0).contains(&channel.fraction)) {
             return Err(anyhow!(
-                "Reaction '{id}': channel yields must be between 0 and 1, got {}",
+                "'{id}': channel yields must be between 0 and 1, got {}",
                 channel.fraction
             ));
         }
@@ -389,7 +402,7 @@ fn validate_channels(id: &str, channels: &[Channel]) -> Result<()> {
     }
     if total > 1.0 + 1e-9 {
         return Err(anyhow!(
-            "Reaction '{id}': channel yields sum to {total}, more than 1"
+            "'{id}': channel yields sum to {total}, more than 1"
         ));
     }
     Ok(())
@@ -537,6 +550,38 @@ reference = "ref"
             Coefficient::Rate(RateLaw::constant(2.0 * 0.5_f64.exp()))
         );
         assert_eq!(quench.channels[0].products[0], Species::State(1));
+    }
+
+    #[test]
+    fn photolysis_can_branch_into_channels() {
+        let mechanism = with(
+            r#"products = ["O(3P)", "O(1D)"]
+rate_input = "J_O2_SRC""#,
+            r#"channels = [
+  { yield = 0.7, products = ["O(3P)", "O(1D)"] },
+  { yield = 0.3, products = ["O(3P)", "O(3P)"] },
+]
+rate_input = "J_O2_SRC""#,
+        )
+        .unwrap();
+        let photolysis = &mechanism.processes()[2];
+        assert_eq!(photolysis.kind, ProcessKind::Photolysis);
+        let fractions: Vec<f64> = photolysis.channels.iter().map(|c| c.fraction).collect();
+        assert_eq!(fractions, [0.7, 0.3]);
+        assert_eq!(photolysis.channels[0].products[1], Species::State(0));
+    }
+
+    #[test]
+    fn photolysis_needs_products_or_channels() {
+        let err = error_with(r#"products = ["O(3P)", "O(1D)"]
+rate_input"#, "rate_input");
+        assert!(err.contains("exactly one of 'products' or 'channels'"));
+        let err = error_with(
+            r#"rate_input = "J_O2_SRC""#,
+            r#"rate_input = "J_O2_SRC"
+channels = [{ yield = 1.0, products = ["O(1D)"] }]"#,
+        );
+        assert!(err.contains("exactly one of 'products' or 'channels'"));
     }
 
     #[test]

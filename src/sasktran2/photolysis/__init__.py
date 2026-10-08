@@ -8,9 +8,12 @@ sections and quantum yields against the result. The atmosphere is an
 convention :func:`sasktran2.nlte.solve` uses, so one dataset drives both::
 
     flux = sk.photolysis.ActinicFlux(altitudes_m).calculate(atmosphere, cos_sza=0.5)
-    rates = sk.photolysis.presets.oxygen_yankovsky_rates(flux)
-    mechanism = sk.nlte.Mechanism.bundled("oxygen_yankovsky")
+    rates = sk.photolysis.photolysis_rates(flux, sk.photolysis.presets.oxygen_photolysis())
+    mechanism = sk.nlte.Mechanism.bundled("oxygen")
     solution = sk.nlte.solve(mechanism, atmosphere, rates)
+
+:func:`sasktran2.nlte.add_photochemical_species` does all of this for a
+radiative-transfer atmosphere and adds the emission.
 """
 
 from __future__ import annotations

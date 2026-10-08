@@ -1,0 +1,477 @@
+# Daytime O(1D), O2(b, v=0-2) and O2(a, v=0-5) from O3 and O2 photolysis and
+# resonant absorption, for the UV-visible and near-infrared O2 dayglow.
+#
+# Audited process by process against the newest Yankovsky model database
+# (status March 2019, the supplement of Yankovsky et al. 2019), JPL 19-5 and
+# HITRAN; the audit is in docs/sphinx/source/developer/nlte_oxygen_audit.md.
+# Where the two evaluations differ, JPL is used for the rate and the Yankovsky
+# database for the products.
+#
+# Inputs are physical rates from sasktran2.photolysis
+# (presets.oxygen_photolysis): J_O3_O1D, J_O2_SRC, J_O2_LYA (O(1D) channel)
+# and the resonant excitation rates J_O2_EXC_*. Product distributions are
+# yields here.
+#
+# Not modelled:
+#   * O2(X, v): vibrationally excited ground-state products go to O2. They do
+#     not feed O2(a) or O2(b).
+#   * O(1S): no daytime source has been reviewed yet.
+#   * Reverse (endothermic) energy transfer, negligible for these states at
+#     mesospheric temperatures.
+#   * Quenching by H2O, about 2% of O2(b, v=0) loss at 6 ppmv.
+#
+# Band Einstein coefficients of b-X are from the HITRAN line list: Einstein A
+# summed over the lines from each upper level, averaged over a thermal
+# rotational distribution (it varies by < 0.1% over 180-260 K for 0-0).
+
+[mechanism]
+name = "oxygen"
+version = "0.1.0"
+description = "Daytime O(1D), O2(a, v) and O2(b, v) from O3 and O2 photolysis and resonant absorption"
+background = ["O2", "O3", "N2", "CO2", "O(3P)"]
+
+[references]
+jpl19 = """\
+Burkholder, J. B., et al. (2019), Chemical Kinetics and Photochemical Data for \
+Use in Atmospheric Studies, Evaluation No. 19, JPL Publication 19-5. Unchanged \
+for these entries in Evaluation No. 20 (JPL Publication 25-1, 2025)."""
+ym2019 = """\
+Yankovsky, V. A., E. V. Vorobeva and R. O. Manuilova (2019), New techniques for \
+retrieving the [O(3P)], [O3] and [CO2] altitude profiles from dayglow oxygen \
+emissions, Adv. Space Res. 64, 1948-1967, doi:10.1016/j.asr.2019.07.020; \
+supplementary Tables S1 (rate coefficients) and S2 (product yields), status \
+March 2019. Original measurements as cited there."""
+yv2020 = """\
+Yankovsky, V. A. and E. V. Vorobeva (2020), Model of daytime oxygen emissions in \
+the mesopause region and above: a review and new results, Atmosphere 11, 116, \
+doi:10.3390/atmos11010116."""
+ym2006 = """\
+Yankovsky, V. A. and R. O. Manuilova (2006), Model of daytime emissions of \
+electronically-vibrationally excited products of O3 and O2 photolysis: \
+application to ozone retrieval, Ann. Geophys. 24, 2823-2839, \
+doi:10.5194/angeo-24-2823-2006."""
+hitran = """\
+Gordon, I. E., et al. (2022), The HITRAN2020 molecular spectroscopic database, \
+J. Quant. Spectrosc. Radiat. Transfer 277, 107949. Band Einstein A of 16O2 \
+b-X, summed over lines from each upper level and averaged at 220 K."""
+nist = """\
+Kramida, A., Yu. Ralchenko, J. Reader and NIST ASD Team, NIST Atomic Spectra \
+Database (version 5.11), O I 2p4 1D2 - 3P2,1 transitions."""
+photolysis = """\
+Computed by sasktran2.photolysis from the actinic flux, O2 and O3 cross \
+sections and quantum yields; see presets.oxygen_photolysis."""
+
+
+[[state]]
+id = "O(1D)"
+
+[[state]]
+id = "O2(b, v={v})"
+for_v = [0, 2]
+
+[[state]]
+id = "O2(a, v={v})"
+for_v = [0, 5]
+
+
+# --- Photolysis and resonant absorption -------------------------------------
+
+# Every O(1D) from O3 comes with O2(a) (spin conservation). Fractions of
+# O2(a, v) at 254 nm, near the Hartley-band peak, from yv2020 Eqs. 3-4 and
+# Table 1 with the tabulated x at threshold.
+[[photo_reaction]]
+id = "o3_o1d"
+reactant = "O3"
+rate_input = "J_O3_O1D"
+channels = [
+  { yield = 0.362, products = ["O(1D)", "O2(a, v=0)"] },
+  { yield = 0.276, products = ["O(1D)", "O2(a, v=1)"] },
+  { yield = 0.115, products = ["O(1D)", "O2(a, v=2)"] },
+  { yield = 0.075, products = ["O(1D)", "O2(a, v=3)"] },
+  { yield = 0.076, products = ["O(1D)", "O2(a, v=4)"] },
+  { yield = 0.095, products = ["O(1D)", "O2(a, v=5)"] },
+]
+reference = "yv2020"
+
+# Schumann-Runge continuum, O(1D) yield 1 over 139-175 nm.
+[[photo_reaction]]
+id = "o2_src"
+reactant = "O2"
+products = ["O(3P)", "O(1D)"]
+rate_input = "J_O2_SRC"
+reference = "jpl19"
+
+# Lyman-alpha; J_O2_LYA already holds the O(1D) yield.
+[[photo_reaction]]
+id = "o2_lyman_alpha"
+reactant = "O2"
+products = ["O(3P)", "O(1D)"]
+rate_input = "J_O2_LYA"
+reference = "jpl19"
+
+[[photo_reaction]]
+id = "o2_excitation_b0"
+reactant = "O2"
+products = ["O2(b, v=0)"]
+rate_input = "J_O2_EXC_B0"
+reference = "photolysis"
+
+[[photo_reaction]]
+id = "o2_excitation_b1"
+reactant = "O2"
+products = ["O2(b, v=1)"]
+rate_input = "J_O2_EXC_B1"
+reference = "photolysis"
+
+[[photo_reaction]]
+id = "o2_excitation_b2"
+reactant = "O2"
+products = ["O2(b, v=2)"]
+rate_input = "J_O2_EXC_B2"
+reference = "photolysis"
+
+[[photo_reaction]]
+id = "o2_excitation_a0"
+reactant = "O2"
+products = ["O2(a, v=0)"]
+rate_input = "J_O2_EXC_A0"
+reference = "photolysis"
+
+
+# --- O(1D) -------------------------------------------------------------------
+
+# Total O2(b) yield 1.0 with 4:1 v=1:v=0 (Pejakovic et al. 2014, via ym2019);
+# JPL 19-5 recommends a total of 0.8 +- 0.2.
+[[reaction]]
+id = "o1d_o2"
+reactants = ["O(1D)", "O2"]
+rate = { law = "arrhenius", a = 3.3e-11, ea_over_r = -55.0, units = "cm3 s-1" }
+channels = [
+  { yield = 0.8, products = ["O2(b, v=1)", "O(3P)"] },
+  { yield = 0.2, products = ["O2(b, v=0)", "O(3P)"] },
+]
+reference = "jpl19"
+
+[[reaction]]
+id = "o1d_n2"
+reactants = ["O(1D)", "N2"]
+products = ["O(3P)", "N2"]
+rate = { law = "arrhenius", a = 2.15e-11, ea_over_r = -110.0, units = "cm3 s-1" }
+reference = "jpl19"
+
+[[reaction]]
+id = "o1d_o3"
+reactants = ["O(1D)", "O3"]
+channels = [
+  { yield = 0.5, products = ["O2", "O2"] },
+  { yield = 0.5, products = ["O2", "O(3P)", "O(3P)"] },
+]
+rate = { law = "constant", value = 2.4e-10, units = "cm3 s-1" }
+reference = "jpl19"
+
+[[reaction]]
+id = "o1d_co2"
+reactants = ["O(1D)", "CO2"]
+products = ["O(3P)", "CO2"]
+rate = { law = "arrhenius", a = 7.5e-11, ea_over_r = -115.0, units = "cm3 s-1" }
+reference = "jpl19"
+
+# Kalogerakis et al. (2009), via ym2019.
+[[reaction]]
+id = "o1d_o"
+reactants = ["O(1D)", "O(3P)"]
+products = ["O(3P)", "O(3P)"]
+rate = { law = "constant", value = 2.2e-11, units = "cm3 s-1" }
+reference = "ym2019"
+
+[[transition]]
+id = "o1d_630"
+upper = "O(1D)"
+lower = "O(3P)"
+einstein_a_s = 5.63e-3
+wavelength_nm = 630.0
+reference = "nist"
+
+[[transition]]
+id = "o1d_636"
+upper = "O(1D)"
+lower = "O(3P)"
+einstein_a_s = 1.82e-3
+wavelength_nm = 636.4
+reference = "nist"
+
+
+# --- O2(b, v=2) --------------------------------------------------------------
+
+# gamma band, 628 nm.
+[[transition]]
+id = "o2b2_gamma_band"
+upper = "O2(b, v=2)"
+lower = "O2"
+einstein_a_s = 2.56e-4
+wavelength_nm = 628.0
+reference = "hitran"
+
+[[transition]]
+id = "o2b2_x1"
+upper = "O2(b, v=2)"
+lower = "O2"
+einstein_a_s = 9.7e-3
+wavelength_nm = 699.0
+reference = "hitran"
+
+# The rest of the radiative decay, mostly 2-2, from the 11.75 s lifetime of
+# yv2020 Fig. 7 less the two bands above.
+[[transition]]
+id = "o2b2_x2"
+upper = "O2(b, v=2)"
+lower = "O2"
+einstein_a_s = 7.5e-2
+reference = "yv2020"
+
+[[reaction]]
+id = "o2b2_o"
+reactants = ["O2(b, v=2)", "O(3P)"]
+channels = [
+  { yield = 0.5, products = ["O2(b, v=1)", "O(3P)"] },
+  { yield = 0.5, products = ["O2(b, v=0)", "O(3P)"] },
+]
+rate = { law = "constant", value = 1.07e-11, units = "cm3 s-1" }
+reference = "ym2019"
+
+# Energy exchange to O2(b, v=0) + O2(X, v=2) (Hwang et al. 1999, via ym2019).
+[[reaction]]
+id = "o2b2_o2"
+reactants = ["O2(b, v=2)", "O2"]
+products = ["O2(b, v=0)", "O2"]
+rate = { law = "arrhenius", a = 2.3e-11, ea_over_r = 691.0, units = "cm3 s-1" }
+reference = "ym2019"
+
+[[reaction]]
+id = "o2b2_o3"
+reactants = ["O2(b, v=2)", "O3"]
+products = ["O2", "O2", "O(3P)"]
+rate = { law = "constant", value = 2.9e-10, units = "cm3 s-1" }
+reference = "ym2019"
+
+# Hwang et al. (1999) at 110 K, via ym2019; < 9e-13 at room temperature.
+[[reaction]]
+id = "o2b2_n2"
+reactants = ["O2(b, v=2)", "N2"]
+products = ["O2(b, v=0)", "N2"]
+rate = { law = "constant", value = 8.0e-15, units = "cm3 s-1" }
+reference = "ym2019"
+
+[[reaction]]
+id = "o2b2_co2"
+reactants = ["O2(b, v=2)", "CO2"]
+products = ["O2(b, v=1)", "CO2"]
+rate = { law = "arrhenius", a = 3.0e-12, ea_over_r = 158.0, units = "cm3 s-1" }
+reference = "ym2019"
+
+
+# --- O2(b, v=1) --------------------------------------------------------------
+
+# B band, 688 nm.
+[[transition]]
+id = "o2b1_b_band"
+upper = "O2(b, v=1)"
+lower = "O2"
+einstein_a_s = 7.34e-3
+wavelength_nm = 688.0
+reference = "hitran"
+
+# 1-1 band, in the A-band region.
+[[transition]]
+id = "o2b1_x1"
+upper = "O2(b, v=1)"
+lower = "O2"
+einstein_a_s = 6.99e-2
+wavelength_nm = 771.0
+reference = "hitran"
+
+# To O2 + O(3P), not to O2(b, v=0) (Pejakovic et al. 2014, via ym2019).
+[[reaction]]
+id = "o2b1_o"
+reactants = ["O2(b, v=1)", "O(3P)"]
+products = ["O2", "O(3P)"]
+rate = { law = "constant", value = 4.5e-12, units = "cm3 s-1" }
+reference = "ym2019"
+
+# Energy exchange to O2(b, v=0) + O2(X, v=1) (Hwang et al. 1999, via ym2019).
+[[reaction]]
+id = "o2b1_o2"
+reactants = ["O2(b, v=1)", "O2"]
+products = ["O2(b, v=0)", "O2"]
+rate = { law = "arrhenius", a = 4.2e-11, ea_over_r = 312.0, units = "cm3 s-1" }
+reference = "ym2019"
+
+# Upper limit, used as the value (ym2006, kept in ym2019).
+[[reaction]]
+id = "o2b1_o3"
+reactants = ["O2(b, v=1)", "O3"]
+products = ["O2", "O2", "O(3P)"]
+rate = { law = "constant", value = 3.0e-10, units = "cm3 s-1" }
+reference = "ym2019"
+
+# Upper limit (Hwang et al. 1999, via ym2019).
+[[reaction]]
+id = "o2b1_n2"
+reactants = ["O2(b, v=1)", "N2"]
+products = ["O2(b, v=0)", "N2"]
+rate = { law = "constant", value = 7.0e-13, units = "cm3 s-1" }
+reference = "ym2019"
+
+# Hwang et al. (1999) at 220 K, via ym2019.
+[[reaction]]
+id = "o2b1_co2"
+reactants = ["O2(b, v=1)", "CO2"]
+products = ["O2(b, v=0)", "CO2"]
+rate = { law = "constant", value = 9.0e-13, units = "cm3 s-1" }
+reference = "ym2019"
+
+
+# --- O2(b, v=0) --------------------------------------------------------------
+
+# A band, 762 nm.
+[[transition]]
+id = "o2b0_a_band"
+upper = "O2(b, v=0)"
+lower = "O2"
+einstein_a_s = 8.75e-2
+wavelength_nm = 762.0
+reference = "hitran"
+
+# 0-1 band, 864 nm.
+[[transition]]
+id = "o2b0_x1"
+upper = "O2(b, v=0)"
+lower = "O2"
+einstein_a_s = 4.67e-3
+wavelength_nm = 864.0
+reference = "yv2020"
+
+# Noxon b-a band, 1.91 um.
+[[transition]]
+id = "o2b0_noxon"
+upper = "O2(b, v=0)"
+lower = "O2(a, v=0)"
+einstein_a_s = 1.2e-3
+wavelength_nm = 1908.0
+reference = "yv2020"
+
+# The main O2(b, v=0) loss below about 90 km. JPL rate; products from ym2019
+# (O2(a, v=2) + N2(v=1), or O2(X, v=9) + N2).
+[[reaction]]
+id = "o2b0_n2"
+reactants = ["O2(b, v=0)", "N2"]
+channels = [
+  { yield = 0.5, products = ["O2(a, v=2)", "N2"] },
+  { yield = 0.5, products = ["O2", "N2"] },
+]
+rate = { law = "arrhenius", a = 1.8e-15, ea_over_r = -45.0, units = "cm3 s-1" }
+reference = "jpl19"
+
+# Products as O2(a, v) + O2(X, v) (Klingshirn and Maier 1985, via ym2019).
+[[reaction]]
+id = "o2b0_o2"
+reactants = ["O2(b, v=0)", "O2"]
+channels = [
+  { yield = 0.230, products = ["O2(a, v=0)", "O2"] },
+  { yield = 0.525, products = ["O2(a, v=1)", "O2"] },
+  { yield = 0.226, products = ["O2(a, v=2)", "O2"] },
+  { yield = 0.019, products = ["O2(a, v=3)", "O2"] },
+]
+rate = { law = "constant", value = 3.9e-17, units = "cm3 s-1" }
+reference = "jpl19"
+
+# O2(a) yield at least 0.9; taken as 1.
+[[reaction]]
+id = "o2b0_co2"
+reactants = ["O2(b, v=0)", "CO2"]
+products = ["O2(a, v=0)", "CO2"]
+rate = { law = "constant", value = 4.2e-13, units = "cm3 s-1" }
+reference = "jpl19"
+
+# 70% reaction to 2 O2 + O(3P), 30% quenching (to O2(a) per ym2019).
+[[reaction]]
+id = "o2b0_o3"
+reactants = ["O2(b, v=0)", "O3"]
+channels = [
+  { yield = 0.7, products = ["O2", "O2", "O(3P)"] },
+  { yield = 0.3, products = ["O2(a, v=0)", "O3"] },
+]
+rate = { law = "arrhenius", a = 3.5e-11, ea_over_r = 135.0, units = "cm3 s-1" }
+reference = "jpl19"
+
+# Rate from JPL (uncertain by a factor of 5); 75% to O2(a) (Hadj-Ziane et
+# al. 1992, via ym2019).
+[[reaction]]
+id = "o2b0_o"
+reactants = ["O2(b, v=0)", "O(3P)"]
+channels = [
+  { yield = 0.75, products = ["O2(a, v=0)", "O(3P)"] },
+  { yield = 0.25, products = ["O2", "O(3P)"] },
+]
+rate = { law = "constant", value = 8.0e-14, units = "cm3 s-1" }
+reference = "jpl19"
+
+
+# --- O2(a, v) ----------------------------------------------------------------
+
+# 1.27 um band (yv2020 Table 3).
+[[transition]]
+id = "o2a0_ir_atmospheric"
+upper = "O2(a, v=0)"
+lower = "O2"
+einstein_a_s = 2.26e-4
+wavelength_nm = 1270.0
+reference = "yv2020"
+
+[[reaction]]
+id = "o2a0_o2"
+reactants = ["O2(a, v=0)", "O2"]
+products = ["O2", "O2"]
+rate = { law = "arrhenius", a = 3.6e-18, ea_over_r = 220.0, units = "cm3 s-1" }
+reference = "jpl19"
+
+[[reaction]]
+id = "o2a0_o3"
+reactants = ["O2(a, v=0)", "O3"]
+products = ["O2", "O2", "O(3P)"]
+rate = { law = "arrhenius", a = 5.2e-11, ea_over_r = 2840.0, units = "cm3 s-1" }
+reference = "jpl19"
+
+# Yankovsky et al. (2016), via ym2019 (uncertain by a factor of 3); JPL gives
+# an upper limit of 2e-16.
+[[reaction]]
+id = "o2a0_o"
+reactants = ["O2(a, v=0)", "O(3P)"]
+products = ["O2", "O(3P)"]
+rate = { law = "constant", value = 1.0e-16, units = "cm3 s-1" }
+reference = "ym2019"
+
+# Energy exchange O2(a, v) + O2 -> O2(a, v=0) + O2(X, v) (Pejakovic et al.
+# 2011 for v=1, 2; ym2006 for v=3-5; via ym2019).
+[[reaction]]
+id = "o2a1_o2"
+reactants = ["O2(a, v=1)", "O2"]
+products = ["O2(a, v=0)", "O2"]
+rate = { law = "constant", value = 5.6e-11, units = "cm3 s-1" }
+reference = "ym2019"
+
+[[reaction]]
+id = "o2a{v}_o2"
+for_v = [2, 5]
+reactants = ["O2(a, v={v})", "O2"]
+products = ["O2(a, v=0)", "O2"]
+rate = { law = "constant", value = 3.6e-11, units = "cm3 s-1" }
+reference = "ym2019"
+
+# Klais et al. (1980), via ym2019.
+[[reaction]]
+id = "o2a1_o3"
+reactants = ["O2(a, v=1)", "O3"]
+products = ["O2", "O2", "O(3P)"]
+rate = { law = "constant", value = 4.7e-12, units = "cm3 s-1" }
+reference = "ym2019"

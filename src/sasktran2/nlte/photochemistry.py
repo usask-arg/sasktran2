@@ -34,34 +34,62 @@ PHOTOLYSIS_ABSORBERS = ("O2", "O3", "NO2")
 @dataclass(frozen=True)
 class _Emitter:
     mechanism: str
-    states: tuple[str, ...]
-    constituent: Callable[[xr.Dataset], object]
+    #: Band constituent factory by mechanism transition id.
+    bands: dict[str, Callable[[np.ndarray, np.ndarray], object]]
     description: str
 
 
-def _o2_b_emission(populations: xr.Dataset):
-    return sk.constituent.PopulationEmissionRate(populations)
+class _Combined(sk.constituent.base.Constituent):
+    """Several emission constituents added as one."""
+
+    def __init__(self, parts: dict[str, object]):
+        self.parts = parts
+
+    def add_to_atmosphere(self, atmo):
+        for part in self.parts.values():
+            part.add_to_atmosphere(atmo)
+
+    def register_derivative(self, atmo, name: str):
+        for key, part in self.parts.items():
+            part.register_derivative(atmo, f"{name}_{key}")
+
+
+def _o2_band(band: str):
+    def make(altitude_m, photon_ver):
+        return sk.constituent.O2BandEmissionRate(altitude_m, photon_ver, band=band)
+
+    return make
 
 
 #: Emitters :func:`add_photochemical_species` can add, by state id.
 PHOTOCHEMICAL_SPECIES = {
     "O2(b)": _Emitter(
-        mechanism="oxygen_yankovsky",
-        states=("O2(b)", "O2(b, v=1)", "O2(b, v=2)"),
-        constituent=_o2_b_emission,
+        mechanism="oxygen",
+        bands={
+            "o2b0_a_band": _o2_band("0-0"),
+            "o2b1_x1": _o2_band("1-1"),
+            "o2b1_b_band": _o2_band("1-0"),
+        },
         description=(
-            "O2 b-X emission from O2(b, v=0-2): the A band (762 nm) with its "
-            "1-1 hot band, and the B band (688 nm)"
+            "O2 b-X emission: the A band (0-0, 762 nm) with the 1-1 hot band, "
+            "and the B band (1-0, 688 nm)"
         ),
     ),
 }
 
 _NOT_YET_AVAILABLE = {
     "O2(a)": "the O2 a-X (1.27 um) band emission is not implemented yet",
-    "O(1S)": "the bundled oxygen mechanism has no O(1S) production yet",
+    "O(1S)": "the oxygen mechanism has no O(1S) source yet",
 }
 
-_RATE_FUNCTIONS = {"oxygen_yankovsky": "oxygen_yankovsky_rates"}
+
+def _oxygen_rates(flux: xr.Dataset) -> xr.Dataset:
+    from sasktran2 import photolysis
+
+    return photolysis.photolysis_rates(flux, photolysis.presets.oxygen_photolysis())
+
+
+_RATE_FUNCTIONS = {"oxygen": _oxygen_rates}
 
 
 def _canonical(name: str) -> str:
@@ -261,7 +289,7 @@ def add_photochemical_species(
             albedo=albedo,
             earth_sun_distance_au=earth_sun_distance_au,
         )
-        rates = getattr(photolysis.presets, _RATE_FUNCTIONS[mechanism_name])(flux)
+        rates = _RATE_FUNCTIONS[mechanism_name](flux)
 
     solution = solve(mechanism, chemistry, rates)
 
@@ -277,20 +305,15 @@ def add_photochemical_species(
         )
     for name in emitters:
         emitter = PHOTOCHEMICAL_SPECIES[name]
-        populations = xr.Dataset(
+        atmosphere[f"{name} emission"] = _Combined(
             {
-                "temperature": ("altitude", temperature),
-                **{
-                    state_id: (
-                        "altitude",
-                        solution["density"].sel(state=state_id).to_numpy(),
-                    )
-                    for state_id in emitter.states
-                },
-            },
-            coords={"altitude": altitude},
+                transition: make(
+                    altitude,
+                    solution["photon_ver"].sel(transition=transition).to_numpy(),
+                )
+                for transition, make in emitter.bands.items()
+            }
         )
-        atmosphere[f"{name} emission"] = emitter.constituent(populations)
 
     rate_inputs = xr.Dataset(
         {
