@@ -1,0 +1,235 @@
+"""Actinic flux from the SASKTRAN2 discrete-ordinates engine."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+
+import numpy as np
+import xarray as xr
+
+import sasktran2 as sk
+from sasktran2.constants import K_BOLTZMANN
+
+LYMAN_ALPHA_WAVELENGTH_NM = 121.567
+
+#: Windows [nm] resolved at the line resolution of
+#: :func:`airglow_wavelength_grid`, where O2 line structure matters for both
+#: attenuation and photoexcitation.
+O2_LINE_WINDOWS_NM = {
+    "b-X(0,0) A band": (752.0, 776.0),
+    "b-X(1,0) B band": (675.0, 705.0),
+    "b-X(2,0) gamma band": (626.0, 634.0),
+    "a-X(0,0) 1.27 um band": (1260.0, 1280.0),
+}
+
+
+def _closed_arange(start: float, stop: float, step: float) -> np.ndarray:
+    return np.arange(start, stop + step / 2.0, step)
+
+
+def airglow_wavelength_grid(
+    range_nm: tuple[float, float] = (120.0, 1280.0),
+    resolution_nm: float = 0.1,
+    line_resolution_nm: float = 0.001,
+) -> np.ndarray:
+    """Wavelength grid [nm] for photolysis and O2 photoexcitation.
+
+    ``resolution_nm`` spacing over ``range_nm``, ``line_resolution_nm``
+    inside :data:`O2_LINE_WINDOWS_NM`, plus Lyman-alpha exactly.
+    """
+    parts = [
+        _closed_arange(*range_nm, resolution_nm),
+        np.array([LYMAN_ALPHA_WAVELENGTH_NM]),
+    ]
+    parts.extend(
+        _closed_arange(lo, hi, line_resolution_nm)
+        for lo, hi in O2_LINE_WINDOWS_NM.values()
+        if lo >= range_nm[0] and hi <= range_nm[1]
+    )
+    return np.unique(np.round(np.concatenate(parts), decimals=6))
+
+
+#: Factories for the cross sections of each absorber, keyed by species id.
+#: They are built only for species present in an atmosphere.
+DEFAULT_OPTICAL_PROPERTIES = {
+    "O3": sk.optical.O3DBM,
+    "O2": lambda: sk.optical.AERLineAbsorber("O2")
+    + sk.optical.O2SchumannRunge()
+    + sk.optical.O2LymanAlpha(),
+    "N2": lambda: sk.optical.AERLineAbsorber("N2"),
+    "NO2": sk.optical.NO2Vandaele,
+}
+
+
+def default_optical_properties() -> dict:
+    """The default cross sections of every absorber, keyed by species id."""
+    return {species: make() for species, make in DEFAULT_OPTICAL_PROPERTIES.items()}
+
+
+class ActinicFlux:
+    """Spherically averaged actinic flux on an altitude grid.
+
+    Uses SASKTRAN2's discrete-ordinates source in pseudo-spherical geometry
+    with flux observers at every altitude: Rayleigh scattering, the
+    absorbers present in the atmosphere, and a Lambertian surface.
+
+    Parameters
+    ----------
+    altitudes_m
+        Model and output altitude grid [m].
+    wavelengths_nm
+        Wavelength grid [nm]; :func:`airglow_wavelength_grid` by default.
+    num_streams
+        Discrete-ordinates streams.
+    optical_properties
+        Cross sections by species id, replacing entries of
+        :data:`DEFAULT_OPTICAL_PROPERTIES`.
+    num_threads
+        Engine threads.
+    """
+
+    def __init__(
+        self,
+        altitudes_m,
+        wavelengths_nm=None,
+        num_streams: int = 4,
+        optical_properties: Mapping | None = None,
+        num_threads: int = 8,
+    ):
+        self.altitudes_m = np.asarray(altitudes_m, dtype=float)
+        self.wavelengths_nm = (
+            airglow_wavelength_grid()
+            if wavelengths_nm is None
+            else np.asarray(wavelengths_nm, dtype=float)
+        )
+        self.num_streams = num_streams
+        self.optical_properties = dict(optical_properties or {})
+        self.num_threads = num_threads
+
+    def _optical_property(self, species: str):
+        if species not in self.optical_properties:
+            self.optical_properties[species] = DEFAULT_OPTICAL_PROPERTIES[species]()
+        return self.optical_properties[species]
+
+    def calculate(
+        self,
+        atmosphere: xr.Dataset,
+        cos_sza: float,
+        albedo: float = 0.0,
+        earth_sun_distance_au: float = 1.0,
+    ) -> xr.Dataset:
+        """Actinic flux for one solar zenith angle.
+
+        Parameters
+        ----------
+        atmosphere
+            On an ``altitude`` coordinate [m]: ``temperature_k``,
+            ``pressure_pa``, and number densities [m^-3] named by species id.
+            Species with an entry in ``optical_properties`` absorb; others
+            are ignored.
+        cos_sza
+            Cosine of the solar zenith angle.
+        albedo
+            Lambertian surface albedo.
+        earth_sun_distance_au
+            Scales the solar spectrum by its inverse square.
+
+        Returns
+        -------
+        xr.Dataset
+            ``actinic_flux`` (wavelength, altitude) and the top-of-atmosphere
+            ``solar_flux`` (wavelength) [photons m^-2 s^-1 nm^-1];
+            ``cross_section`` (species, wavelength, altitude) [m^2] of the
+            absorbers used; ``temperature_k`` (altitude).
+        """
+        config = sk.Config()
+        config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
+        config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
+        config.flux_types = [sk.FluxType.Actinic]
+        config.num_streams = self.num_streams
+        config.num_forced_azimuth = 1
+        config.num_threads = self.num_threads
+
+        geometry = sk.Geometry1D(
+            cos_sza,
+            0.0,
+            6371000.0,
+            self.altitudes_m,
+            sk.InterpolationMethod.LinearInterpolation,
+            sk.GeometryType.PseudoSpherical,
+        )
+        viewing = sk.ViewingGeometry()
+        for altitude in self.altitudes_m:
+            viewing.add_flux_observer(sk.FluxObserverSolar(cos_sza, altitude))
+
+        atmo = sk.Atmosphere(
+            geometry, config, self.wavelengths_nm, calculate_derivatives=False
+        )
+        source_altitude = atmosphere["altitude"].to_numpy()
+        temperature = atmosphere["temperature_k"].to_numpy()
+        pressure = atmosphere["pressure_pa"].to_numpy()
+        atmo.temperature_k = np.interp(self.altitudes_m, source_altitude, temperature)
+        atmo.pressure_pa = np.exp(
+            np.interp(self.altitudes_m, source_altitude, np.log(pressure))
+        )
+
+        total_density = pressure / (K_BOLTZMANN * temperature)
+        known = [
+            *DEFAULT_OPTICAL_PROPERTIES,
+            *(
+                s
+                for s in self.optical_properties
+                if s not in DEFAULT_OPTICAL_PROPERTIES
+            ),
+        ]
+        absorbers = [s for s in known if s in atmosphere]
+        for species in absorbers:
+            vmr = atmosphere[species].to_numpy() / total_density
+            atmo[species] = sk.constituent.VMRAltitudeAbsorber(
+                self._optical_property(species), source_altitude, vmr
+            )
+        atmo["rayleigh"] = sk.constituent.Rayleigh()
+        atmo["surface"] = sk.constituent.LambertianSurface(albedo)
+        atmo["solar"] = sk.constituent.SolarIrradiance(
+            photon_units=True, mode="average"
+        )
+
+        engine = sk.Engine(config, geometry, viewing)
+        radiance = engine.calculate_radiance(atmo)
+
+        scale = 1.0 / earth_sun_distance_au**2
+        cross_section = np.stack(
+            [
+                self._optical_property(s).atmosphere_quantities(atmo).extinction.T
+                for s in absorbers
+            ]
+        )
+        ds = xr.Dataset(
+            {
+                "actinic_flux": (
+                    ("wavelength", "altitude"),
+                    radiance["actinic_flux"].to_numpy() * scale,
+                ),
+                "solar_flux": (
+                    ("wavelength",),
+                    np.array(atmo.storage.solar_irradiance) * scale,
+                ),
+                "cross_section": (("species", "wavelength", "altitude"), cross_section),
+                "temperature_k": (("altitude",), np.array(atmo.temperature_k)),
+            },
+            coords={
+                "altitude": self.altitudes_m,
+                "wavelength": self.wavelengths_nm,
+                "species": absorbers,
+            },
+            attrs={
+                "cos_sza": cos_sza,
+                "albedo": albedo,
+                "earth_sun_distance_au": earth_sun_distance_au,
+                "num_streams": self.num_streams,
+            },
+        )
+        ds["actinic_flux"].attrs["units"] = "photons m^-2 s^-1 nm^-1"
+        ds["solar_flux"].attrs["units"] = "photons m^-2 s^-1 nm^-1"
+        ds["cross_section"].attrs["units"] = "m^2"
+        return ds

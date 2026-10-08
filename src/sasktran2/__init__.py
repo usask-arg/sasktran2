@@ -1,4 +1,4 @@
-# ruff: noqa: F401, E402
+# ruff: noqa: F401
 from __future__ import annotations
 
 import os
@@ -8,6 +8,7 @@ os.environ.setdefault("RUST_BACKTRACE", "full")
 
 # from ._core import Geodetic
 
+# Uses the engine classes above, so it is imported last.
 from . import (
     appconfig,
     basis,
@@ -17,6 +18,7 @@ from . import (
     mie,
     nlte,
     optical,
+    photolysis,
     solar,
     spectroscopy,
     test_util,

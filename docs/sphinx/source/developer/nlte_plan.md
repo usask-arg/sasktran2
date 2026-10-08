@@ -375,6 +375,39 @@ GRANADA's $r$ is relative to LTE populations normalised over only the modelled s
   - Processes with two state reactants. Loading rejects them.
   - `photchem` deprecation warnings, which wait until `sasktran2.photolysis` replaces the legacy rates in phase 3.
 
+**Phase 3, first step: `sasktran2.photolysis`.**
+
+- **`ActinicFlux`.** Discrete ordinates in pseudo-spherical geometry, with flux observers at every altitude. Inputs: Rayleigh scattering, the absorbers present in the atmosphere, a Lambertian surface, and the Earth–Sun distance. Output: actinic flux, top-of-atmosphere flux and the cross sections used.
+- **Default grid.** The default `airglow_wavelength_grid` (120–1280 nm at 0.1 nm, 0.001 nm in the O2 A, B, γ and 1.27 µm windows, plus Lyman-α) takes about 7 s for 130 levels.
+- **Rate definitions.**
+  - `Photolysis`: the integral of flux × σ × φ(λ, T), with an optional check on grid resolution.
+  - `LinePhotolysis`: Lyman-α.
+  - `photolysis_rates` returns an xarray Dataset of named rates.
+- **Shared atmosphere.** One atmosphere Dataset (species ids, SI units) drives both `photolysis` and `nlte.solve`.
+- **Quantum yield.** The O(¹D) yield from O3 follows Matsumi et al. (2002), with the coefficients checked against the TUV 5.4 implementation.
+- **Presets.** `presets.oxygen_photolysis` gives physical channel rates. `presets.oxygen_yankovsky_rates` gives the 47 rate inputs of `oxygen_yankovsky`, using the legacy O2(a, v) and O2(X, v) product splits.
+- **Validation against ERS** (TUV 5.4; `tools/nlte/validate_photolysis_ers.py`, april+00, albedo 0.2):
+
+  | Region | O3 → O(¹D) | O3 → O(³P) | O2 photolysis, total |
+  |---|---|---|---|
+  | Above 60 km | +4% | within 1% | too high at 70–100 km (up to 1.57×), 7% low at 120 km |
+  | Below 60 km | +22–26% at 30–40 km | within 7% | 2.5–4× too low (20–50 km) |
+
+  - The stratospheric O(¹D) difference cannot be removed by changing the solar zenith angle, so it is not just a geometry assumption.
+  - Total O2 photolysis is too low below 60 km because the Herzberg continuum is missing.
+  - It is too high at 70–100 km because the 0.1 nm Schumann–Runge bands under-attenuate.
+- **Computed versus legacy rates.** These change the oxygen populations by a few percent at 50–70 km. Up to ~2× less O(¹D) at 90–100 km, mainly because the legacy O(¹D) rate also counted Schumann–Runge band absorption.
+- **The `Yankovsky` shim still uses the legacy rates.**
+
+**Phase 3, remaining:**
+
+- O2 Herzberg continuum and a Schumann–Runge band parameterisation (Koppers & Murtagh).
+- A TUV-x comparison with identical inputs, to explain the stratospheric O(¹D) difference.
+- SZA > 90° (twilight).
+- Per-transition O2 excitation from HITRAN-filtered lines, with a hybrid high-resolution direct beam.
+- NO2, H2O and NO δ-band reactions.
+- Switching `Yankovsky` to computed rates, and deprecating `photchem`.
+
 ## Phases
 
 Each phase is one or two reviewable PRs.
