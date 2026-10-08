@@ -24,9 +24,17 @@ from .flux import (
     ActinicFlux,
     airglow_wavelength_grid,
     default_optical_properties,
+    slant_columns,
 )
 from .quantum_yields import o3_o1d_matsumi2002, o3_o3p_matsumi2002
-from .rates import LinePhotolysis, Photolysis, photolysis_rates
+from .rates import (
+    LinePhotolysis,
+    LymanAlphaPhotolysis,
+    Photolysis,
+    lyman_alpha_o2_rate_per_photon_m2,
+    lyman_alpha_reduction_factor,
+    photolysis_rates,
+)
 
 __all__ = [
     "DEFAULT_OPTICAL_PROPERTIES",
@@ -35,11 +43,15 @@ __all__ = [
     "O2_SCHUMANN_RUNGE_BANDS_NM",
     "ActinicFlux",
     "LinePhotolysis",
+    "LymanAlphaPhotolysis",
     "Photolysis",
     "airglow_wavelength_grid",
     "default_optical_properties",
+    "lyman_alpha_o2_rate_per_photon_m2",
+    "lyman_alpha_reduction_factor",
     "o3_o1d_matsumi2002",
     "o3_o3p_matsumi2002",
     "photolysis_rates",
     "presets",
+    "slant_columns",
 ]

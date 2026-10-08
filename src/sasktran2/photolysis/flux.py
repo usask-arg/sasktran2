@@ -28,6 +28,53 @@ O2_LINE_WINDOWS_NM = {
 O2_SCHUMANN_RUNGE_BANDS_NM = (175.4, 204.1)
 
 
+EARTH_RADIUS_M = 6371000.0
+
+
+def slant_columns(
+    altitude_m,
+    densities_m3,
+    cos_sza: float,
+    earth_radius_m: float = EARTH_RADIUS_M,
+    num_points: int = 2000,
+) -> np.ndarray:
+    """Columns [m^-2] along the straight path to the sun from each altitude.
+
+    ``densities_m3`` is (species, altitude) on ``altitude_m``; densities vary
+    exponentially between levels and vanish above the top level. For
+    ``cos_sza < 0`` the path passes through its tangent point; paths that
+    meet the Earth's surface have an infinite column. Refraction is ignored.
+    """
+    altitude_m = np.asarray(altitude_m, dtype=float)
+    log_density = np.log(np.maximum(np.atleast_2d(densities_m3), 1e-300))
+    r_top = earth_radius_m + altitude_m[-1]
+    u = np.linspace(0.0, 1.0, num_points)
+
+    def column(s, r0):
+        r = np.sqrt(r0**2 + s**2 + 2.0 * r0 * s * cos_sza)
+        h = np.clip(r - earth_radius_m, altitude_m[0], altitude_m[-1])
+        n = np.exp(np.array([np.interp(h, altitude_m, ld) for ld in log_density]))
+        return np.trapezoid(n, s, axis=1)
+
+    columns = np.empty((log_density.shape[0], altitude_m.size))
+    for i, z in enumerate(altitude_m):
+        r0 = earth_radius_m + z
+        b = r0 * cos_sza
+        s_top = -b + np.sqrt(b * b + r_top**2 - r0**2)
+        if cos_sza >= 0.0:
+            # Densest at the start; cluster samples there.
+            columns[:, i] = column(s_top * u**2, r0)
+        elif r0 * np.sqrt(1.0 - cos_sza**2) < earth_radius_m:
+            columns[:, i] = np.inf
+        else:
+            # Down to the tangent point, then up; cluster at the tangent.
+            s_tangent = -b
+            columns[:, i] = column(s_tangent * (1.0 - (1.0 - u) ** 2), r0) + column(
+                s_tangent + (s_top - s_tangent) * u**2, r0
+            )
+    return columns
+
+
 def _closed_arange(start: float, stop: float, step: float) -> np.ndarray:
     return np.arange(start, stop + step / 2.0, step)
 
@@ -150,7 +197,8 @@ class ActinicFlux:
             ``actinic_flux`` (wavelength, altitude) and the top-of-atmosphere
             ``solar_flux`` (wavelength) [photons m^-2 s^-1 nm^-1];
             ``cross_section`` (species, wavelength, altitude) [m^2] of the
-            absorbers used; ``temperature_k`` (altitude).
+            absorbers used; their ``slant_column`` (species, altitude)
+            [m^-2] along the solar path; ``temperature_k`` (altitude).
         """
         config = sk.Config()
         config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
@@ -214,6 +262,18 @@ class ActinicFlux:
                 for s in absorbers
             ]
         )
+        densities = np.array(
+            [
+                np.exp(
+                    np.interp(
+                        self.altitudes_m,
+                        source_altitude,
+                        np.log(np.maximum(atmosphere[s].to_numpy(), 1e-300)),
+                    )
+                )
+                for s in absorbers
+            ]
+        )
         ds = xr.Dataset(
             {
                 "actinic_flux": (
@@ -225,6 +285,14 @@ class ActinicFlux:
                     np.array(atmo.storage.solar_irradiance) * scale,
                 ),
                 "cross_section": (("species", "wavelength", "altitude"), cross_section),
+                "slant_column": (
+                    ("species", "altitude"),
+                    (
+                        slant_columns(self.altitudes_m, densities, cos_sza)
+                        if absorbers
+                        else np.zeros((0, self.altitudes_m.size))
+                    ),
+                ),
                 "temperature_k": (("altitude",), np.array(atmo.temperature_k)),
             },
             coords={
@@ -242,4 +310,5 @@ class ActinicFlux:
         ds["actinic_flux"].attrs["units"] = "photons m^-2 s^-1 nm^-1"
         ds["solar_flux"].attrs["units"] = "photons m^-2 s^-1 nm^-1"
         ds["cross_section"].attrs["units"] = "m^2"
+        ds["slant_column"].attrs["units"] = "m^-2"
         return ds
