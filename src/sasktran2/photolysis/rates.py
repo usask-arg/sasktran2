@@ -107,6 +107,11 @@ def lyman_alpha_o2_rate_per_photon_m2(o2_column_m2) -> np.ndarray:
     )
 
 
+def _is_binned(flux: xr.Dataset) -> bool:
+    """Whether the flux is given as bin averages (with ``wavelength_edge``)."""
+    return "wavelength_edge" in flux.coords
+
+
 def _distance_factor(flux: xr.Dataset) -> float:
     return 1.0 / float(flux.attrs.get("earth_sun_distance_au", 1.0)) ** 2
 
@@ -128,19 +133,26 @@ def _continuum_rate(flux: xr.Dataset, reaction: Photolysis) -> np.ndarray:
         )
         raise ValueError(msg)
 
+    binned = _is_binned(flux)
     lo, hi = reaction.wavelength_range_nm or (wavelength[0], wavelength[-1])
+    # On bins, a bin is in the range when its centre is.
     selected = (wavelength >= lo) & (wavelength <= hi)
-    if selected.sum() < 2:
-        msg = f"{reaction.name}: fewer than two wavelengths in {lo}-{hi} nm"
+    if selected.sum() < (1 if binned else 2):
+        what = "no bin centres" if binned else "fewer than two wavelengths"
+        msg = f"{reaction.name}: {what} in {lo}-{hi} nm"
         raise ValueError(msg)
     w = wavelength[selected]
-    if reaction.max_grid_spacing_nm is not None and np.diff(
-        w
-    ).max() > reaction.max_grid_spacing_nm * (1 + 1e-9):
+    spacing = (
+        np.diff(flux["wavelength_edge"].to_numpy())[selected] if binned else np.diff(w)
+    )
+    if (
+        reaction.max_grid_spacing_nm is not None
+        and spacing.max() > reaction.max_grid_spacing_nm * (1 + 1e-9)
+    ):
         msg = (
             f"{reaction.name}: needs a wavelength grid of at most "
             f"{reaction.max_grid_spacing_nm} nm in {lo}-{hi} nm, got up to "
-            f"{np.diff(w).max():.4g} nm"
+            f"{spacing.max():.4g} nm"
         )
         raise ValueError(msg)
 
@@ -152,24 +164,35 @@ def _continuum_rate(flux: xr.Dataset, reaction: Photolysis) -> np.ndarray:
         0.0,
     )
     phi = _quantum_yield(reaction, w, flux["temperature_k"].to_numpy())
+    if binned:
+        return np.sum(actinic * sigma * phi * spacing[:, np.newaxis], axis=0)
     return np.trapezoid(actinic * sigma * phi, w, axis=0)
 
 
 def _line_rate(flux: xr.Dataset, reaction: LinePhotolysis) -> np.ndarray:
-    wavelength = flux["wavelength"].to_numpy()
+    wavelength = flux[
+        "wavelength_edge" if _is_binned(flux) else "wavelength"
+    ].to_numpy()
     if not wavelength[0] <= reaction.line_center_nm <= wavelength[-1]:
         msg = (
             f"{reaction.name}: line at {reaction.line_center_nm} nm is outside the "
             f"wavelength grid ({wavelength[0]}-{wavelength[-1]} nm)"
         )
         raise ValueError(msg)
-    transmission = np.maximum(
-        (
-            flux["actinic_flux"].interp(wavelength=reaction.line_center_nm)
-            / flux["solar_flux"].interp(wavelength=reaction.line_center_nm)
-        ).to_numpy(),
-        0.0,
-    )
+    if _is_binned(flux):
+        # The bin that contains the line.
+        edges = flux["wavelength_edge"].to_numpy()
+        i = int(
+            np.clip(
+                np.searchsorted(edges, reaction.line_center_nm) - 1, 0, edges.size - 2
+            )
+        )
+        ratio = flux["actinic_flux"][i] / flux["solar_flux"][i]
+    else:
+        ratio = flux["actinic_flux"].interp(wavelength=reaction.line_center_nm) / flux[
+            "solar_flux"
+        ].interp(wavelength=reaction.line_center_nm)
+    transmission = np.maximum(ratio.to_numpy(), 0.0)
     return (
         reaction.quantum_yield
         * reaction.cross_section_m2
@@ -198,8 +221,11 @@ def photolysis_rates(
 ) -> xr.Dataset:
     """Per-molecule rates [s^-1] on the flux dataset's altitude grid.
 
-    ``flux`` is the output of :meth:`ActinicFlux.calculate`. Each reaction
-    gives one variable, named by the reaction's ``name``.
+    ``flux`` is the output of :meth:`ActinicFlux.calculate`, or of
+    :meth:`TUVActinicFlux.calculate`, whose bin averages (marked by a
+    ``wavelength_edge`` coordinate) are summed over the bins whose centres lie
+    in each reaction's range. Each reaction gives one variable, named by the
+    reaction's ``name``.
     """
     rates = xr.Dataset(coords={"altitude": flux["altitude"]})
     for reaction in reactions:
