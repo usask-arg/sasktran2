@@ -352,6 +352,29 @@ GRANADA's $r$ is relative to LTE populations normalised over only the modelled s
   - After the move, the largest relative deviation is 3e-12, from the LU change. The test tolerance is 1e-9.
 - **ERS reader.** `tools/nlte/kopra_prf.py` reads ERS `.prf` files: p/T, VMR, `npar`, ratio, and the Mixer variants. It handles Fortran three-digit exponents. Its tests are in `tests/nlte/test_kopra_prf.py`.
 
+**Phase 2: the steady-state mechanism engine is in place.**
+
+- **Format.** Mechanisms are TOML files, documented in `nlte_mechanism_format.md`. The Rust `toml` crate adds five small pure-Rust packages.
+- **Validation on load:**
+  - species declarations;
+  - citation keys;
+  - unit/order consistency;
+  - yield sums;
+  - unknown keys;
+  - `for_v` families with `{v±k}` templating.
+- **Solver.** One linear solve per level, returning state densities, per-process rates (photon VER for transitions) and production/loss budgets.
+- **Python.** `sasktran2.nlte` provides `Mechanism`, `solve` and `budget`.
+- **Yankovsky.** It is now the bundled `oxygen_yankovsky` mechanism, translated entry by entry. Its rate inputs follow the ERS names (`J_O3_A{v}`, `J_O3_X{v}`), so ERS photolysis rates can be fed in directly.
+- **Parity.**
+  - A one-off comparison against the hand-coded solver used 200 random levels spanning 9 decades in density and rates. The old solutions satisfy the new equations to 5e-16 relative residual.
+  - The regression fixtures still pass, with a worst difference of 3e-12.
+- **Removed code.** The hand-coded reaction list, `PhotochemicalModel`, `ChemicalReaction` and `MoleculeMap` are gone.
+- **What remains of the old Yankovsky code.** It now only supplies the legacy top-of-atmosphere-scaled photolysis rates (`Yankovsky.photolysis_rates`) until phase 3. `Yankovsky.solve` returns the same per-state Dataset as before, and `Yankovsky.solve_full` returns the full `nlte.solve` result.
+- **Deferred:**
+  - Time-dependent solves (O2(a) at twilight).
+  - Processes with two state reactants. Loading rejects them.
+  - `photchem` deprecation warnings, which wait until `sasktran2.photolysis` replaces the legacy rates in phase 3.
+
 ## Phases
 
 Each phase is one or two reviewable PRs.

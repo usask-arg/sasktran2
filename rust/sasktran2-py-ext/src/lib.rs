@@ -10,6 +10,7 @@ mod derivative_mapping;
 mod engine;
 mod geodetic;
 mod geometry;
+mod nlte;
 mod optical;
 mod orbital;
 mod output;
@@ -123,6 +124,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Photochemistry
     m.add_class::<photchem::yankovsky::PyYankovsky>()?;
+    m.add_class::<nlte::PyMechanism>()?;
 
     Ok(())
 }

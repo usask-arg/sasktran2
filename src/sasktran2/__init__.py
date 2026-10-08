@@ -15,6 +15,7 @@ from . import (
     constituent,
     database,
     mie,
+    nlte,
     optical,
     solar,
     spectroscopy,
