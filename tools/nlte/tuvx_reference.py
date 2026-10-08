@@ -67,7 +67,7 @@ def build_calculator(inputs: xr.Dataset) -> TUVX:
     grids["wavelength", "nm"] = v54.wavelength_grid()
     heights = grids["height", "km"]
     wavelengths = grids["wavelength", "nm"]
-    edges_km = np.asarray(heights.edges)
+    edges_km = np.array(heights.edges, copy=True)
     mid_km = 0.5 * (edges_km[:-1] + edges_km[1:])
     altitude_km = inputs["altitude"].to_numpy() / 1.0e3
 
@@ -156,9 +156,11 @@ def build_calculator(inputs: xr.Dataset) -> TUVX:
 def main(inputs_path: str, outputs_path: str) -> None:
     inputs = xr.open_dataset(inputs_path)
     tuvx = build_calculator(inputs)
-    edges_km = tuvx.get_grid_map()["height", "km"].edges
-    wavelength_edges = tuvx.get_grid_map()["wavelength", "nm"].edges
-    profiles = tuvx.get_profile_map()
+    # MUSICA arrays are views into memory owned by the map objects: keep the
+    # maps alive and copy.
+    grid_map, profiles = tuvx.get_grid_map(), tuvx.get_profile_map()
+    edges_km = np.array(grid_map["height", "km"].edges, copy=True)
+    wavelength_edges = np.array(grid_map["wavelength", "nm"].edges, copy=True)
 
     result = tuvx.run(
         sza=np.radians(float(inputs.attrs["sza_deg"])),
@@ -174,8 +176,8 @@ def main(inputs_path: str, outputs_path: str) -> None:
     )
     # TUV-x returns the actinic flux normalised to the top-of-atmosphere direct
     # beam; scale by the extraterrestrial flux per nm [photons cm^-2 s^-1 nm^-1].
-    extraterrestrial = np.asarray(
-        profiles["extraterrestrial flux", "photon cm-2 s-1"].midpoint_values
+    extraterrestrial = np.array(
+        profiles["extraterrestrial flux", "photon cm-2 s-1"].midpoint_values, copy=True
     ) / np.diff(wavelength_edges)
     distance = float(inputs.attrs["earth_sun_distance_au"])
     out["actinic_flux"] = (

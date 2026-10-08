@@ -456,6 +456,29 @@ GRANADA's $r$ is relative to LTE populations normalised over only the modelled s
 - **Solar spectrum.** TUV-x's spectrum is 10–14% above TSIS-1 HSRS in the Schumann–Runge continuum, Herzberg and Hartley regions, and within 1.3% elsewhere.
 - **Result.** With the same sun, O3 → O(¹D) agrees within 1% and O3 → O(³P) within 1–3% from 30 to 120 km. Total O2 agrees within 0.4–4% from 40 to 100 km, except +16% at 90 km. Against ERS, total O2 is now within 1–6% from 40 to 120 km (12% at 90 km), down from 5–12%.
 
+**Phase 3, TUV mode.** `TUVActinicFlux` runs at TUV's resolution with TUV's parameterisations, on the same discrete-ordinates engine:
+
+- **Spectral and vertical treatment.** The 156 TUV-x v5.4 bins (120–735 nm), with homogeneous layers between levels, as in TUV. Layer columns assume exponential variation; the geometry uses `LowerInterpolation`, and everything goes in through a `Manual` constituent. Rates are sums over bins; `photolysis_rates` switches to them when the flux has a `wavelength_edge` coordinate.
+- **O2 parameterisations.**
+  - Lyman-α: Chabrillat & Kockarts.
+  - The 17 SR band bins: Koppers & Murtagh.
+  - Both use effective cross sections from the slant O2 column, turned into layer optical depths as in TUV-x `la_sr_bands.F90`, guards included. One deviation: where TUV's band layer optical depth turns slightly negative near the top of the fit range (about −1e-6), it is clipped to zero.
+- **Data**, selected with `data=`:
+  - `"sasktran2"` (default): `O3DBM`, `O2UV` and `NO2Vandaele`, averaged over each bin at 0.05 nm sampling; Bates Rayleigh; the HSRS spectrum integrated over each bin.
+  - `"tuv-x"`: TUV-x's own O2, O3 and Rayleigh cross sections, extraterrestrial flux and O3 quantum yields (`TUVXQuantumYield`, `presets.tuvx_v54_photolysis`).
+- **The TUV-x table.** `tools/nlte/build_tuvx_v54.py` (run with `musica`) builds `photolysis/tuvx_v54.nc`, which is now in the standard database (0.5 MB, Apache-2.0 with attribution). It doesn't regrid anything itself: it runs TUV-x once with diagnostics on and level temperatures of 180–300 K, then reads TUV-x's binned cross sections and yields. That covers every O3 temperature knot, so the table reproduces TUV-x exactly.
+- **Cost.** A 151-level calculation takes 0.1–0.5 s, against several seconds on the line-resolved grid.
+- **Against TUV-x** (`compare_tuvx.py`, april+00):
+
+  | Comparison | O3 → O(¹D) | O3 → O(³P) | Total O2 |
+  |---|---|---|---|
+  | TUV mode, TUV-x data, 2 streams / TUV-x | within 0.2%, 30–110 km; +5% at 10 km | within 0.4%, 30–110 km | within 0.2%, 30–100 km; +1.5% at 110 km |
+  | TUV mode / line-resolved, both sasktran2 data | within 0.6% | 1–2.5% low | within 1.5% at 30–70 km; 0.97, 0.91, 0.97 at 80, 90, 100 km |
+
+  - The first row isolates the solvers. The remaining differences are where diffuse light matters (the troposphere) and at TUV-x's 120 km lid.
+  - The second row is the cost of TUV's resolution and parameterisations. For O3 → O(³P), the cause is entirely the grid ending at 735 nm: 1.2–2.8% of the line-resolved rate comes from longer wavelengths. For O2, it is Koppers & Murtagh against the resolved bands, plus bin-averaged continuum cross sections where the continuum is optically thick.
+- **Bug found along the way.** MUSICA arrays are views into memory owned by their map objects. The comparison scripts now keep the maps alive and copy, which explains the earlier "garbage" `wavelength_grid()` edges.
+
 **Phase 3, remaining:**
 
 - O2 cross sections for 121.9–130 nm (between Lyman-α and `O2UV`).

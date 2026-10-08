@@ -35,18 +35,34 @@ from .rates import (
     lyman_alpha_reduction_factor,
     photolysis_rates,
 )
+from .tuv import (
+    TUV_OPTICAL_PROPERTIES,
+    TUVActinicFlux,
+    TUVXQuantumYield,
+    chabrillat_kockarts_cross_section,
+    hsrs_photons_per_bin,
+    koppers_murtagh_cross_section,
+    tuvx_v54_tables,
+    tuvx_v54_wavelength_edges,
+)
 
 __all__ = [
     "DEFAULT_OPTICAL_PROPERTIES",
     "LYMAN_ALPHA_WAVELENGTH_NM",
     "O2_LINE_WINDOWS_NM",
     "O2_SCHUMANN_RUNGE_BANDS_NM",
+    "TUV_OPTICAL_PROPERTIES",
     "ActinicFlux",
     "LinePhotolysis",
     "LymanAlphaPhotolysis",
     "Photolysis",
+    "TUVActinicFlux",
+    "TUVXQuantumYield",
     "airglow_wavelength_grid",
+    "chabrillat_kockarts_cross_section",
     "default_optical_properties",
+    "hsrs_photons_per_bin",
+    "koppers_murtagh_cross_section",
     "lyman_alpha_o2_rate_per_photon_m2",
     "lyman_alpha_reduction_factor",
     "o3_o1d_matsumi2002",
@@ -54,4 +70,6 @@ __all__ = [
     "photolysis_rates",
     "presets",
     "slant_columns",
+    "tuvx_v54_tables",
+    "tuvx_v54_wavelength_edges",
 ]

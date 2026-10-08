@@ -7,6 +7,12 @@ spectrum (sasktran2's, integrated onto the TUV-x wavelength bins). TUV-x's
 aerosols are off; it is also run with its own solar spectrum to show that
 effect separately.
 
+It also runs :class:`sasktran2.photolysis.TUVActinicFlux`, the TUV mode:
+with TUV-x's data and two streams against TUV-x, which isolates the
+radiative-transfer solvers, and with sasktran2's data against the full
+resolution calculation, which isolates the TUV binning and O2 band
+parameterisations.
+
     python tools/nlte/compare_tuvx.py /Volumes/T9/data/cairt_ers_kopra/ERS_kopra_ascii \\
         april+00 path/to/musica-venv/bin/python out_prefix
 """
@@ -36,8 +42,8 @@ def tuvx_wavelength_edges(musica_python: str) -> np.ndarray:
     # v54.wavelength_grid() on their own do not hold valid data.
     code = (
         "import musica.tuvx.v54 as v; import numpy as np; import sys; "
-        "t = v.get_tuvx_calculator(); "
-        "np.savetxt(sys.stdout, np.asarray(t.get_grid_map()['wavelength', 'nm'].edges))"
+        "t = v.get_tuvx_calculator(); g = t.get_grid_map(); "
+        "np.savetxt(sys.stdout, np.array(g['wavelength', 'nm'].edges, copy=True))"
     )
     output = subprocess.run(
         [musica_python, "-c", code], check=True, capture_output=True, text=True
@@ -105,6 +111,27 @@ def main(root: str, scenario: str, musica_python: str, out_prefix: str) -> None:
     )
     ours["J_O2"] = ours["J_O2_CONT"] + ours["J_O2_LYA"]
 
+    # TUV mode: TUV-x data and two streams (against TUV-x with its own sun),
+    # and sasktran2 data (against the full-resolution calculation).
+    altitude = atmosphere["altitude"].to_numpy()
+    tuv_mode = {
+        "tuv-x": sk.photolysis.photolysis_rates(
+            sk.photolysis.TUVActinicFlux(
+                altitude, data="tuv-x", num_streams=2
+            ).calculate(atmosphere, cos_sza=cos_sza, albedo=ALBEDO),
+            sk.photolysis.presets.tuvx_v54_photolysis(),
+        ),
+        "sasktran2": sk.photolysis.photolysis_rates(
+            sk.photolysis.TUVActinicFlux(altitude).calculate(
+                atmosphere, cos_sza=cos_sza, albedo=ALBEDO
+            ),
+            [
+                *sk.photolysis.presets.oxygen_photolysis(excitation=False)[:2],
+                sk.photolysis.Photolysis("J_O2", "O2"),
+            ],
+        ),
+    }
+
     edges = tuvx_wavelength_edges(musica_python)
     wavelength = flux["wavelength"].to_numpy()
     solar_per_bin = binned(wavelength, flux["solar_flux"].to_numpy(), edges)[:, 0]
@@ -120,8 +147,21 @@ def main(root: str, scenario: str, musica_python: str, out_prefix: str) -> None:
     z_tuvx = tuvx_same_sun["altitude_km"].to_numpy()
     z_ours = atmosphere["altitude"].to_numpy() / 1e3
 
-    def ours_at(name):
-        return np.interp(z_tuvx, z_ours, ours[name].to_numpy())
+    def ours_at(name, rates=ours):
+        return np.interp(z_tuvx, z_ours, rates[name].to_numpy())
+
+    ratios = {
+        name: {
+            "sasktran2 / TUV-x, same sun": ours_at(name) / tuvx_same_sun[name],
+            "TUV mode, TUV-x data, 2 streams / TUV-x": (
+                ours_at(name, tuv_mode["tuv-x"]) / tuvx_own_sun[name]
+            ),
+            "TUV mode / sasktran2, sasktran2 data": (
+                ours_at(name, tuv_mode["sasktran2"]) / ours_at(name)
+            ),
+        }
+        for name in ("J_O3_O1D", "J_O3_O3P", "J_O2")
+    }
 
     names = {
         "J_O3_O1D": "O3 -> O(1D)",
@@ -132,19 +172,14 @@ def main(root: str, scenario: str, musica_python: str, out_prefix: str) -> None:
     for ax in axes[1:3]:
         ax.sharey(axes[0])
     for ax, (name, label) in zip(axes[:3], names.items(), strict=True):
-        ax.plot(
-            ours_at(name) / tuvx_same_sun[name], z_tuvx, label="same solar spectrum"
-        )
-        ax.plot(
-            ours_at(name) / tuvx_own_sun[name],
-            z_tuvx,
-            "--",
-            label="TUV-x solar spectrum",
-        )
+        for (case, ratio), style in zip(
+            ratios[name].items(), ("-", "--", ":"), strict=True
+        ):
+            ax.plot(ratio, z_tuvx, style, label=case)
         ax.axvline(1.0, color="k", lw=0.5)
         ax.set_xlim(0.5, 1.5)
-        ax.set_title(f"{label}: sasktran2 / TUV-x")
-        ax.legend()
+        ax.set_title(label)
+        ax.legend(fontsize="small")
     axes[0].set_ylabel("Altitude [km]")
 
     # Actinic flux by bin at a few altitudes, same solar spectrum.
@@ -171,16 +206,25 @@ def main(root: str, scenario: str, musica_python: str, out_prefix: str) -> None:
     fig.savefig(f"{out_prefix}.png", dpi=120)
 
     print(f"{scenario}: cos SZA {cos_sza:.3f}, albedo {ALBEDO}")
-    print("altitude   O(1D) same/own-sun   O(3P) same/own-sun   O2 same/own-sun")
+    print(
+        "Ratios: (a) sasktran2 / TUV-x, same sun; (b) sasktran2 / TUV-x, TUV-x sun;\n"
+        "(c) TUV mode with TUV-x data and 2 streams / TUV-x;\n"
+        "(d) TUV mode / full resolution, sasktran2 data"
+    )
+    print(
+        "altitude   O(1D) a / b / c / d             O(3P) a / b / c / d             O2 a / b / c / d"
+    )
     for km in (0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120):
         i = int(np.argmin(abs(z_tuvx - km)))
         row = []
         for name in names:
-            row.append(
-                f"{ours_at(name)[i] / float(tuvx_same_sun[name][i]):6.3f}/"
-                f"{ours_at(name)[i] / float(tuvx_own_sun[name][i]):5.3f}"
-            )
-        print(f"{km:6d} km   " + "        ".join(row))
+            values = [
+                ours_at(name)[i] / float(tuvx_same_sun[name][i]),
+                ours_at(name)[i] / float(tuvx_own_sun[name][i]),
+                *(float(r[i]) for r in list(ratios[name].values())[1:]),
+            ]
+            row.append(" ".join(f"{v:6.3f}" for v in values))
+        print(f"{km:6d} km   " + "    ".join(row))
     print("binned actinic flux sasktran2/TUV-x (same sun), wavelength bands:")
     for lo, hi in (
         (175, 200),
