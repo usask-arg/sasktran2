@@ -7,11 +7,11 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use sasktran2_rs::optical::line::hitran_loader::{hitran_molecule_file, read_hitran_line_file};
 use sasktran2_rs::photchem::emission::{
-    EmissionBand, MCDADE_OXYGEN_GREEN_LINE_C0, MCDADE_OXYGEN_GREEN_LINE_C1,
-    MCDADE_OXYGEN_GREEN_LINE_C2, MCDADE_OXYGEN_GREEN_LINE_EINSTEIN_A_1S_S,
-    MCDADE_OXYGEN_GREEN_LINE_EINSTEIN_A_558_S, O2_A_BAND_CENTER_WAVELENGTH_NM,
-    O2_B0_X0_EINSTEIN_A_S, O2_B1_X1_EINSTEIN_A_S, OXYGEN_GREEN_LINE_EINSTEIN_A_S,
-    OXYGEN_GREEN_LINE_WAVELENGTH_NM, mcdade_oxygen_green_line_photon_ver,
+    MCDADE_OXYGEN_GREEN_LINE_C0, MCDADE_OXYGEN_GREEN_LINE_C1, MCDADE_OXYGEN_GREEN_LINE_C2,
+    MCDADE_OXYGEN_GREEN_LINE_EINSTEIN_A_1S_S, MCDADE_OXYGEN_GREEN_LINE_EINSTEIN_A_558_S,
+    O2_A_BAND_CENTER_WAVELENGTH_NM, O2_B0_X0_EINSTEIN_A_S, O2_B1_X1_EINSTEIN_A_S,
+    OXYGEN_GREEN_LINE_EINSTEIN_A_S, OXYGEN_GREEN_LINE_WAVELENGTH_NM,
+    mcdade_oxygen_green_line_photon_ver, oxygen_a_band_from_hitran,
 };
 use sasktran2_rs::photchem::models::*;
 
@@ -458,7 +458,7 @@ impl PyYankovsky {
             ))
         })?;
 
-        let band = EmissionBand::oxygen_a_band_from_hitran(&db)
+        let band = oxygen_a_band_from_hitran(&db)
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
 
         let xr = py.import("xarray")?;

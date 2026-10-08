@@ -1,0 +1,13 @@
+[package]
+name = "sasktran2-nlte"
+version = "0.1.0"
+edition = "2024"
+description = "Excited-state (non-LTE) population kinetics and emission rates for SASKTRAN2"
+license = "MIT"
+
+# This crate must not depend on sasktran2-rs, sasktran2-core, or sasktran2-sys.
+# It is a self-contained kinetics library that SASKTRAN2 consumes.
+[dependencies]
+anyhow = "*"
+ndarray = "*"
+nalgebra = "0.34.1"

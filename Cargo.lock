@@ -862,6 +862,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sasktran2-nlte"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "nalgebra",
+ "ndarray",
+]
+
+[[package]]
 name = "sasktran2-rs"
 version = "0.1.0"
 dependencies = [
@@ -873,6 +882,7 @@ dependencies = [
  "rayon",
  "rebasis",
  "sasktran2-core",
+ "sasktran2-nlte",
  "sasktran2-sys",
  "version_check",
 ]

@@ -1,4 +1,4 @@
-use crate::bindings::lapack::dgesv;
+use crate::linalg::solve_linear_system;
 use crate::prelude::*;
 use std::collections::HashSet;
 
@@ -306,7 +306,7 @@ pub trait PhotochemicalModel {
         let rhs = sources.view().insert_axis(Axis(1)).to_owned();
         let state_names = mol_map.state_index_to_molecule_names();
 
-        let solution = dgesv(&a_matrix, &rhs).map_err(|err| {
+        let solution = solve_linear_system(&a_matrix, &rhs).map_err(|err| {
             let a_preview = format_matrix_preview("A", &a_matrix);
             let rhs_preview = format_matrix_preview("RHS", &rhs);
             let source_preview = format_vector_preview("sources", &sources);
@@ -314,7 +314,7 @@ pub trait PhotochemicalModel {
             let problem_rows = format_problem_row_preview(&a_matrix, &state_names);
 
             anyhow!(
-                "LAPACK dgesv failed while solving photochemical system: {}\n{}{}{}\n{}{}",
+                "Linear solve failed for photochemical system: {}\n{}{}{}\n{}{}",
                 err,
                 a_preview,
                 rhs_preview,
@@ -998,7 +998,7 @@ mod tests {
         LYMAN_ALPHA_WAVELENGTH_NM, O2_LYMAN_ALPHA_EFFECTIVE_CROSS_SECTION_M2, PhotochemicalModel,
         Yankovsky, calculate_photolysis_rate, wavelength_bin_widths,
     };
-    use crate::photchem::types::{ChemicalReaction, Molecule, MoleculeBase, PhotoReaction};
+    use crate::types::{ChemicalReaction, Molecule, MoleculeBase, PhotoReaction};
     use ndarray::array;
     use std::collections::HashMap;
 
