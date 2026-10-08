@@ -22,6 +22,11 @@ O2_LINE_WINDOWS_NM = {
     "a-X(0,0) 1.27 um band": (1260.0, 1280.0),
 }
 
+#: O2 Schumann-Runge bands [nm], resolved at the band resolution of
+#: :func:`airglow_wavelength_grid` to match the 0.5 cm^-1 cross sections of
+#: :class:`sasktran2.optical.O2UV`.
+O2_SCHUMANN_RUNGE_BANDS_NM = (175.4, 204.1)
+
 
 def _closed_arange(start: float, stop: float, step: float) -> np.ndarray:
     return np.arange(start, stop + step / 2.0, step)
@@ -31,16 +36,21 @@ def airglow_wavelength_grid(
     range_nm: tuple[float, float] = (120.0, 1280.0),
     resolution_nm: float = 0.1,
     line_resolution_nm: float = 0.001,
+    band_resolution_nm: float = 0.002,
 ) -> np.ndarray:
     """Wavelength grid [nm] for photolysis and O2 photoexcitation.
 
     ``resolution_nm`` spacing over ``range_nm``, ``line_resolution_nm``
-    inside :data:`O2_LINE_WINDOWS_NM`, plus Lyman-alpha exactly.
+    inside :data:`O2_LINE_WINDOWS_NM`, ``band_resolution_nm`` over
+    :data:`O2_SCHUMANN_RUNGE_BANDS_NM`, plus Lyman-alpha exactly.
     """
     parts = [
         _closed_arange(*range_nm, resolution_nm),
         np.array([LYMAN_ALPHA_WAVELENGTH_NM]),
     ]
+    lo, hi = O2_SCHUMANN_RUNGE_BANDS_NM
+    if lo >= range_nm[0] and hi <= range_nm[1]:
+        parts.append(_closed_arange(lo, hi, band_resolution_nm))
     parts.extend(
         _closed_arange(lo, hi, line_resolution_nm)
         for lo, hi in O2_LINE_WINDOWS_NM.values()
@@ -54,7 +64,7 @@ def airglow_wavelength_grid(
 DEFAULT_OPTICAL_PROPERTIES = {
     "O3": sk.optical.O3DBM,
     "O2": lambda: sk.optical.AERLineAbsorber("O2")
-    + sk.optical.O2SchumannRunge()
+    + sk.optical.O2UV()
     + sk.optical.O2LymanAlpha(),
     "N2": lambda: sk.optical.AERLineAbsorber("N2"),
     "NO2": sk.optical.NO2Vandaele,

@@ -399,10 +399,29 @@ GRANADA's $r$ is relative to LTE populations normalised over only the modelled s
 - **Computed versus legacy rates.** These change the oxygen populations by a few percent at 50–70 km. Up to ~2× less O(¹D) at 90–100 km, mainly because the legacy O(¹D) rate also counted Schumann–Runge band absorption.
 - **The `Yankovsky` shim still uses the legacy rates.**
 
+**Phase 3, O2 cross sections.**
+
+- **New optical property.** `sk.optical.O2UV` covers 130–242.4 nm, from 130 to 500 K:
+
+  | Region | Source |
+  |---|---|
+  | Below 175.44 nm | CfA Schumann–Runge continuum |
+  | 175.44–204.08 nm | Schumann–Runge bands, resolved at 0.5 cm⁻¹ from the Minschwaner et al. (1992) polynomials |
+  | 205–242.4 nm | Yoshino et al. (1988) Herzberg continuum, also extended under the bands to 194 nm |
+
+  It replaces `O2SchumannRunge` in the photolysis defaults. Resolving the bands directly suits sasktran2's discrete-ordinates calculation better than an effective-cross-section parameterisation such as Koppers & Murtagh, which applies only to the direct beam.
+- **Build and hosting.** `tools/spectroscopy/build_o2_uv.py` builds the table from the original sources, recording their SHA-256 hashes. The table belongs at `cross_sections/o2/o2_uv.nc` in the sasktran2 standard database; until it is uploaded, `O2UV` raises `OSError` and its test skips.
+- **Grid.** `airglow_wavelength_grid` adds 0.002 nm sampling over the bands, giving 107k points in total.
+- **Effect on total O2 photolysis against ERS:**
+  - before (Herzberg continuum missing, bands averaged at 0.1 nm): 0.24–1.57 over 20–120 km;
+  - now: 1.11–1.17 at 40–80 km, 1.25–1.33 at 90–100 km and 0.98–1.07 at 110–120 km;
+  - still 1.5–2.1 at 20–30 km, where pressure-induced Herzberg absorption is missing and O3 → O(¹D) already disagrees.
+
 **Phase 3, remaining:**
 
-- O2 Herzberg continuum and a Schumann–Runge band parameterisation (Koppers & Murtagh).
-- A TUV-x comparison with identical inputs, to explain the stratospheric O(¹D) difference.
+- A Lyman-α effective cross section that depends on column (Chabrillat & Kockarts 1997).
+- Pressure-induced Herzberg absorption.
+- A TUV-x comparison with identical inputs, to explain the stratospheric O(¹D) and O2 differences.
 - SZA > 90° (twilight).
 - Per-transition O2 excitation from HITRAN-filtered lines, with a hybrid high-resolution direct beam.
 - NO2, H2O and NO δ-band reactions.
