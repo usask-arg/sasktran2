@@ -6,9 +6,14 @@
 # reproduces that implementation to round-off; see
 # tests/photchem/test_photchem_goldens.py.
 #
-# Known issues kept for parity, to be revisited in the oxygen phase of
-# docs/sphinx/source/developer/nlte_plan.md:
+# Frozen: this file stays an exact translation of the legacy model, for the
+# photchem goldens and the Yankovsky shim. New work uses the audited `oxygen`
+# mechanism.
+#
+# Known issues kept for parity:
 #   * No entry has an individual literature citation yet.
+#   * There is no O2(b, v=0) + N2 quenching, the main O2(b) loss below about
+#     80 km, so daytime O2(b) is several times too high there.
 #   * o3_o_v{v}: every O2(X, v=1..30) channel runs at the full rate, so the
 #     yields effectively sum to 30 ("todo: quantum yield" in the original).
 #   * O(1S) has no production pathway; its population is zero.

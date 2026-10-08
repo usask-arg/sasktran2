@@ -84,7 +84,10 @@ pub(super) struct ReactionEntry {
 pub(super) struct PhotoReactionEntry {
     pub id: String,
     pub reactant: String,
-    pub products: Vec<String>,
+    #[serde(default)]
+    pub products: Option<Vec<String>>,
+    #[serde(default)]
+    pub channels: Option<Vec<ChannelEntry>>,
     /// Name of the per-molecule rate [s^-1] supplied with the column inputs.
     pub rate_input: String,
     pub reference: String,

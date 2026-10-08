@@ -499,7 +499,29 @@ GRANADA's $r$ is relative to LTE populations normalised over only the modelled s
   |---|---|---|---|
   | 40–110 km | 0.83–1.06 | 0.60–0.93 | 3.4–4.7× too high at 40–70 km; 1.0–1.5 at 90–110 km |
 
-  O(¹D) agreeing confirms the photolysis source. The O2(b) excess comes from a missing reaction: the bundled mechanism, like the legacy photchem model it was translated from, has no O2(b, v=0) + N2 quenching. Adding it (JPL 19-5, 1.8e-15 exp(45/T) cm³ s⁻¹) gives O2(b) 0.52–0.58× GRANADA at 40–80 km and 0.75–1.06× above, and O2(a) 0.88–0.96×. The fix changes the legacy goldens, so it waits for a decision.
+  O(¹D) agreeing confirms the photolysis source. The O2(b) excess comes from a missing reaction: the legacy mechanism has no O2(b, v=0) + N2 quenching.
+
+**Phase 4, the `oxygen` mechanism.**
+
+- **Mechanisms.** `oxygen_yankovsky` is frozen as the exact legacy translation. The new bundled `oxygen` mechanism is audited process by process against:
+  - the newest Yankovsky database (Yankovsky et al. 2019 supplement, Yankovsky and Vorobeva 2020);
+  - JPL 19-5 (unchanged in 25-1);
+  - HITRAN.
+
+  The audit is in `nlte_oxygen_audit.md`. `add_photochemical_species` uses `oxygen`.
+- **Mechanism changes.**
+  - It takes the physical rates of `presets.oxygen_photolysis`; product yields live in the mechanism. `photo_reaction` entries can now branch into `channels`.
+  - O2(X, v) and O(1S) are dropped.
+  - O2(b, v=0) + N2 is added.
+  - b-X Einstein coefficients come from HITRAN (A band 8.75e-2 s⁻¹, B band 7.34e-3 s⁻¹).
+- **Emission.** Band emission now comes from the mechanism's transition VERs through `O2BandEmissionRate`: A band 0-0 and 1-1, and B band 1-0. The Einstein coefficients therefore live in one place.
+- **B-band fix.** `PopulationEmissionRate` used 7.0e-2 s⁻¹ (the 1-1 value) for the B band; it now uses 7.34e-3.
+- **Against GRANADA** (three day scenarios):
+  - O(¹D): 0.95–1.0 at 40–60 km.
+  - O2(a): 0.81–0.88 at 40–60 km and 0.69–0.71 at 70–80 km.
+  - O2(b): 0.51–0.58 at 40–80 km.
+
+  The O2(b) ratio stays constant while A-band pumping goes from 9% to 80% of its production, which points to GRANADA's loss term (N2 quenching) or its population convention. GRANADA's rate files are not available to check.
 
 **Phase 3, remaining:**
 

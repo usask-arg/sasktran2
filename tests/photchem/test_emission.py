@@ -203,7 +203,8 @@ def test_population_emission_rate_exposes_a_and_b_components():
     np.testing.assert_allclose(constituent.weights.sum(axis=1), 1.0)
     assert np.all(constituent.line_list_wavelengths_nm(1) >= 675.0)
     assert np.all(constituent.line_list_wavelengths_nm(1) <= 705.0)
-    np.testing.assert_allclose(constituent.line_list_photon_ver(1), 5.0 * 7.0e-2)
+    # B band (1-0): A = 7.34e-3 s^-1.
+    np.testing.assert_allclose(constituent.line_list_photon_ver(1), 5.0 * 7.34e-3)
 
 
 @pytest.mark.skipif(

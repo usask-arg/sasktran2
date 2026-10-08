@@ -76,7 +76,7 @@ def _background(absorbers=False):
 
 
 def _rates():
-    mechanism = sk.nlte.Mechanism.bundled("oxygen_yankovsky")
+    mechanism = sk.nlte.Mechanism.bundled("oxygen")
     z_km = ALTITUDES / 1e3
     shape = 1.0 / (1.0 + np.exp(-(z_km - 50.0) / 5.0))
     return xr.Dataset(
@@ -95,7 +95,7 @@ def test_populations_match_the_kinetics():
 
     # The same solve, with the background assembled by hand.
     temperature, pressure, air = _state()
-    mechanism = sk.nlte.Mechanism.bundled("oxygen_yankovsky")
+    mechanism = sk.nlte.Mechanism.bundled("oxygen")
     chemistry = xr.Dataset(
         {
             "temperature_k": ("altitude", temperature),
@@ -117,7 +117,7 @@ def test_populations_match_the_kinetics():
         rtol=1e-6,
         atol=1.0,
     )
-    assert "J_O3_A0" in solution
+    assert "J_O3_O1D" in solution
 
 
 @needs_o2_lines
