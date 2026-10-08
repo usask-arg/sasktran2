@@ -4,24 +4,20 @@ from __future__ import annotations
 
 import xarray as xr
 
-from .flux import LYMAN_ALPHA_WAVELENGTH_NM, O2_LINE_WINDOWS_NM
+from .flux import O2_LINE_WINDOWS_NM
 from .quantum_yields import o3_o1d_matsumi2002, o3_o3p_matsumi2002
-from .rates import LinePhotolysis, Photolysis, photolysis_rates
+from .rates import LymanAlphaPhotolysis, Photolysis, photolysis_rates
 
 #: Line-integrated solar Lyman-alpha photon flux at 1 AU [photons m^-2 s^-1].
 LYMAN_ALPHA_TOA_FLUX_PHOTONS_M2_S = 3.2e15
-#: O2 effective Lyman-alpha cross section [m^2], from a top-of-atmosphere
-#: photolysis rate of 3.40e-9 s^-1 and the flux above.
-O2_LYMAN_ALPHA_CROSS_SECTION_M2 = 3.40e-9 / LYMAN_ALPHA_TOA_FLUX_PHOTONS_M2_S
 #: O(1D) yield of O2 photolysis at Lyman-alpha.
 O2_LYMAN_ALPHA_O1D_YIELD = 0.53
 
-_LEGACY = "earlier sasktran2 photochem module (Yankovsky model)"
 _MATSUMI = "O3DBM cross sections; O(1D) yield of Matsumi et al. (2002)"
 _O2 = "AER O2 line cross sections, resolved at 0.001 nm"
 
 
-def oxygen_photolysis() -> list[Photolysis | LinePhotolysis]:
+def oxygen_photolysis() -> list[Photolysis | LymanAlphaPhotolysis]:
     """Physical channel rates for O3 and O2 photolysis and O2 photoexcitation.
 
     ===============  ============================================================
@@ -35,8 +31,9 @@ def oxygen_photolysis() -> list[Photolysis | LinePhotolysis]:
     ``J_O2_EXC_A0``  O2(X) -> O2(a, v=0), 1.27 um band
     ===============  ============================================================
 
-    The excitation rates integrate all O2 absorption in each band's window of
-    :data:`O2_LINE_WINDOWS_NM`.
+    ``J_O2_LYA`` uses the Chabrillat and Kockarts (1997) slant-column
+    parameterisation. The excitation rates integrate all O2 absorption in each
+    band's window of :data:`O2_LINE_WINDOWS_NM`.
     """
     excitation = {
         "J_O2_EXC_B0": "b-X(0,0) A band",
@@ -53,13 +50,10 @@ def oxygen_photolysis() -> list[Photolysis | LinePhotolysis]:
             wavelength_range_nm=(130.0, 175.0),
             reference="O2SchumannRunge continuum cross sections, unit O(1D) yield",
         ),
-        LinePhotolysis(
+        LymanAlphaPhotolysis(
             "J_O2_LYA",
-            line_center_nm=LYMAN_ALPHA_WAVELENGTH_NM,
-            cross_section_m2=O2_LYMAN_ALPHA_CROSS_SECTION_M2,
             toa_line_flux_photons_m2_s=LYMAN_ALPHA_TOA_FLUX_PHOTONS_M2_S,
             quantum_yield=O2_LYMAN_ALPHA_O1D_YIELD,
-            reference=_LEGACY,
         ),
         *(
             Photolysis(

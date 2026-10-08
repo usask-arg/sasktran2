@@ -381,7 +381,8 @@ GRANADA's $r$ is relative to LTE populations normalised over only the modelled s
 - **Default grid.** The default `airglow_wavelength_grid` (120–1280 nm at 0.1 nm, 0.001 nm in the O2 A, B, γ and 1.27 µm windows, plus Lyman-α) takes about 7 s for 130 levels.
 - **Rate definitions.**
   - `Photolysis`: the integral of flux × σ × φ(λ, T), with an optional check on grid resolution.
-  - `LinePhotolysis`: Lyman-α.
+  - `LinePhotolysis`: one unresolved solar line, with a constant effective cross section.
+  - `LymanAlphaPhotolysis`: O2 at Lyman-α, from the slant O2 column (Chabrillat & Kockarts 1997).
   - `photolysis_rates` returns an xarray Dataset of named rates.
 - **Shared atmosphere.** One atmosphere Dataset (species ids, SI units) drives both `photolysis` and `nlte.solve`.
 - **Quantum yield.** The O(¹D) yield from O3 follows Matsumi et al. (2002), with the coefficients checked against the TUV 5.4 implementation.
@@ -430,14 +431,34 @@ GRANADA's $r$ is relative to LTE populations normalised over only the modelled s
   | O3 → O(³P) | 1.01–1.04 |
   | Total O2 | 1.00–1.05 at 30–60 km and 100–110 km; 1.11–1.28 at 70–90 km |
 
-  - The 70–90 km O2 excess is not in the flux; binned 175–200 nm flux agrees to 2%. It points to the constant Lyman-α effective cross section, compared with TUV-x's column-dependent one.
+  - The 70–90 km O2 excess is not in the flux; binned 175–200 nm flux agrees to 2%. The diagnosis below traces most of it to the comparison harness.
   - Actinic flux agrees to within 2–4% above 40 km at all wavelengths. Below 30 km in the Hartley and Schumann–Runge regions, where the flux is negligible, the models differ.
 - **Solar spectrum.** TUV-x's own extraterrestrial flux gives 12.5% more O(¹D) production above 50 km than TSIS-1 HSRS.
 - **Against ERS after the fix:** O3 rates within 4–7% over 20–120 km, and total O2 within 5–12% over 30–120 km.
 
+**Phase 3, TUV-x diagnosis.** `tools/nlte/diagnose_tuvx.py` splits the comparison by wavelength region (TUV-x rates are linear in the solar flux, so it is masked one region at a time), and separates the direct beam from the diffuse flux. Atmosphere: O2, O3 and Rayleigh only.
+
+- **Harness bug.** `tuvx_reference.py` wrote the ERS profiles into an existing TUV-x calculator through MUSICA's zero-copy arrays. That skips TUV-x's profile update, so the Lyman-α and Schumann–Runge band parameterisations kept the O2 column of the built-in v5.4 profile, which was 15–20% larger at 70–90 km. The radiators did see the new profiles. The script now builds every profile before constructing the calculator, and the inferred TUV-x O2 slant column matches ours to 0.3% at 60–85 km.
+- **Lyman-α.** `LymanAlphaPhotolysis` evaluates Chabrillat & Kockarts (1997) on a straight-line spherical slant O2 column (`slant_column` in the `ActinicFlux` output), as TUV does. It agrees with TUV-x to 0.3% at 70–90 km; the constant effective cross section it replaces was 20% high at 70 km. `LinePhotolysis` now also applies the Earth–Sun distance.
+- **By region, sasktran2 / TUV-x with the same sun:**
+
+  | Region | Result | Cause |
+  |---|---|---|
+  | Hartley, Herzberg, Chappuis (O3) | within 1% | — |
+  | Huggins O3 → O(³P) | −3% | O3 cross sections or yield |
+  | Herzberg O2 | +1% | — |
+  | Schumann–Runge bands O2 | 1.00 at 40 km, 1.04 at 70 km, 1.09 at 90 km | Koppers & Murtagh against resolved bands. Direct-beam band transmission agrees to 1–2%, and the result is grid-converged and only ±4% for ±20 K. |
+  | Schumann–Runge continuum O2 | 0.99 at 100 km, 2.7 at 90 km | Where the continuum is optically thick, CfA against Brasseur & Solomon cross sections (7–24% apart) give large ratios. It is 15% of total O2 photolysis at 90 km and negligible below. |
+  | 121.9–130 nm O2 | missing in sasktran2 | `O2UV` starts at 130 nm. 10% of TUV-x's continuum rate at 90 km, 1–2% above 100 km. |
+
+- **Diffuse flux.** Ours is 15–20% higher in the Hartley band, 21% lower near 310 nm and 3–4% higher in the visible. Direct-beam transmission agrees to 2% down to the surface, so this is the solver: TUV-x uses 2-stream delta-Eddington. Against 16 streams at 60 km, 2-stream DO is 25% low at 290 nm but 8–11% high at 310–315 nm, the same change of sign; 4-stream DO is within 6% at 300–400 nm. The effect on photolysis rates is under 1% above 30 km. Rayleigh cross sections (Bates against Nicolet) agree to 0.6%.
+- **Top boundary.** TUV-x adds the exo column to its 119–120 km layer, so its top-edge rates are unattenuated; above 110 km it is not a useful reference.
+- **Solar spectrum.** TUV-x's spectrum is 10–14% above TSIS-1 HSRS in the Schumann–Runge continuum, Herzberg and Hartley regions, and within 1.3% elsewhere.
+- **Result.** With the same sun, O3 → O(¹D) agrees within 1% and O3 → O(³P) within 1–3% from 30 to 120 km. Total O2 agrees within 0.4–4% from 40 to 100 km, except +16% at 90 km. Against ERS, total O2 is now within 1–6% from 40 to 120 km (12% at 90 km), down from 5–12%.
+
 **Phase 3, remaining:**
 
-- A Lyman-α effective cross section that depends on column (Chabrillat & Kockarts 1997).
+- O2 cross sections for 121.9–130 nm (between Lyman-α and `O2UV`).
 - Pressure-induced Herzberg absorption.
 - SZA > 90° (twilight).
 - Per-transition O2 excitation from HITRAN-filtered lines, with a hybrid high-resolution direct beam.

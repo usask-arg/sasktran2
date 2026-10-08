@@ -85,11 +85,8 @@ def main(root: str, scenario: str, output: str, albedo: str = "0.2") -> None:
         sk.photolysis.Photolysis(
             "J_O2_CONTINUUM", "O2", wavelength_range_nm=(122.0, 245.0)
         ),
-        sk.photolysis.LinePhotolysis(
-            "J_O2_LYA_TOTAL",
-            sk.photolysis.LYMAN_ALPHA_WAVELENGTH_NM,
-            sk.photolysis.presets.O2_LYMAN_ALPHA_CROSS_SECTION_M2,
-            sk.photolysis.presets.LYMAN_ALPHA_TOA_FLUX_PHOTONS_M2_S,
+        sk.photolysis.LymanAlphaPhotolysis(
+            "J_O2_LYA_TOTAL", sk.photolysis.presets.LYMAN_ALPHA_TOA_FLUX_PHOTONS_M2_S
         ),
     ]
     ours = sk.photolysis.photolysis_rates(
