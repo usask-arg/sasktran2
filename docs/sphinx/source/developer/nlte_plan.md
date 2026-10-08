@@ -417,11 +417,28 @@ GRANADA's $r$ is relative to LTE populations normalised over only the modelled s
   - now: 1.11–1.17 at 40–80 km, 1.25–1.33 at 90–100 km and 0.98–1.07 at 110–120 km;
   - still 1.5–2.1 at 20–30 km, where pressure-induced Herzberg absorption is missing and O3 → O(¹D) already disagrees.
 
+**Phase 3, TUV-x comparison and a discrete-ordinates flux fix.**
+
+- **Setup.** `tools/nlte/compare_tuvx.py` runs TUV-x (MUSICA v0.17.1, v5.4 configuration) through `tools/nlte/tuvx_reference.py` in a separate environment. Both models get the same ERS atmosphere, SZA, albedo and solar spectrum, with TUV-x aerosols off.
+- **The bug it found.** The discrete-ordinates flux observers added the direct beam at the *ceiling* of the observer's layer, so actinic and downwelling fluxes were reported one model level too high. In a pure absorber this was a 9–20% error at τ = 0.5. It caused the 22–26% stratospheric O(¹D) excess seen earlier.
+- **The fix** (`do_source_planeparallel.cpp`) attenuates the beam from the ceiling to the observer and carries the derivatives. The existing flux derivative tests pass, and a new exact test (`test_direct_beam_flux_is_attenuated_to_the_observer`) holds to 1e-10 at grid levels and between them. The fix also corrects `photchem.actinic_flux`.
+- **After the fix, against TUV-x with the same solar spectrum:**
+
+  | Rate | Agreement |
+  |---|---|
+  | O3 → O(¹D) | 0.99–1.02 over 20–120 km |
+  | O3 → O(³P) | 1.01–1.04 |
+  | Total O2 | 1.00–1.05 at 30–60 km and 100–110 km; 1.11–1.28 at 70–90 km |
+
+  - The 70–90 km O2 excess is not in the flux; binned 175–200 nm flux agrees to 2%. It points to the constant Lyman-α effective cross section, compared with TUV-x's column-dependent one.
+  - Actinic flux agrees to within 2–4% above 40 km at all wavelengths. Below 30 km in the Hartley and Schumann–Runge regions, where the flux is negligible, the models differ.
+- **Solar spectrum.** TUV-x's own extraterrestrial flux gives 12.5% more O(¹D) production above 50 km than TSIS-1 HSRS.
+- **Against ERS after the fix:** O3 rates within 4–7% over 20–120 km, and total O2 within 5–12% over 30–120 km.
+
 **Phase 3, remaining:**
 
 - A Lyman-α effective cross section that depends on column (Chabrillat & Kockarts 1997).
 - Pressure-induced Herzberg absorption.
-- A TUV-x comparison with identical inputs, to explain the stratospheric O(¹D) and O2 differences.
 - SZA > 90° (twilight).
 - Per-transition O2 excitation from HITRAN-filtered lines, with a hybrid high-resolution direct beam.
 - NO2, H2O and NO δ-band reactions.
