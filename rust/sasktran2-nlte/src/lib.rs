@@ -6,11 +6,19 @@
 //! dependency on the rest of SASKTRAN2. See
 //! `docs/sphinx/source/developer/nlte_plan.md` for the design.
 //!
-//! The current contents are the photochemistry models that previously lived
-//! in `sasktran2_rs::photchem`, moved without behaviour changes.
+//! A [`mechanism::Mechanism`] (states, background species, reactions,
+//! photolysis and radiative transitions) is loaded from a TOML file, and
+//! [`solver::solve_steady_state`] gives the state populations, process rates
+//! and production/loss budgets on a column of levels.
+//!
+//! `models`, `types` and `emission` hold the earlier photochemistry code that
+//! moved here from `sasktran2_rs::photchem`.
 
 pub mod emission;
 mod linalg;
+pub mod mechanism;
 pub mod models;
 mod prelude;
+pub mod rates;
+pub mod solver;
 pub mod types;

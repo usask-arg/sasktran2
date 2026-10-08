@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 
@@ -31,92 +30,8 @@ pub struct Molecule {
     pub vibrational_level: u32,
 }
 
-pub struct MoleculeMap {
-    molecule_to_index: HashMap<Molecule, usize>,
-    background_molecules: std::collections::HashSet<Molecule>,
-}
-
-impl MoleculeMap {
-    pub fn new(molecules: &[Molecule], densities: &HashMap<String, f64>) -> Self {
-        let mut molecule_to_index = HashMap::new();
-
-        let is_background = |m: &Molecule| {
-            String::try_from(m.clone())
-                .ok()
-                .map(|name| densities.contains_key(&name))
-                .unwrap_or(false)
-        };
-
-        // Split molecules into state (not in densities) and background (in densities).
-        // State molecules are indexed first (0..n_state), background molecules after.
-        let (state_molecules, background_molecules): (Vec<_>, Vec<_>) =
-            molecules.iter().cloned().partition(|m| !is_background(m));
-
-        let mut idx = 0;
-        for molecule in state_molecules {
-            molecule_to_index.entry(molecule).or_insert_with(|| {
-                let i = idx;
-                idx += 1;
-                i
-            });
-        }
-        for molecule in background_molecules {
-            molecule_to_index.entry(molecule).or_insert_with(|| {
-                let i = idx;
-                idx += 1;
-                i
-            });
-        }
-
-        let background_molecules = molecules
-            .iter()
-            .filter(|m| is_background(m))
-            .cloned()
-            .collect();
-
-        Self {
-            molecule_to_index,
-            background_molecules,
-        }
-    }
-
-    pub fn index(&self, molecule: &Molecule) -> Option<usize> {
-        self.molecule_to_index.get(molecule).copied()
-    }
-
-    pub fn state_size(&self) -> usize {
-        self.molecule_to_index.len() - self.background_molecules.len()
-    }
-
-    pub fn is_in_state(&self, molecule: &Molecule) -> bool {
-        !self.background_molecules.contains(molecule)
-    }
-
-    pub fn state_index_to_molecule_names(&self) -> Vec<String> {
-        let mut entries: Vec<(usize, String)> = self
-            .molecule_to_index
-            .iter()
-            .filter_map(|(molecule, index)| {
-                if self.is_in_state(molecule) {
-                    let name = String::try_from(molecule.clone())
-                        .unwrap_or_else(|_| format!("{:?}", molecule));
-                    Some((*index, name))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        entries.sort_by_key(|(index, _)| *index);
-        entries.into_iter().map(|(_, name)| name).collect()
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParseMoleculeError;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ParseChemicalReactionError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParsePhotoReactionError;
@@ -361,85 +276,6 @@ impl TryFrom<&str> for PhotoReaction {
     }
 }
 
-pub struct ChemicalReaction {
-    pub reactants: Vec<Molecule>,
-    pub products: Vec<Molecule>,
-    pub einstein_coefficient: Option<Box<dyn Fn(f64) -> f64>>, // Optional Einstein coefficient as a function of temperature
-    pub rate_constant: Option<Box<dyn Fn(f64) -> f64>>,        // Optional rate constant
-    pub quantum_yield: Option<f64>, // Optional quantum yield for photochemical reactions
-}
-
-impl ChemicalReaction {
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(r: &str) -> Option<Self> {
-        // Example "O(1D) + O -> O + O"
-        // "O(1D) + O2 -> O2(b, v=1) + O"
-        let r = r.trim();
-        if r.is_empty() {
-            return None;
-        }
-
-        let (lhs, rhs) = r.split_once("->")?;
-
-        let reactants: Vec<Molecule> = lhs
-            .split('+')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(Molecule::from_str)
-            .collect::<Option<Vec<_>>>()?;
-
-        let products: Vec<Molecule> = rhs
-            .split('+')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(Molecule::from_str)
-            .collect::<Option<Vec<_>>>()?;
-
-        if reactants.is_empty() || products.is_empty() {
-            return None;
-        }
-
-        Some(Self {
-            reactants,
-            products,
-            einstein_coefficient: None,
-            quantum_yield: None,
-            rate_constant: None,
-        })
-    }
-
-    pub fn with_einstein_coefficient(mut self, f: impl Fn(f64) -> f64 + 'static) -> Self {
-        self.einstein_coefficient = Some(Box::new(f));
-        self
-    }
-
-    pub fn with_rate_constant(mut self, f: impl Fn(f64) -> f64 + 'static) -> Self {
-        self.rate_constant = Some(Box::new(f));
-        self
-    }
-
-    pub fn with_quantum_yield(mut self, q: f64) -> Self {
-        self.quantum_yield = Some(q);
-        self
-    }
-}
-
-impl FromStr for ChemicalReaction {
-    type Err = ParseChemicalReactionError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        ChemicalReaction::from_str(s).ok_or(ParseChemicalReactionError)
-    }
-}
-
-impl TryFrom<&str> for ChemicalReaction {
-    type Error = ParseChemicalReactionError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        value.parse()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -495,15 +331,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_chemical_reaction() {
-        let r = ChemicalReaction::from_str("O(1D) + O2 -> O + O2")
-            .expect("valid chemical reaction should parse");
-        assert_eq!(r.reactants.len(), 2);
-        assert_eq!(r.products.len(), 2);
-        assert!(r.einstein_coefficient.is_none());
-    }
-
-    #[test]
     fn parses_photo_reaction_without_band() {
         let r = PhotoReaction::from_str("O3 + hv -> O2 + O(1D)")
             .expect("valid photo reaction should parse");
@@ -549,83 +376,5 @@ mod tests {
         assert!(PhotoReaction::from_str("O3 + hq -> O2 + O").is_none());
         assert!(PhotoReaction::from_str("O3 + hv() -> O2 + O").is_none());
         assert!(PhotoReaction::from_str("O3 + hv ->").is_none());
-    }
-
-    #[test]
-    fn parses_chemical_reaction_traits() {
-        let parsed: ChemicalReaction = "O + O3 -> O2 + O2"
-            .parse()
-            .expect("FromStr impl should parse chemical reaction");
-        assert_eq!(parsed.reactants.len(), 2);
-        assert_eq!(parsed.products.len(), 2);
-
-        let parsed_try = ChemicalReaction::try_from("O + O3 -> O2 + O2")
-            .expect("TryFrom<&str> should parse chemical reaction");
-        assert_eq!(parsed_try.reactants.len(), 2);
-        assert_eq!(parsed_try.products.len(), 2);
-    }
-
-    #[test]
-    fn rejects_invalid_chemical_reaction_strings() {
-        assert!(ChemicalReaction::from_str("").is_none());
-        assert!(ChemicalReaction::from_str("O + O2").is_none());
-        assert!(ChemicalReaction::from_str("O + N -> O2").is_none());
-        assert!(ChemicalReaction::from_str("O + O2 ->").is_none());
-        assert!(ChemicalReaction::from_str("-> O + O2").is_none());
-    }
-
-    #[test]
-    fn chemical_reaction_builders_set_their_rate_slots() {
-        let r1 = "O + O3 -> O2 + O2"
-            .parse::<ChemicalReaction>()
-            .expect("reaction should parse")
-            .with_einstein_coefficient(|temperature: f64| 1.0e-3 * temperature);
-
-        let r2 = "O + O3 -> O2 + O2"
-            .parse::<ChemicalReaction>()
-            .expect("reaction should parse")
-            .with_rate_constant(|temperature: f64| 2.0e-3 * temperature);
-
-        let f1 = r1
-            .einstein_coefficient
-            .as_ref()
-            .expect("einstein coefficient should be set");
-        let f2 = r2
-            .rate_constant
-            .as_ref()
-            .expect("rate constant should be set");
-
-        assert_eq!(f1(200.0), 2.0e-1);
-        assert_eq!(f2(200.0), 4.0e-1);
-    }
-
-    #[test]
-    fn molecule_map_returns_first_matching_index() {
-        let molecules = vec![
-            Molecule::from_str("O3").expect("O3 should parse"),
-            Molecule::from_str("O(1D)").expect("O(1D) should parse"),
-            Molecule::from_str("O3").expect("O3 should parse"),
-        ];
-
-        let molecule_map = MoleculeMap::new(&molecules, &HashMap::new());
-
-        assert_eq!(molecule_map.index(&molecules[0]), Some(0));
-        assert_eq!(molecule_map.index(&molecules[1]), Some(1));
-        assert_eq!(molecule_map.index(&molecules[2]), Some(0));
-    }
-
-    #[test]
-    fn molecule_map_distinguishes_molecular_state() {
-        let molecules = vec![
-            Molecule::from_str("O2(a, v=0)").expect("O2(a, v=0) should parse"),
-            Molecule::from_str("O2(a, v=1)").expect("O2(a, v=1) should parse"),
-        ];
-
-        let molecule_map = MoleculeMap::new(&molecules, &HashMap::new());
-        let missing = Molecule::from_str("CO2").expect("CO2 should parse");
-
-        assert_eq!(molecule_map.index(&molecules[0]), Some(0));
-        assert_eq!(molecule_map.index(&molecules[1]), Some(1));
-        assert_eq!(molecule_map.index(&missing), None);
     }
 }
