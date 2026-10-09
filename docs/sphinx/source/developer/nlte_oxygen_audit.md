@@ -122,10 +122,58 @@ The O2(b) ratio is nearly constant from 40 to 80 km. Over that range, the share 
 
 GRANADA's O2(b) + N2 rate would explain it if it were about half the JPL and ym2019 values (which agree to 5%). Its value cannot be read without the input files.
 
+### GRANADA's published scheme
+
+Funke et al. (2012), Table 4, lists GRANADA's O2 processes, taken mainly from ym2006. The O2(a)/O2(b) values that matter at 40-80 km agree with ours:
+
+| Process | Funke et al. (2012) | `oxygen` |
+|---|---|---|
+| b0 + N2 | 1.05e-15 → a(v=2) + N2(1), plus 1.05e-15 → X(v=9); total 2.1e-15 | 1.8e-15 exp(45/T) (2.2e-15 at 200 K) |
+| b0 + O2 | total 3.85e-17, a(v=0-3) | 3.9e-17 |
+| b0 + CO2 | 4.2e-13 → a0 | same |
+| b0 + O3 | 6.6e-12 → a0 | 3.5e-11 exp(-135/T) (1.8e-11 at 200 K; at most 6% of the loss) |
+| b0 + O | 2.0e-14 → X, 6.0e-14 → a0 | same |
+| b1 + O | 4.5e-12 → b0 | → O2 (only above 90 km) |
+| b2 + O2 | 1.2e-11 exp(-596/T) | 2.3e-11 exp(-691/T) |
+| a0 + O | 6.5e-17 | 1e-16 |
+
+The O(1D) + O2 yields are not tabulated; the code takes them from input files.
+
+The paper also states that radiative transfer in the a-X and b-X bands is computed line by line, with a modified Curtis matrix. That includes absorption of upwelling and emitted band radiation, which we do not include, but radiation is only 1-12% of the O2(b) loss at 40-80 km.
+
+With the loss terms matching, the factor of about 1.9 does not come from N2 quenching.
+
+**The population convention is not the cause.** Fig. 9 of the paper plots daytime number densities directly:
+- O2(b, v=0) is about 1.5e6 cm⁻³, nearly flat from 30 to 90 km;
+- O2(a, v=0) is 4-5e9 cm⁻³ at 40-60 km.
+
+These agree with the ERS ratios converted with electronic degeneracies, so that convention is right.
+
+**The difference is the A-band pumping.** Where N2 quenching dominates the loss, n_b ≈ J [O2] / (k_N2 [N2]). For about 1.5e6 cm⁻³ that needs J ≈ 1.2e-8 s⁻¹ at every altitude from 30 to 90 km. That is:
+- about 2× our top-of-atmosphere rate of 6.2e-9 s⁻¹, which lies within published values (5.35e-9 in ym2006);
+- about 10× ours at 40 km, where the strong A-band lines are optically thick to the direct beam.
+
+Our 0.52-0.58× ratio is constant because pumping in GRANADA dominates O2(b) production at all these altitudes. Ours is O(1D)-dominated at 40 km and pumping-dominated at 80 km. We keep our line-by-line pumping; GRANADA's is not reproduced here and is not explained by the paper.
+
+### GRANADA source
+
+An audit of the source (Kopra/source_10.0.0/modules) found no physics error in the O2 path:
+- **Solar term and absorption rate.** The initial solar term and the absorption rate are correctly normalised. With the top-of-atmosphere beam they give 6.2e-9 s⁻¹ for the A band, the same as ours.
+- **Rate laws.** These are `p1` or `p1·exp(p2/T)`, with correct detailed balance for the reverse rates.
+
+**Where attenuation happens.** The solar beam is attenuated line by line (Voigt lines, slant paths) only inside a radiative-transfer sub-calculation. It stays at the unattenuated top-of-atmosphere value at every altitude in three cases:
+- when the b-X band is not part of such a calculation;
+- for calculation types 11, 13, 21, 31 and 41, which never compute the solar geometry;
+- below a sub-calculation's lower altitude limit, where it is frozen at its value just above that limit.
+
+**Not checkable.** The ERS setup, process and spectroscopy files are not available. So it is open which route the ERS runs took, and whether a configuration value (degeneracies, band A, line reduction factor) supplies the remaining factor of about 2. GRANADA's code also does not stop the O(1D) + O2 yields from summing above 1.
+
+The flat, roughly 1.2e-8 s⁻¹ pumping inferred above fits the unattenuated routes. The ERS O2(b) is therefore not a reference for daytime O2(b) below about 80 km.
+
 ## Open items
 
 - O(1D) + O2 total O2(b) yield: 1.0 here (ym2019) against 0.8 ± 0.2 (JPL).
-- The GRANADA O2(b) factor of about 1.9; needs its input files or Funke et al. (2012).
+- GRANADA's A-band pumping (about 1.2e-8 s⁻¹, nearly unattenuated to 30 km), about 2-10× ours.
 - Wavelength-dependent O2(a, v) yields from O3 photolysis (yv2020, or GRANADA's).
 - γ-band (2-0) and a-X (1.27 µm) emission constituents.
 - O(1S) daytime sources.
