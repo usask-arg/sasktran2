@@ -256,23 +256,31 @@ class ActinicFlux:
         radiance = engine.calculate_radiance(atmo)
 
         scale = 1.0 / earth_sun_distance_au**2
-        cross_section = np.stack(
-            [
-                self._optical_property(s).atmosphere_quantities(atmo).extinction.T
-                for s in absorbers
-            ]
+        cross_section = (
+            np.stack(
+                [
+                    self._optical_property(s).atmosphere_quantities(atmo).extinction.T
+                    for s in absorbers
+                ]
+            )
+            if absorbers
+            else np.zeros((0, self.wavelengths_nm.size, self.altitudes_m.size))
         )
-        densities = np.array(
-            [
-                np.exp(
-                    np.interp(
-                        self.altitudes_m,
-                        source_altitude,
-                        np.log(np.maximum(atmosphere[s].to_numpy(), 1e-300)),
+        densities = (
+            np.zeros((0, self.altitudes_m.size))
+            if not absorbers
+            else np.array(
+                [
+                    np.exp(
+                        np.interp(
+                            self.altitudes_m,
+                            source_altitude,
+                            np.log(np.maximum(atmosphere[s].to_numpy(), 1e-300)),
+                        )
                     )
-                )
-                for s in absorbers
-            ]
+                    for s in absorbers
+                ]
+            )
         )
         ds = xr.Dataset(
             {

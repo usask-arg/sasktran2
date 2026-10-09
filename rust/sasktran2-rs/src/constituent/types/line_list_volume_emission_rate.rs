@@ -14,6 +14,7 @@ pub struct LineListVolumeEmissionRate {
     pub wavelengths_nm: Array1<f64>,
     pub weights: Array2<f64>,
     interp_mode: crate::interpolation::OutOfBoundsMode,
+    molecular_mass_g_per_mol: f64,
 }
 
 impl LineListVolumeEmissionRate {
@@ -68,7 +69,17 @@ impl LineListVolumeEmissionRate {
             wavelengths_nm,
             weights,
             interp_mode: crate::interpolation::OutOfBoundsMode::Zero,
+            molecular_mass_g_per_mol: O2_MOLECULAR_MASS_G_PER_MOL,
         })
+    }
+
+    /// Sets the emitter mass used for Doppler broadening (default O2).
+    pub fn with_molecular_mass(mut self, molecular_mass_g_per_mol: f64) -> Result<Self> {
+        if !(molecular_mass_g_per_mol.is_finite() && molecular_mass_g_per_mol > 0.0) {
+            return Err(anyhow!("Molecular mass must be a positive finite value"));
+        }
+        self.molecular_mass_g_per_mol = molecular_mass_g_per_mol;
+        Ok(self)
     }
 
     pub fn with_interp_mode(mut self, interp_mode: crate::interpolation::OutOfBoundsMode) -> Self {
@@ -107,7 +118,7 @@ impl LineListVolumeEmissionRate {
             let doppler_width_cminv = OpticalLine::doppler_width_cminv(
                 line_center_cminv,
                 temperature_k,
-                O2_MOLECULAR_MASS_G_PER_MOL,
+                self.molecular_mass_g_per_mol,
             );
 
             assign_normalized_doppler_line_shape(
