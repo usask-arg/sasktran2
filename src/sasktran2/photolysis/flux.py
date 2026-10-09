@@ -123,11 +123,11 @@ def airglow_wavelength_grid(
 #: They are built only for species present in an atmosphere.
 DEFAULT_OPTICAL_PROPERTIES = {
     "O3": sk.optical.O3DBM,
-    "O2": lambda: sk.optical.AERLineAbsorber("O2")
+    "O2": lambda: sk.optical.HITRANAbsorber("O2")
     + sk.optical.O2UV()
     + sk.optical.O2LymanAlpha()
     + sk.optical.VUVAbsorber("O2"),
-    "N2": lambda: sk.optical.AERLineAbsorber("N2") + sk.optical.VUVAbsorber("N2"),
+    "N2": lambda: sk.optical.VUVAbsorber("N2"),
     "O(3P)": lambda: sk.optical.VUVAbsorber("O"),
     "NO2": sk.optical.NO2Vandaele,
 }

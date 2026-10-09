@@ -80,7 +80,7 @@ def main(root: str, scenario: str, out_prefix: str) -> None:
     )
     optics = {
         "O3": sk.optical.O3DBM(),
-        "O2": sk.optical.AERLineAbsorber("O2"),
+        "O2": sk.optical.HITRANAbsorber("O2"),
         "NO2": sk.optical.NO2Vandaele(),
     }
     for name, optical in optics.items():

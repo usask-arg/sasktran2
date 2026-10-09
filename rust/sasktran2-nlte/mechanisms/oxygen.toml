@@ -3,9 +3,8 @@
 #
 # Audited process by process against the newest Yankovsky model database
 # (status March 2019, the supplement of Yankovsky et al. 2019), JPL 19-5 and
-# HITRAN; the audit is in docs/sphinx/source/developer/nlte_oxygen_audit.md.
-# Where the two evaluations differ, JPL is used for the rate and the Yankovsky
-# database for the products.
+# HITRAN; each process cites its source. Where the two evaluations differ,
+# JPL is used for the rate and the Yankovsky database for the products.
 #
 # Inputs are physical rates from sasktran2.photolysis
 # (presets.oxygen_photolysis): J_O3_O1D_A{v}, J_O3_O1D_X, J_O2_SRC, J_O2_LYA (O(1D) channel)

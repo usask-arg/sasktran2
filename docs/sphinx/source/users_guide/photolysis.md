@@ -62,7 +62,8 @@ atmosphere = atmosphere.sel(altitude=atmosphere.altitude <= 150e3)
 {py:class}`sasktran2.photolysis.ActinicFlux` sets up the engine with flux observers
 at every altitude. The absorbers are the species of the dataset that have default
 cross sections (O3, O2, N2, NO2 and atomic O); Rayleigh scattering and a Lambertian
-surface are always included.
+surface are always included. The O2 line absorption comes from HITRAN, downloaded on
+first use, which needs the optional `hitran-api` package (`pip install sasktran2[hapi]`).
 
 ```{code-cell} ipython3
 altitudes = np.arange(0.0, 150_001.0, 5_000.0)

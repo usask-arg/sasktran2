@@ -176,7 +176,9 @@ def limb_setup(wavelengths):
     for tangent in tangents_km:
         viewing.add_ray(sk.TangentAltitudeSolar(tangent * 1e3, 0.0, 600e3, COS_SZA))
 
-    atmosphere = sk.Atmosphere(geometry, config, wavelengths_nm=wavelengths)
+    atmosphere = sk.Atmosphere(
+        geometry, config, wavelengths_nm=wavelengths, calculate_derivatives=False
+    )
     atmosphere.temperature_k = np.interp(model_altitudes, z, temperature)
     atmosphere.pressure_pa = np.exp(np.interp(model_altitudes, z, np.log(pressure)))
     vmr = lambda key: np.interp(model_altitudes, z, ers[f"{key}_mean"].to_numpy())

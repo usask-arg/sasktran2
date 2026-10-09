@@ -3,8 +3,7 @@
 //! The crate is a self-contained kinetics library. It takes atmospheric
 //! profiles and photolysis rates as plain arrays and returns state
 //! populations and emission rates; it does no radiative transfer and has no
-//! dependency on the rest of SASKTRAN2. See
-//! `docs/sphinx/source/developer/nlte_plan.md` for the design.
+//! dependency on the rest of SASKTRAN2.
 //!
 //! A [`mechanism::Mechanism`] (states, background species, reactions,
 //! photolysis and radiative transitions) is loaded from a TOML file, and
