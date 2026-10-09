@@ -5,7 +5,7 @@ from __future__ import annotations
 import xarray as xr
 
 from .flux import O2_LINE_WINDOWS_NM
-from .quantum_yields import o3_o1d_matsumi2002, o3_o3p_matsumi2002
+from .quantum_yields import O3O1DYield, o3_o1d_matsumi2002, o3_o3p_matsumi2002
 from .rates import LymanAlphaPhotolysis, Photolysis, photolysis_rates
 from .tuv import TUVXQuantumYield
 
@@ -16,6 +16,10 @@ O2_LYMAN_ALPHA_O1D_YIELD = 0.53
 
 _MATSUMI = "O3DBM cross sections; O(1D) yield of Matsumi et al. (2002)"
 _O2 = "AER O2 line cross sections, resolved at 0.001 nm"
+_MATSUMI_YV2020 = (
+    "O3DBM cross sections; O(1D) yield of Matsumi et al. (2002); O2(a, v) split "
+    "of Yankovsky and Vorobeva (2020)"
+)
 
 
 def oxygen_photolysis(
@@ -26,6 +30,8 @@ def oxygen_photolysis(
     ===============  ============================================================
     ``J_O3_O1D``     O3 -> O2 + O(1D)
     ``J_O3_O3P``     O3 -> O2 + O(3P)
+    ``J_O3_O1D_A{v}``  O3 -> O2(a, v=0-5) + O(1D), wavelength-dependent split
+    ``J_O3_O1D_X``   O3 -> O2(X) + O(1D), the spin-forbidden channel beyond 310 nm
     ``J_O2_SRC``     O2 -> O(3P) + O(1D) in the Schumann-Runge continuum (130-175 nm)
     ``J_O2_LYA``     O2 -> O(3P) + O(1D) at Lyman-alpha
     ``J_O2_EXC_B0``  O2(X) -> O2(b, v=0), A band
@@ -49,6 +55,11 @@ def oxygen_photolysis(
     photolysis = [
         Photolysis("J_O3_O1D", "O3", o3_o1d_matsumi2002, reference=_MATSUMI),
         Photolysis("J_O3_O3P", "O3", o3_o3p_matsumi2002, reference=_MATSUMI),
+        *(
+            Photolysis(f"J_O3_O1D_A{v}", "O3", O3O1DYield(v), reference=_MATSUMI_YV2020)
+            for v in range(6)
+        ),
+        Photolysis("J_O3_O1D_X", "O3", O3O1DYield("X"), reference=_MATSUMI_YV2020),
         Photolysis(
             "J_O2_SRC",
             "O2",
@@ -116,7 +127,9 @@ def oxygen_yankovsky_rates(flux: xr.Dataset) -> xr.Dataset:
     :data:`YANKOVSKY_O2A_FRACTIONS` and :data:`YANKOVSKY_O2X_LEVELS`.
     """
     channels = photolysis_rates(flux, oxygen_photolysis())
-    rates = channels.drop_vars(["J_O3_O1D", "J_O3_O3P"])
+    rates = channels.drop_vars(
+        ["J_O3_O1D", "J_O3_O3P", "J_O3_O1D_X", *(f"J_O3_O1D_A{v}" for v in range(6))]
+    )
     for v, fraction in enumerate(YANKOVSKY_O2A_FRACTIONS):
         rates[f"J_O3_A{v}"] = channels["J_O3_O1D"] * fraction
     for v in YANKOVSKY_O2X_LEVELS:
