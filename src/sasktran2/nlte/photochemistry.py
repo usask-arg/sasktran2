@@ -33,10 +33,13 @@ PHOTOLYSIS_ABSORBERS = ("O2", "O3", "NO2")
 
 @dataclass(frozen=True)
 class _Emitter:
-    mechanism: str
-    #: Band constituent factory by mechanism transition id.
-    bands: dict[str, Callable[[np.ndarray, np.ndarray], object]]
     description: str
+    #: Bundled kinetic mechanism, for emitters driven by state populations.
+    mechanism: str | None = None
+    #: Band constituent factory by mechanism transition id.
+    bands: dict[str, Callable[[np.ndarray, np.ndarray], object]] | None = None
+    #: Background species for emitters driven directly by the actinic flux.
+    absorber: str | None = None
 
 
 class _Combined(sk.constituent.base.Constituent):
@@ -73,6 +76,13 @@ PHOTOCHEMICAL_SPECIES = {
         description=(
             "O2 b-X emission: the A band (0-0, 762 nm) with the 1-1 hot band, "
             "and the B band (1-0, 688 nm)"
+        ),
+    ),
+    "OH(A)": _Emitter(
+        absorber="OH",
+        description=(
+            "OH A-X solar resonance fluorescence (bands near 282-350 nm, mostly "
+            "0-0 at 308 nm) from thermal OH(X, v=0); needs OH in `background`"
         ),
     ),
 }
@@ -203,12 +213,17 @@ def add_photochemical_species(
     from sasktran2 import photolysis
 
     emitters = {_canonical(name): None for name in species}
-    mechanisms = {PHOTOCHEMICAL_SPECIES[name].mechanism for name in emitters}
-    if len(mechanisms) != 1:
+    mechanisms = {
+        PHOTOCHEMICAL_SPECIES[name].mechanism
+        for name in emitters
+        if PHOTOCHEMICAL_SPECIES[name].mechanism is not None
+    }
+    if len(mechanisms) > 1:
         msg = f"species from several mechanisms cannot be combined yet: {mechanisms}"
         raise NotImplementedError(msg)
-    (mechanism_name,) = mechanisms
-    mechanism = Mechanism.bundled(mechanism_name)
+    mechanism_name = next(iter(mechanisms), None)
+    mechanism = Mechanism.bundled(mechanism_name) if mechanism_name else None
+    fluorescent = [n for n in emitters if PHOTOCHEMICAL_SPECIES[n].absorber]
 
     if not isinstance(atmosphere.model_geometry, sk.Geometry1D):
         msg = "add_photochemical_species supports one-dimensional atmospheres only"
@@ -253,7 +268,11 @@ def add_photochemical_species(
             return DEFAULT_VMR[name] * air
         return None
 
-    densities = {name: density(name) for name in mechanism.background}
+    needed = [
+        *(mechanism.background if mechanism else []),
+        *(PHOTOCHEMICAL_SPECIES[n].absorber for n in fluorescent),
+    ]
+    densities = {name: density(name) for name in needed}
     missing = [name for name, values in densities.items() if values is None]
     if missing:
         msg = (
@@ -272,7 +291,8 @@ def add_photochemical_species(
         coords={"altitude": altitude},
     )
 
-    if rates is None:
+    flux = None
+    if fluorescent or (mechanism is not None and rates is None):
         absorbers = {
             name: values
             for name in PHOTOLYSIS_ABSORBERS
@@ -289,9 +309,23 @@ def add_photochemical_species(
             albedo=albedo,
             earth_sun_distance_au=earth_sun_distance_au,
         )
+    if mechanism is not None and rates is None:
         rates = _RATE_FUNCTIONS[mechanism_name](flux)
 
-    solution = solve(mechanism, chemistry, rates)
+    results = []
+    if mechanism is not None:
+        solution = solve(mechanism, chemistry, rates)
+        results += [
+            solution,
+            xr.Dataset(
+                {
+                    name: ("altitude", np.asarray(rates[name]))
+                    for name in mechanism.rate_inputs
+                    if name in rates
+                },
+                coords={"altitude": altitude},
+            ),
+        ]
 
     config = getattr(atmosphere, "_config", None)
     if (
@@ -305,6 +339,18 @@ def add_photochemical_species(
         )
     for name in emitters:
         emitter = PHOTOCHEMICAL_SPECIES[name]
+        if emitter.absorber is not None:
+            ver, constituent = _fluorescence(
+                name, flux, temperature, densities[emitter.absorber], altitude
+            )
+            atmosphere[f"{name} emission"] = constituent
+            results.append(
+                xr.Dataset(
+                    {f"{name} photon_ver": ("altitude", ver)},
+                    coords={"altitude": altitude},
+                )
+            )
+            continue
         atmosphere[f"{name} emission"] = _Combined(
             {
                 transition: make(
@@ -315,12 +361,25 @@ def add_photochemical_species(
             }
         )
 
-    rate_inputs = xr.Dataset(
-        {
-            name: ("altitude", np.asarray(rates[name]))
-            for name in mechanism.rate_inputs
-            if name in rates
-        },
-        coords={"altitude": altitude},
+    return xr.merge(results)
+
+
+def _fluorescence(name, flux, temperature, density, altitude):
+    from . import fluorescence
+
+    if name != "OH(A)":
+        msg = f"no fluorescence model for {name}"
+        raise NotImplementedError(msg)
+    lines = fluorescence.oh_ax_lines()
+    at_lines = fluorescence.actinic_flux_at_lines(flux, lines.wavelength_nm)
+    ver, weights = fluorescence.oh_ax_fluorescence(
+        lines, temperature, density, at_lines
     )
-    return xr.merge([solution, rate_inputs])
+    constituent = sk.constituent.LineListVolumeEmissionRate(
+        altitude,
+        ver,
+        lines.wavelength_nm,
+        weights,
+        molecular_mass_g_per_mol=fluorescence.OH_MOLAR_MASS,
+    )
+    return ver, constituent
