@@ -10,6 +10,7 @@ from sasktran2.atmosphere import Atmosphere
 from sasktran2.optical.base import OpticalProperty
 
 from .base import Constituent
+from .numdenscatterer import _reference_cross_sections
 
 
 class NumberDensityScatterer2D(Constituent):
@@ -229,6 +230,8 @@ class ExtinctionScatterer2D(NumberDensityScatterer2D):
         Extinction in ``m^-1`` with shape ``(horizontal, altitude)``.
     extinction_wavelength_nm : float
         Wavelength in nanometres at which ``extinction_per_m`` is specified.
+        Must be inside the ``wavelength_range_nm`` of the optical property, if
+        it has one.
     **kwargs
         Additional optical-property inputs. Shape and derivative-topology
         rules are identical to :class:`NumberDensityScatterer2D`.
@@ -263,23 +266,19 @@ class ExtinctionScatterer2D(NumberDensityScatterer2D):
     def _update_number_density(self, atmo: Atmosphere) -> None:
         self._validate_native_profile(self._extinction_per_m, "extinction_per_m")
         native_altitudes = np.asarray(atmo._native_altitudes(), dtype=np.float64)
-        factors = np.asarray(
-            self._optical_property.cross_sections(
-                np.array([self._extinction_wavelength_nm]),
-                altitudes_m=native_altitudes,
-                **self._flat_kwargs(),
-            ).extinction,
-            dtype=np.float64,
-        ).reshape(-1)
+        factors = _reference_cross_sections(
+            self._optical_property,
+            self._extinction_wavelength_nm,
+            "extinction_wavelength_nm",
+            native_altitudes,
+            **self._flat_kwargs(),
+        )
         expected_size = int(np.prod(self._volume_shape))
         if factors.size != expected_size:
             msg = (
                 "Optical-property reference cross section has spatial size "
                 f"{factors.size}; expected {expected_size}"
             )
-            raise ValueError(msg)
-        if np.any(~np.isfinite(factors)) or np.any(factors <= 0):
-            msg = "Reference extinction cross sections must be finite and positive"
             raise ValueError(msg)
 
         self._extinction_to_numden_factors = factors.reshape(self._volume_shape)

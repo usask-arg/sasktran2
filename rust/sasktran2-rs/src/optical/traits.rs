@@ -58,6 +58,16 @@ pub trait OpticalProperty {
         ))
     }
 
+    /// Warning about inputs the property accepted but cannot represent, e.g. wavelengths outside
+    /// a tabulated range. Evaluation still succeeds, and callers decide how to report it.
+    fn out_of_bounds_warning(
+        &self,
+        _inputs: &dyn StorageInputs,
+        _aux_inputs: &dyn AuxOpticalInputs,
+    ) -> Option<String> {
+        None
+    }
+
     fn is_scatterer(&self) -> bool;
 }
 

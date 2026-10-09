@@ -69,6 +69,12 @@ The database is a function of wavelength, and any arguments of the particle size
 When it is created for the first time the local database will be generated. Any subsequent instantiations of the
 object will re-use the cached database.
 
+The database only covers `mie_db.wavelength_range_nm`, here 270 to 970 nm. By default, calculation wavelengths
+outside this range issue a `UserWarning`, and the aerosol contributes nothing at those wavelengths. Pass
+`wavelength_out_of_bounds_mode="raise"` to make this an error, `"zero"` to accept it silently, or `"extend"` to use
+the optical properties at the nearest database wavelength. The `extinction_wavelength_nm` of an
+{py:class}`sasktran2.constituent.ExtinctionScatterer` must always be inside the range.
+
 Set `num_threads=4` when constructing `MieDatabase` to use four Rust workers
 during database generation. Workers calculate particle sizes and integrate
 distributions in parallel, sharing the precomputed angular basis. The default

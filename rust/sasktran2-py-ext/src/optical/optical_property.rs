@@ -12,7 +12,7 @@ use sasktran2_rs::optical::traits::*;
 use crate::optical::line_absorber::PyLineAbsorber;
 use crate::optical::scat_dbase::{
     PyScatteringDatabaseDim1, PyScatteringDatabaseDim2, PyScatteringDatabaseDim3,
-    PyScatteringDatabaseDim4,
+    PyScatteringDatabaseDim4, warn_out_of_bounds,
 };
 use crate::optical::xsec_absorber::PyXsecAbsorber;
 use crate::optical::xsec_dbase::*;
@@ -54,6 +54,7 @@ pub struct PyOpticalProperty {
     py_optical_property: Py<PyAny>,
     py_atmosphere: Py<PyAny>,
     aux_names: Vec<String>,
+    report_out_of_bounds: bool,
 }
 
 impl PyOpticalProperty {
@@ -70,7 +71,15 @@ impl PyOpticalProperty {
             py_optical_property,
             py_atmosphere,
             aux_names,
+            report_out_of_bounds: true,
         }
+    }
+
+    /// Skips Python warnings for out-of-bounds inputs, for evaluations that repeat one
+    /// that has already reported them
+    pub fn without_out_of_bounds_warnings(mut self) -> Self {
+        self.report_out_of_bounds = false;
+        self
     }
 
     fn aux_kwargs<'py>(
@@ -126,11 +135,17 @@ impl OpticalProperty for PyOpticalProperty {
         Python::attach(|py| {
             let bound_optical_property = self.py_optical_property.bind(py);
 
+            let mut warning = None;
             if with_optical_downcast(bound_optical_property, |db| {
-                db.optical_quantities_emplace(inputs, aux_inputs, optical_quantities)
+                db.optical_quantities_emplace(inputs, aux_inputs, optical_quantities)?;
+                if self.report_out_of_bounds {
+                    warning = db.out_of_bounds_warning(inputs, aux_inputs);
+                }
+                Ok(())
             })
             .is_ok()
             {
+                warn_out_of_bounds(py, warning)?;
                 return Ok(());
             }
 
@@ -222,15 +237,21 @@ impl OpticalProperty for PyOpticalProperty {
     ) -> Result<(OpticalQuantities, HashMap<String, OpticalQuantities>)> {
         Python::attach(|py| {
             let mut result = None;
+            let mut warning = None;
             // Resolve the native property once and propagate calculation errors;
             // Python-only optical properties retain the separate API fallback.
             if with_optical_downcast(self.py_optical_property.bind(py), |db| {
                 result = Some(db.optical_quantities_and_derivatives(inputs, aux_inputs));
+                if self.report_out_of_bounds {
+                    warning = db.out_of_bounds_warning(inputs, aux_inputs);
+                }
                 Ok(())
             })
             .is_ok()
             {
-                return result.unwrap();
+                let result = result.unwrap()?;
+                warn_out_of_bounds(py, warning)?;
+                return Ok(result);
             }
             Ok((
                 self.optical_quantities(inputs, aux_inputs)?,

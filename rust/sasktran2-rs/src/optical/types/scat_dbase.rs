@@ -89,6 +89,29 @@ pub trait ScatteringDatabaseInterp {
         S5: DataMut<Elem = f64>;
 }
 
+/// Treatment of requested spectral points outside the database wavenumber grid
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SpectralOutOfBoundsMode {
+    /// Return an error naming the requested and tabulated wavelength ranges
+    Raise,
+    /// Behave like Zero, and describe the out-of-range wavelengths through
+    /// OpticalProperty::out_of_bounds_warning so the caller can report them
+    #[default]
+    Warn,
+    /// Contribute zero cross section, single scatter albedo, and phase moments
+    Zero,
+    /// Hold the optical properties at the nearest tabulated wavenumber
+    Extend,
+}
+
+fn format_nm(wavenumber_cminv: f64) -> String {
+    let formatted = format!("{:.4}", 1.0e7 / wavenumber_cminv);
+    formatted
+        .trim_end_matches('0')
+        .trim_end_matches('.')
+        .to_string()
+}
+
 pub struct ScatteringDatabase<D1: Dimension> {
     xsec: Array<f64, D1>,
     ssa: Array<f64, D1>,
@@ -96,6 +119,7 @@ pub struct ScatteringDatabase<D1: Dimension> {
     wvnum: Grid1D,
     params: Vec<Array1<f64>>,
     param_names: Vec<String>,
+    out_of_bounds_mode: SpectralOutOfBoundsMode,
 }
 
 impl<D1: Dimension> ScatteringDatabase<D1> {
@@ -114,7 +138,101 @@ impl<D1: Dimension> ScatteringDatabase<D1> {
             wvnum,
             params,
             param_names,
+            out_of_bounds_mode: SpectralOutOfBoundsMode::default(),
         }
+    }
+
+    pub fn out_of_bounds_mode(&self) -> SpectralOutOfBoundsMode {
+        self.out_of_bounds_mode
+    }
+
+    pub fn set_out_of_bounds_mode(&mut self, mode: SpectralOutOfBoundsMode) {
+        self.out_of_bounds_mode = mode;
+    }
+
+    #[inline(always)]
+    fn wvnum_interp_mode(&self) -> OutOfBoundsMode {
+        match self.out_of_bounds_mode {
+            SpectralOutOfBoundsMode::Extend => OutOfBoundsMode::Extend,
+            // Raise rejects out-of-range points before any interpolation happens
+            SpectralOutOfBoundsMode::Raise
+            | SpectralOutOfBoundsMode::Warn
+            | SpectralOutOfBoundsMode::Zero => OutOfBoundsMode::Zero,
+        }
+    }
+
+    /// Describes the requested wavenumbers outside the tabulated grid, or None if all are inside.
+    /// The comparison matches the interpolation bounds exactly, so a point accepted here is
+    /// never zero-filled.
+    fn out_of_range_summary(&self, wavenumber_cminv: &ArrayView1<f64>) -> Option<String> {
+        let lower = self.wvnum.x[0];
+        let upper = self.wvnum.x[self.wvnum.x.len() - 1];
+
+        let outside: Vec<f64> = wavenumber_cminv
+            .iter()
+            .copied()
+            .filter(|wv| !(lower <= *wv && *wv <= upper))
+            .collect();
+
+        if outside.is_empty() {
+            return None;
+        }
+
+        let outside_min = outside.iter().copied().fold(f64::INFINITY, f64::min);
+        let outside_max = outside.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+
+        Some(format!(
+            "{} of {} requested wavelengths (spanning {} to {} nm) are outside the scattering \
+             database wavelength range of {} to {} nm",
+            outside.len(),
+            wavenumber_cminv.len(),
+            format_nm(outside_max),
+            format_nm(outside_min),
+            format_nm(upper),
+            format_nm(lower),
+        ))
+    }
+
+    /// Errors if the mode is Raise and any requested wavenumber is outside the tabulated grid
+    pub fn check_wavenumber_bounds(&self, wavenumber_cminv: &ArrayView1<f64>) -> Result<()> {
+        if self.out_of_bounds_mode != SpectralOutOfBoundsMode::Raise {
+            return Ok(());
+        }
+
+        match self.out_of_range_summary(wavenumber_cminv) {
+            Some(summary) => Err(anyhow!(
+                "{summary}. Use wavelengths inside the database range, or set \
+                 wavelength_out_of_bounds_mode to 'warn', 'zero', or 'extend' on the optical \
+                 property to accept them"
+            )),
+            None => Ok(()),
+        }
+    }
+
+    /// Warning text if the mode is Warn and any requested wavenumber is outside the tabulated grid
+    pub fn wavenumber_bounds_warning(&self, wavenumber_cminv: &ArrayView1<f64>) -> Option<String> {
+        if self.out_of_bounds_mode != SpectralOutOfBoundsMode::Warn {
+            return None;
+        }
+
+        self.out_of_range_summary(wavenumber_cminv).map(|summary| {
+            format!(
+                "{summary}, so the scatterer contributes nothing there. Set \
+                 wavelength_out_of_bounds_mode on the optical property to 'zero' to accept this \
+                 silently, 'extend' to use the nearest database wavelength, or 'raise' to make it \
+                 an error"
+            )
+        })
+    }
+
+    fn input_bounds_warning(
+        &self,
+        inputs: &dyn StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
+    ) -> Option<String> {
+        let wavenumber_cminv =
+            param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv").ok()?;
+        self.wavenumber_bounds_warning(&wavenumber_cminv.view())
     }
 
     pub fn from_asymmetry_parameter(
@@ -154,6 +272,7 @@ impl<D1: Dimension> ScatteringDatabase<D1> {
             wvnum,
             params,
             param_names,
+            out_of_bounds_mode: SpectralOutOfBoundsMode::default(),
         }
     }
 }
@@ -185,7 +304,7 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix1> {
         let leg_order = (self.legendre.dim().1 / 6).min(legendre.dim().1 / num_legendre);
 
         Zip::indexed(wvnum).for_each(|j, wv| {
-            let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
+            let wvnum_weights = &self.wvnum.interp1_weights(*wv, self.wvnum_interp_mode());
 
             let local_xs = self.xsec[wvnum_weights[0].0] * wvnum_weights[0].1
                 + self.xsec[wvnum_weights[1].0] * wvnum_weights[1].1;
@@ -240,6 +359,7 @@ impl OpticalProperty for ScatteringDatabase<Ix1> {
         optical_quantities: &mut OpticalQuantities,
     ) -> anyhow::Result<()> {
         let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
+        self.check_wavenumber_bounds(&wavenumber_cminv.view())?;
 
         // Just grab this to get the number of geometry points, we don't actually interpolate in this dimension
         let altitudes_m = param_from_storage_or_aux(inputs, aux_inputs, "altitude_m")?;
@@ -288,6 +408,14 @@ impl OpticalProperty for ScatteringDatabase<Ix1> {
         Ok(())
     }
 
+    fn out_of_bounds_warning(
+        &self,
+        inputs: &dyn StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
+    ) -> Option<String> {
+        self.input_bounds_warning(inputs, aux_inputs)
+    }
+
     fn is_scatterer(&self) -> bool {
         true
     }
@@ -323,7 +451,7 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix2> {
         for (i0, weight0, _) in weights_0.iter() {
             let i0 = *i0;
             Zip::indexed(wvnum).for_each(|j, wv| {
-                let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
+                let wvnum_weights = &self.wvnum.interp1_weights(*wv, self.wvnum_interp_mode());
 
                 let local_xs = self.xsec[[i0, wvnum_weights[0].0]] * wvnum_weights[0].1
                     + self.xsec[[i0, wvnum_weights[1].0]] * wvnum_weights[1].1;
@@ -387,7 +515,7 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix2> {
         for (i0, _, d_weight0) in weights_0.iter() {
             let i0 = *i0;
             Zip::indexed(wvnum).for_each(|j, wv| {
-                let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
+                let wvnum_weights = &self.wvnum.interp1_weights(*wv, self.wvnum_interp_mode());
 
                 let local_xs = self.xsec[[i0, wvnum_weights[0].0]] * wvnum_weights[0].1
                     + self.xsec[[i0, wvnum_weights[1].0]] * wvnum_weights[1].1;
@@ -426,6 +554,7 @@ impl OpticalProperty for ScatteringDatabase<Ix2> {
         optical_quantities: &mut OpticalQuantities,
     ) -> Result<()> {
         let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
+        self.check_wavenumber_bounds(&wavenumber_cminv.view())?;
         let param_0 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[0])?;
 
         let _ = optical_quantities.resize(param_0.len(), wavenumber_cminv.len());
@@ -466,6 +595,7 @@ impl OpticalProperty for ScatteringDatabase<Ix2> {
         d_optical_quantities: &mut HashMap<String, OpticalQuantities>,
     ) -> Result<()> {
         let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
+        self.check_wavenumber_bounds(&wavenumber_cminv.view())?;
         let param_0 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[0])?;
 
         if d_optical_quantities.contains_key(&self.param_names[0]) {
@@ -513,6 +643,14 @@ impl OpticalProperty for ScatteringDatabase<Ix2> {
         Ok(())
     }
 
+    fn out_of_bounds_warning(
+        &self,
+        inputs: &dyn StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
+    ) -> Option<String> {
+        self.input_bounds_warning(inputs, aux_inputs)
+    }
+
     fn is_scatterer(&self) -> bool {
         true
     }
@@ -552,7 +690,7 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix3> {
             for (i1, weight1, _) in weights_1.iter() {
                 let i1 = *i1;
                 Zip::indexed(wvnum).for_each(|j, wv| {
-                    let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
+                    let wvnum_weights = &self.wvnum.interp1_weights(*wv, self.wvnum_interp_mode());
 
                     let local_xs = self.xsec[[i0, i1, wvnum_weights[0].0]] * wvnum_weights[0].1
                         + self.xsec[[i0, i1, wvnum_weights[1].0]] * wvnum_weights[1].1;
@@ -622,7 +760,7 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix3> {
             for (i1, weight1, _) in weights_1.iter() {
                 let i1 = *i1;
                 Zip::indexed(wvnum).for_each(|j, wv| {
-                    let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
+                    let wvnum_weights = &self.wvnum.interp1_weights(*wv, self.wvnum_interp_mode());
 
                     let local_xs = self.xsec[[i0, i1, wvnum_weights[0].0]] * wvnum_weights[0].1
                         + self.xsec[[i0, i1, wvnum_weights[1].0]] * wvnum_weights[1].1;
@@ -662,7 +800,7 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix3> {
             for (i1, _, weight1) in weights_1.iter() {
                 let i1 = *i1;
                 Zip::indexed(wvnum).for_each(|j, wv| {
-                    let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
+                    let wvnum_weights = &self.wvnum.interp1_weights(*wv, self.wvnum_interp_mode());
 
                     let local_xs = self.xsec[[i0, i1, wvnum_weights[0].0]] * wvnum_weights[0].1
                         + self.xsec[[i0, i1, wvnum_weights[1].0]] * wvnum_weights[1].1;
@@ -703,6 +841,7 @@ impl OpticalProperty for ScatteringDatabase<Ix3> {
         optical_quantities: &mut OpticalQuantities,
     ) -> Result<()> {
         let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
+        self.check_wavenumber_bounds(&wavenumber_cminv.view())?;
         let param_0 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[0])?;
         let param_1 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[1])?;
 
@@ -745,6 +884,7 @@ impl OpticalProperty for ScatteringDatabase<Ix3> {
         d_optical_quantities: &mut HashMap<String, OpticalQuantities>,
     ) -> Result<()> {
         let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
+        self.check_wavenumber_bounds(&wavenumber_cminv.view())?;
         let param_0 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[0])?;
         let param_1 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[1])?;
 
@@ -827,6 +967,14 @@ impl OpticalProperty for ScatteringDatabase<Ix3> {
         Ok(())
     }
 
+    fn out_of_bounds_warning(
+        &self,
+        inputs: &dyn StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
+    ) -> Option<String> {
+        self.input_bounds_warning(inputs, aux_inputs)
+    }
+
     fn is_scatterer(&self) -> bool {
         true
     }
@@ -871,7 +1019,8 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix4> {
                     let i2 = *i2;
 
                     Zip::indexed(wvnum).for_each(|j, wv| {
-                        let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
+                        let wvnum_weights =
+                            &self.wvnum.interp1_weights(*wv, self.wvnum_interp_mode());
 
                         let local_xs = self.xsec[[i0, i1, i2, wvnum_weights[0].0]]
                             * wvnum_weights[0].1
@@ -950,7 +1099,8 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix4> {
                     let i2 = *i2;
 
                     Zip::indexed(wvnum).for_each(|j, wv| {
-                        let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
+                        let wvnum_weights =
+                            &self.wvnum.interp1_weights(*wv, self.wvnum_interp_mode());
 
                         let local_xs = self.xsec[[i0, i1, i2, wvnum_weights[0].0]]
                             * wvnum_weights[0].1
@@ -998,7 +1148,8 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix4> {
                     let i2 = *i2;
 
                     Zip::indexed(wvnum).for_each(|j, wv| {
-                        let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
+                        let wvnum_weights =
+                            &self.wvnum.interp1_weights(*wv, self.wvnum_interp_mode());
 
                         let local_xs = self.xsec[[i0, i1, i2, wvnum_weights[0].0]]
                             * wvnum_weights[0].1
@@ -1046,7 +1197,8 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix4> {
                     let i2 = *i2;
 
                     Zip::indexed(wvnum).for_each(|j, wv| {
-                        let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
+                        let wvnum_weights =
+                            &self.wvnum.interp1_weights(*wv, self.wvnum_interp_mode());
 
                         let local_xs = self.xsec[[i0, i1, i2, wvnum_weights[0].0]]
                             * wvnum_weights[0].1
@@ -1091,6 +1243,7 @@ impl OpticalProperty for ScatteringDatabase<Ix4> {
         optical_quantities: &mut OpticalQuantities,
     ) -> Result<()> {
         let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
+        self.check_wavenumber_bounds(&wavenumber_cminv.view())?;
         let param_0 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[0])?;
         let param_1 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[1])?;
         let param_2 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[2])?;
@@ -1135,6 +1288,7 @@ impl OpticalProperty for ScatteringDatabase<Ix4> {
         d_optical_quantities: &mut HashMap<String, OpticalQuantities>,
     ) -> Result<()> {
         let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
+        self.check_wavenumber_bounds(&wavenumber_cminv.view())?;
         let param_0 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[0])?;
         let param_1 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[1])?;
         let param_2 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[2])?;
@@ -1253,7 +1407,138 @@ impl OpticalProperty for ScatteringDatabase<Ix4> {
         Ok(())
     }
 
+    fn out_of_bounds_warning(
+        &self,
+        inputs: &dyn StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
+    ) -> Option<String> {
+        self.input_bounds_warning(inputs, aux_inputs)
+    }
+
     fn is_scatterer(&self) -> bool {
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::atmosphere::types::ManualStorageInputs;
+
+    /// Tabulated at 1300, 1350 and 1400 nm, stored in ascending wavenumber order
+    fn short_wave_database(mode: SpectralOutOfBoundsMode) -> ScatteringDatabase<Ix1> {
+        let wvnum = array![1.0e7 / 1400.0, 1.0e7 / 1350.0, 1.0e7 / 1300.0];
+        let mut db = ScatteringDatabase::new(
+            array![1.0, 2.0, 3.0],
+            array![0.5, 0.5, 0.5],
+            Array2::zeros((3, 6)),
+            Grid1D::new(wvnum),
+            Vec::new(),
+            Vec::new(),
+        );
+        db.set_out_of_bounds_mode(mode);
+        db
+    }
+
+    fn inputs(wavelengths_nm: Array1<f64>) -> ManualStorageInputs {
+        ManualStorageInputs::new()
+            .with_singlescatter_moments(0)
+            .with_altitude_m(array![0.0, 1000.0])
+            .with_num_stokes(1)
+            .with_wavelengths_nm(wavelengths_nm)
+    }
+
+    fn cross_sections(
+        db: &ScatteringDatabase<Ix1>,
+        wavelengths_nm: Array1<f64>,
+    ) -> Result<Array2<f64>> {
+        Ok(db
+            .optical_quantities(&inputs(wavelengths_nm), &NullAuxInputs)?
+            .cross_section)
+    }
+
+    #[test]
+    fn test_default_mode_is_warn() {
+        let db = short_wave_database(SpectralOutOfBoundsMode::default());
+        assert_eq!(db.out_of_bounds_mode(), SpectralOutOfBoundsMode::Warn);
+    }
+
+    #[test]
+    fn test_warn_zero_fills_and_reports_out_of_range_wavelengths() {
+        let db = short_wave_database(SpectralOutOfBoundsMode::Warn);
+
+        let xs = cross_sections(&db, array![745.0, 1350.0]).unwrap();
+        assert_eq!(xs[[0, 0]], 0.0);
+        assert!((xs[[0, 1]] - 2.0).abs() < 1e-12);
+
+        let warning = db
+            .out_of_bounds_warning(&inputs(array![745.0, 1350.0]), &NullAuxInputs)
+            .unwrap();
+        assert!(
+            warning.contains("1 of 2 requested wavelengths"),
+            "{warning}"
+        );
+        assert!(warning.contains("range of 1300 to 1400 nm"), "{warning}");
+
+        assert!(
+            db.out_of_bounds_warning(&inputs(array![1300.0, 1400.0]), &NullAuxInputs)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_only_warn_mode_reports_warnings() {
+        for mode in [
+            SpectralOutOfBoundsMode::Raise,
+            SpectralOutOfBoundsMode::Zero,
+            SpectralOutOfBoundsMode::Extend,
+        ] {
+            let db = short_wave_database(mode);
+            assert!(
+                db.out_of_bounds_warning(&inputs(array![745.0]), &NullAuxInputs)
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn test_raise_rejects_out_of_range_wavelengths() {
+        let db = short_wave_database(SpectralOutOfBoundsMode::Raise);
+
+        let err = cross_sections(&db, array![470.0, 745.0, 1350.0]).unwrap_err();
+        let msg = err.to_string();
+
+        assert!(msg.contains("2 of 3 requested wavelengths"), "{msg}");
+        assert!(msg.contains("spanning 470 to 745 nm"), "{msg}");
+        assert!(msg.contains("range of 1300 to 1400 nm"), "{msg}");
+    }
+
+    #[test]
+    fn test_raise_accepts_database_endpoints() {
+        let db = short_wave_database(SpectralOutOfBoundsMode::Raise);
+
+        let xs = cross_sections(&db, array![1300.0, 1400.0]).unwrap();
+
+        assert!((xs[[0, 0]] - 3.0).abs() < 1e-12);
+        assert!((xs[[0, 1]] - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_zero_and_extend_out_of_range() {
+        let zero = cross_sections(
+            &short_wave_database(SpectralOutOfBoundsMode::Zero),
+            array![745.0, 1500.0],
+        )
+        .unwrap();
+        assert_eq!(zero[[1, 0]], 0.0);
+        assert_eq!(zero[[1, 1]], 0.0);
+
+        let extend = cross_sections(
+            &short_wave_database(SpectralOutOfBoundsMode::Extend),
+            array![745.0, 1500.0],
+        )
+        .unwrap();
+        assert!((extend[[1, 0]] - 3.0).abs() < 1e-12);
+        assert!((extend[[1, 1]] - 1.0).abs() < 1e-12);
     }
 }

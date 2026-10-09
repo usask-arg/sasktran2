@@ -25,6 +25,14 @@ class OpticalProperty(abc.ABC):
     def atmosphere_quantities(self, atmo: Atmosphere, **kwargs) -> OpticalQuantities:
         pass
 
+    @property
+    def wavelength_range_nm(self) -> tuple[float, float] | None:
+        """
+        Closed interval of wavelengths in [nm] where the optical property is defined, or
+        None if it is not limited to a tabulated range.
+        """
+        return None
+
     def optical_derivatives(self, atmo: Atmosphere, **kwargs) -> dict:  # noqa: ARG002
         return {}
 

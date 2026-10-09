@@ -1,17 +1,53 @@
+use std::ffi::CString;
+
 use numpy::ndarray::*;
 use numpy::*;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyUserWarning, PyValueError};
 use pyo3::types::{PyDict, PyType};
 use pyo3::{IntoPyObjectExt, prelude::*};
 use sasktran2_rs::atmosphere::types::ManualStorageInputs;
 use sasktran2_rs::interpolation::grid1d::Grid1D;
 use sasktran2_rs::optical::traits::*;
-use sasktran2_rs::optical::types::scat_dbase::ScatteringDatabase;
+use sasktran2_rs::optical::types::scat_dbase::{ScatteringDatabase, SpectralOutOfBoundsMode};
 
 use crate::constituent::atmo_storage::AtmosphereStorage;
 
 use super::optical_quantities::PyOpticalQuantities;
 use crate::optical::xsec_dbase::{HasDb, PyDictWrapper};
+
+fn parse_spectral_out_of_bounds_mode(mode: &str) -> PyResult<SpectralOutOfBoundsMode> {
+    match mode {
+        "raise" => Ok(SpectralOutOfBoundsMode::Raise),
+        "warn" => Ok(SpectralOutOfBoundsMode::Warn),
+        "zero" => Ok(SpectralOutOfBoundsMode::Zero),
+        "extend" => Ok(SpectralOutOfBoundsMode::Extend),
+        mode => Err(PyValueError::new_err(format!(
+            "wavelength_out_of_bounds_mode must be 'raise', 'warn', 'zero', or 'extend', got '{mode}'"
+        ))),
+    }
+}
+
+/// Issues an optical property's out-of-bounds warning as a Python UserWarning
+pub(crate) fn warn_out_of_bounds(py: Python<'_>, warning: Option<String>) -> PyResult<()> {
+    if let Some(warning) = warning {
+        PyErr::warn(
+            py,
+            py.get_type::<PyUserWarning>().as_any(),
+            &CString::new(warning)?,
+            1,
+        )?;
+    }
+    Ok(())
+}
+
+fn spectral_out_of_bounds_mode_name(mode: SpectralOutOfBoundsMode) -> &'static str {
+    match mode {
+        SpectralOutOfBoundsMode::Raise => "raise",
+        SpectralOutOfBoundsMode::Warn => "warn",
+        SpectralOutOfBoundsMode::Zero => "zero",
+        SpectralOutOfBoundsMode::Extend => "extend",
+    }
+}
 
 #[pyclass]
 pub struct PyScatteringDatabaseDim1 {
@@ -81,6 +117,18 @@ impl PyScatteringDatabaseDim1 {
         }
     }
 
+    #[getter]
+    fn get_wavelength_out_of_bounds_mode(&self) -> &'static str {
+        spectral_out_of_bounds_mode_name(self.db.out_of_bounds_mode())
+    }
+
+    #[setter]
+    fn set_wavelength_out_of_bounds_mode(&mut self, mode: &str) -> PyResult<()> {
+        self.db
+            .set_out_of_bounds_mode(parse_spectral_out_of_bounds_mode(mode)?);
+        Ok(())
+    }
+
     #[pyo3(signature = (atmo, **kwargs))]
     fn atmosphere_quantities<'py>(
         &self,
@@ -94,6 +142,11 @@ impl PyScatteringDatabaseDim1 {
             .db
             .optical_quantities(&rust_atmo.inputs, &aux_inputs)
             .map_err(|e| PyValueError::new_err(format!("Failed to get optical quantities: {e}")))?;
+        warn_out_of_bounds(
+            atmo.py(),
+            self.db
+                .out_of_bounds_warning(&rust_atmo.inputs, &aux_inputs),
+        )?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())
     }
@@ -131,6 +184,7 @@ impl PyScatteringDatabaseDim1 {
             .db
             .optical_quantities(&inputs, &aux_inputs)
             .map_err(|e| PyValueError::new_err(format!("Failed to get optical quantities: {e}")))?;
+        warn_out_of_bounds(py, self.db.out_of_bounds_warning(&inputs, &aux_inputs))?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(py)
     }
@@ -226,6 +280,18 @@ impl PyScatteringDatabaseDim2 {
         }
     }
 
+    #[getter]
+    fn get_wavelength_out_of_bounds_mode(&self) -> &'static str {
+        spectral_out_of_bounds_mode_name(self.db.out_of_bounds_mode())
+    }
+
+    #[setter]
+    fn set_wavelength_out_of_bounds_mode(&mut self, mode: &str) -> PyResult<()> {
+        self.db
+            .set_out_of_bounds_mode(parse_spectral_out_of_bounds_mode(mode)?);
+        Ok(())
+    }
+
     #[pyo3(signature = (atmo, **kwargs))]
     fn atmosphere_quantities<'py>(
         &self,
@@ -239,6 +305,11 @@ impl PyScatteringDatabaseDim2 {
             .db
             .optical_quantities(&rust_atmo.inputs, &aux_inputs)
             .map_err(|e| PyValueError::new_err(format!("Failed to get optical quantities: {e}")))?;
+        warn_out_of_bounds(
+            atmo.py(),
+            self.db
+                .out_of_bounds_warning(&rust_atmo.inputs, &aux_inputs),
+        )?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())
     }
@@ -289,6 +360,7 @@ impl PyScatteringDatabaseDim2 {
             .db
             .optical_quantities(&inputs, &aux_inputs)
             .map_err(|e| PyValueError::new_err(format!("Failed to get optical quantities: {e}")))?;
+        warn_out_of_bounds(py, self.db.out_of_bounds_warning(&inputs, &aux_inputs))?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(py)
     }
@@ -404,6 +476,18 @@ impl PyScatteringDatabaseDim3 {
         }
     }
 
+    #[getter]
+    fn get_wavelength_out_of_bounds_mode(&self) -> &'static str {
+        spectral_out_of_bounds_mode_name(self.db.out_of_bounds_mode())
+    }
+
+    #[setter]
+    fn set_wavelength_out_of_bounds_mode(&mut self, mode: &str) -> PyResult<()> {
+        self.db
+            .set_out_of_bounds_mode(parse_spectral_out_of_bounds_mode(mode)?);
+        Ok(())
+    }
+
     #[pyo3(signature = (atmo, **kwargs))]
     fn atmosphere_quantities<'py>(
         &self,
@@ -417,6 +501,11 @@ impl PyScatteringDatabaseDim3 {
             .db
             .optical_quantities(&rust_atmo.inputs, &aux_inputs)
             .map_err(|e| PyValueError::new_err(format!("Failed to get optical quantities: {e}")))?;
+        warn_out_of_bounds(
+            atmo.py(),
+            self.db
+                .out_of_bounds_warning(&rust_atmo.inputs, &aux_inputs),
+        )?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())
     }
@@ -467,6 +556,7 @@ impl PyScatteringDatabaseDim3 {
             .db
             .optical_quantities(&inputs, &aux_inputs)
             .map_err(|e| PyValueError::new_err(format!("Failed to get optical quantities: {e}")))?;
+        warn_out_of_bounds(py, self.db.out_of_bounds_warning(&inputs, &aux_inputs))?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(py)
     }
@@ -587,6 +677,18 @@ impl PyScatteringDatabaseDim4 {
         }
     }
 
+    #[getter]
+    fn get_wavelength_out_of_bounds_mode(&self) -> &'static str {
+        spectral_out_of_bounds_mode_name(self.db.out_of_bounds_mode())
+    }
+
+    #[setter]
+    fn set_wavelength_out_of_bounds_mode(&mut self, mode: &str) -> PyResult<()> {
+        self.db
+            .set_out_of_bounds_mode(parse_spectral_out_of_bounds_mode(mode)?);
+        Ok(())
+    }
+
     #[pyo3(signature = (atmo, **kwargs))]
     fn atmosphere_quantities<'py>(
         &self,
@@ -600,6 +702,11 @@ impl PyScatteringDatabaseDim4 {
             .db
             .optical_quantities(&rust_atmo.inputs, &aux_inputs)
             .map_err(|e| PyValueError::new_err(format!("Failed to get optical quantities: {e}")))?;
+        warn_out_of_bounds(
+            atmo.py(),
+            self.db
+                .out_of_bounds_warning(&rust_atmo.inputs, &aux_inputs),
+        )?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())
     }
@@ -650,6 +757,7 @@ impl PyScatteringDatabaseDim4 {
             .db
             .optical_quantities(&inputs, &aux_inputs)
             .map_err(|e| PyValueError::new_err(format!("Failed to get optical quantities: {e}")))?;
+        warn_out_of_bounds(py, self.db.out_of_bounds_warning(&inputs, &aux_inputs))?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(py)
     }

@@ -9,6 +9,7 @@ from sasktran2.optical.base import OpticalProperty
 from sasktran2.util.interpolation import linear_interpolating_matrix
 
 from .base import Constituent
+from .numdenscatterer import _reference_cross_sections
 
 
 class GaussianHeightExtinction(Constituent):
@@ -37,7 +38,8 @@ class GaussianHeightExtinction(Constituent):
         vertical_optical_depth : float
             Vertical optical depth
         vertical_optical_depth_wavel_nm
-            Wavelength that the vertical optical depth is specified at
+            Wavelength that the vertical optical depth is specified at. Must be inside the
+            ``wavelength_range_nm`` of the optical property, if it has one
         altitudes_m : np.array
             The altitude grid in [m] over which the optical depth is calculated, as well as the grid for any optical property arguments passed in through kwargs.
         out_of_bounds_mode : str, optional
@@ -104,11 +106,13 @@ class GaussianHeightExtinction(Constituent):
 
         interped_kwargs = {k: interp_matrix @ v for k, v in self._kwargs.items()}
 
-        self._xs_at_wavel = self._optical_property.cross_sections(
-            np.array([self._vertical_optical_depth_wavel_nm]),
-            altitudes_m=self._altitudes_m,
+        self._xs_at_wavel = _reference_cross_sections(
+            self._optical_property,
+            self._vertical_optical_depth_wavel_nm,
+            "vertical_optical_depth_wavel_nm",
+            self._altitudes_m,
             **self._kwargs,
-        ).extinction.flatten()
+        )
 
         # Unnormalized gaussian since we will normalize to vertical optical depth anyways
         self._gaussian = np.exp(

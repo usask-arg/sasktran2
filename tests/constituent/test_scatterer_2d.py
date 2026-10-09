@@ -600,3 +600,17 @@ def test_extinction_scatterer_2d_rejects_zero_reference_cross_section_cleanly():
         atmosphere.internal_object()
 
     np.testing.assert_array_equal(atmosphere.storage.total_extinction, 0.0)
+
+
+def test_extinction_scatterer_2d_rejects_out_of_range_reference_wavelength():
+    atmosphere = _atmosphere(_geometry2d(), derivatives=False)
+    atmosphere["aerosol"] = sk.constituent.ExtinctionScatterer2D(
+        _constant_optical_property(), np.full(_geometry2d().shape, 1.0e-6), 745.0
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="extinction_wavelength_nm=745 nm is outside the optical property "
+        "wavelength range of 500 to 600 nm",
+    ):
+        atmosphere.internal_object()

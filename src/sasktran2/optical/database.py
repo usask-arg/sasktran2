@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from copy import copy
 from pathlib import Path
 
@@ -20,6 +21,59 @@ from sasktran2.optical.base import OpticalProperty, OpticalQuantities
 from sasktran2.polarization import LegendreStorageView
 
 from .quantities import OpticalQuantities as RustOpticalQuantities
+
+_WAVELENGTH_OUT_OF_BOUNDS_MODES = ("raise", "warn", "zero", "extend")
+
+
+def _validate_wavelength_out_of_bounds_mode(mode: str) -> str:
+    if mode not in _WAVELENGTH_OUT_OF_BOUNDS_MODES:
+        msg = f"wavelength_out_of_bounds_mode must be 'raise', 'warn', 'zero', or 'extend', got {mode!r}"
+        raise ValueError(msg)
+    return mode
+
+
+def _format_nm(wavelength_nm: float) -> str:
+    return f"{wavelength_nm:.4f}".rstrip("0").rstrip(".")
+
+
+def _check_wavelengths_in_range(
+    wavelengths_nm: np.ndarray, wavelength_range_nm: tuple[float, float], mode: str
+) -> None:
+    """
+    Raises a ValueError ("raise") or issues a UserWarning ("warn") naming the out-of-range
+    wavelengths and the database range. The messages match the Rust scattering database.
+    """
+    if mode not in ("raise", "warn"):
+        return
+
+    wavelengths_nm = np.atleast_1d(np.asarray(wavelengths_nm, dtype=np.float64))
+    lower, upper = wavelength_range_nm
+    outside = wavelengths_nm[~((wavelengths_nm >= lower) & (wavelengths_nm <= upper))]
+
+    if len(outside) == 0:
+        return
+
+    summary = (
+        f"{len(outside)} of {len(wavelengths_nm)} requested wavelengths (spanning "
+        f"{_format_nm(np.min(outside))} to {_format_nm(np.max(outside))} nm) are outside "
+        f"the scattering database wavelength range of {_format_nm(lower)} to "
+        f"{_format_nm(upper)} nm"
+    )
+    if mode == "raise":
+        msg = (
+            f"{summary}. Use wavelengths inside the database range, or set "
+            "wavelength_out_of_bounds_mode to 'warn', 'zero', or 'extend' on the optical "
+            "property to accept them"
+        )
+        raise ValueError(msg)
+
+    msg = (
+        f"{summary}, so the scatterer contributes nothing there. Set "
+        "wavelength_out_of_bounds_mode on the optical property to 'zero' to accept this "
+        "silently, 'extend' to use the nearest database wavelength, or 'raise' to make it "
+        "an error"
+    )
+    warnings.warn(msg, UserWarning, stacklevel=3)
 
 
 class OpticalDatabase(OpticalProperty):
@@ -157,6 +211,7 @@ class OpticalDatabaseGenericScattererRust(OpticalDatabase):
         self,
         db_filepath: Path | None = None,
         db: xr.Dataset | None = None,
+        wavelength_out_of_bounds_mode: str = "warn",
     ) -> None:
         """
         A purely scattering optical property defined by a database file.  The database must contain the following
@@ -178,7 +233,13 @@ class OpticalDatabaseGenericScattererRust(OpticalDatabase):
         db : xr.Dataset, optional
             An already opened database. This is useful when a caller needs to select
             a subset of a larger database before constructing the Rust interpolator.
+        wavelength_out_of_bounds_mode : str, optional
+            Treatment of requested wavelengths outside the database wavelength range. "warn" issues a
+            UserWarning and otherwise behaves like "zero", "raise" raises a ValueError, "zero" sets the
+            cross sections, single scatter albedo and phase function to 0, and "extend" uses the optical
+            properties at the nearest database wavelength. By default "warn"
         """
+        _validate_wavelength_out_of_bounds_mode(wavelength_out_of_bounds_mode)
         super().__init__(db_filepath=db_filepath, db=db)
 
         # Reorient the dimensions
@@ -248,10 +309,38 @@ class OpticalDatabaseGenericScattererRust(OpticalDatabase):
                 param_names,
             )
 
+        wavelength_nm = db["wavelength_nm"].to_numpy()
+        self._wavelength_range_nm = (
+            float(np.min(wavelength_nm)),
+            float(np.max(wavelength_nm)),
+        )
+        self.wavelength_out_of_bounds_mode = wavelength_out_of_bounds_mode
+
     def _validate_db(self):
         self._database["lm_a1"] = self._database["lm_a1"] / self._database[
             "lm_a1"
         ].isel(legendre=0)
+
+    @property
+    def wavelength_range_nm(self) -> tuple[float, float]:
+        """
+        Smallest and largest database wavelengths in [nm]
+        """
+        return self._wavelength_range_nm
+
+    @property
+    def wavelength_out_of_bounds_mode(self) -> str:
+        """
+        Treatment of requested wavelengths outside :attr:`wavelength_range_nm`, one of "raise", "warn",
+        "zero", or "extend"
+        """
+        return self._db.wavelength_out_of_bounds_mode
+
+    @wavelength_out_of_bounds_mode.setter
+    def wavelength_out_of_bounds_mode(self, mode: str) -> None:
+        self._db.wavelength_out_of_bounds_mode = (
+            _validate_wavelength_out_of_bounds_mode(mode)
+        )
 
     def _into_rust_object(self):
         return self._db
@@ -285,7 +374,9 @@ class OpticalDatabaseGenericScattererRust(OpticalDatabase):
 
 
 class OpticalDatabaseGenericScatterer(OpticalDatabase):
-    def __init__(self, db_filepath: Path) -> None:
+    def __init__(
+        self, db_filepath: Path, wavelength_out_of_bounds_mode: str = "warn"
+    ) -> None:
         """
         A purely scattering optical property defined by a database file.  The database must contain the following
 
@@ -300,13 +391,63 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
         ----------
         db_filepath : Path
             Path to the database file
+        wavelength_out_of_bounds_mode : str, optional
+            Treatment of requested wavelengths outside the database wavelength range. "warn" issues a
+            UserWarning and otherwise behaves like "zero", "raise" raises a ValueError, "zero" sets the
+            cross sections, single scatter albedo and phase function to 0, and "extend" uses the optical
+            properties at the nearest database wavelength. By default "warn"
         """
+        self.wavelength_out_of_bounds_mode = wavelength_out_of_bounds_mode
         super().__init__(db_filepath)
 
         self._validate_db()
 
     def _validate_db(self):
         self._database["lm_a1"] /= self._database["lm_a1"].isel(legendre=0)
+
+    @property
+    def wavelength_range_nm(self) -> tuple[float, float]:
+        """
+        Smallest and largest database wavelengths in [nm]
+        """
+        if "wavelength_nm" in self._database["xs_total"].coords:
+            wavelength_nm = self._database["wavelength_nm"].to_numpy()
+        else:
+            wavelength_nm = 1e7 / self._database["wavenumber_cminv"].to_numpy()
+        return (float(np.min(wavelength_nm)), float(np.max(wavelength_nm)))
+
+    @property
+    def wavelength_out_of_bounds_mode(self) -> str:
+        """
+        Treatment of requested wavelengths outside :attr:`wavelength_range_nm`, one of "raise", "warn",
+        "zero", or "extend"
+        """
+        return self._wavelength_out_of_bounds_mode
+
+    @wavelength_out_of_bounds_mode.setter
+    def wavelength_out_of_bounds_mode(self, mode: str) -> None:
+        self._wavelength_out_of_bounds_mode = _validate_wavelength_out_of_bounds_mode(
+            mode
+        )
+
+    def _bounded_spectral_values(self, coord: str, values: np.ndarray) -> np.ndarray:
+        """
+        Applies the wavelength out of bounds mode to values of the spectral coordinate ``coord``.
+        Out of range values are left in place for "warn" and "zero" since the interpolation fills
+        them with NaN, which is then replaced by 0.
+        """
+        grid = self._database[coord].to_numpy()
+
+        if self._wavelength_out_of_bounds_mode == "extend":
+            return np.clip(values, np.min(grid), np.max(grid))
+
+        requested = np.asarray(values, dtype=np.float64)
+        requested_nm = requested if coord == "wavelength_nm" else 1e7 / requested
+        _check_wavelengths_in_range(
+            requested_nm, self.wavelength_range_nm, self._wavelength_out_of_bounds_mode
+        )
+
+        return values
 
     def _construct_interp_handler(self, atmo: Atmosphere, **kwargs) -> dict:
         coords = self._database["xs_total"].coords
@@ -316,13 +457,17 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
             if atmo.wavelengths_nm is None:
                 msg = "wavelengths_nm must be specified in Atmosphere to use OpticalDatabaseGenericScatterer"
                 raise ValueError(msg)
-            interp_handler["wavelength_nm"] = atmo.wavelengths_nm
+            interp_handler["wavelength_nm"] = self._bounded_spectral_values(
+                "wavelength_nm", atmo.wavelengths_nm
+            )
 
         if "wavenumber_cminv" in coords:
             if atmo.wavenumber_cminv is None:
                 msg = "wavenumber_cminv must be specified in Atmosphere to use OpticalDatabaseGenericScatterer"
                 raise ValueError(msg)
-            interp_handler["wavenumber_cminv"] = atmo.wavenumber_cminv
+            interp_handler["wavenumber_cminv"] = self._bounded_spectral_values(
+                "wavenumber_cminv", atmo.wavenumber_cminv
+            )
 
         for name, vals in kwargs.items():
             if name in coords:
@@ -338,7 +483,9 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
         coords = self._database["xs_total"].coords
         interp_handler = {}
 
-        interp_handler["wavelength_nm"] = wavelengths_nm
+        interp_handler["wavelength_nm"] = self._bounded_spectral_values(
+            "wavelength_nm", wavelengths_nm
+        )
 
         for name, vals in kwargs.items():
             if name in coords:
@@ -531,7 +678,9 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
         coords = self._database["xs_total"].coords
         interp_handler = {}
 
-        interp_handler["wavelength_nm"] = wavelengths_nm
+        interp_handler["wavelength_nm"] = self._bounded_spectral_values(
+            "wavelength_nm", wavelengths_nm
+        )
 
         for name, vals in kwargs.items():
             if name in coords:
