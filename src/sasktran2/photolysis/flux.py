@@ -27,6 +27,14 @@ O2_LINE_WINDOWS_NM = {
 #: :class:`sasktran2.optical.O2UV`.
 O2_SCHUMANN_RUNGE_BANDS_NM = (175.4, 204.1)
 
+#: Vacuum-ultraviolet range [nm], resolved at the VUV resolution of
+#: :func:`airglow_wavelength_grid` to sample the O2 window structure and the
+#: N2 bands.
+VUV_RANGE_NM = (80.0, 121.9)
+
+#: Solar spectrum: WHI 2008 quiet Sun below 116 nm, TSIS-1 HSRS above.
+SOLAR_SOURCE = "solar_irradiance_whi2008_hsrs_composite"
+
 
 EARTH_RADIUS_M = 6371000.0
 
@@ -80,16 +88,18 @@ def _closed_arange(start: float, stop: float, step: float) -> np.ndarray:
 
 
 def airglow_wavelength_grid(
-    range_nm: tuple[float, float] = (120.0, 1280.0),
+    range_nm: tuple[float, float] = (80.0, 1280.0),
     resolution_nm: float = 0.1,
     line_resolution_nm: float = 0.001,
     band_resolution_nm: float = 0.002,
+    vuv_resolution_nm: float = 0.01,
 ) -> np.ndarray:
     """Wavelength grid [nm] for photolysis and O2 photoexcitation.
 
     ``resolution_nm`` spacing over ``range_nm``, ``line_resolution_nm``
     inside :data:`O2_LINE_WINDOWS_NM`, ``band_resolution_nm`` over
-    :data:`O2_SCHUMANN_RUNGE_BANDS_NM`, plus Lyman-alpha exactly.
+    :data:`O2_SCHUMANN_RUNGE_BANDS_NM`, ``vuv_resolution_nm`` over
+    :data:`VUV_RANGE_NM`, plus Lyman-alpha exactly.
     """
     parts = [
         _closed_arange(*range_nm, resolution_nm),
@@ -98,6 +108,9 @@ def airglow_wavelength_grid(
     lo, hi = O2_SCHUMANN_RUNGE_BANDS_NM
     if lo >= range_nm[0] and hi <= range_nm[1]:
         parts.append(_closed_arange(lo, hi, band_resolution_nm))
+    lo, hi = max(VUV_RANGE_NM[0], range_nm[0]), min(VUV_RANGE_NM[1], range_nm[1])
+    if lo < hi:
+        parts.append(_closed_arange(lo, hi, vuv_resolution_nm))
     parts.extend(
         _closed_arange(lo, hi, line_resolution_nm)
         for lo, hi in O2_LINE_WINDOWS_NM.values()
@@ -112,8 +125,10 @@ DEFAULT_OPTICAL_PROPERTIES = {
     "O3": sk.optical.O3DBM,
     "O2": lambda: sk.optical.AERLineAbsorber("O2")
     + sk.optical.O2UV()
-    + sk.optical.O2LymanAlpha(),
-    "N2": lambda: sk.optical.AERLineAbsorber("N2"),
+    + sk.optical.O2LymanAlpha()
+    + sk.optical.VUVAbsorber("O2"),
+    "N2": lambda: sk.optical.AERLineAbsorber("N2") + sk.optical.VUVAbsorber("N2"),
+    "O(3P)": lambda: sk.optical.VUVAbsorber("O"),
     "NO2": sk.optical.NO2Vandaele,
 }
 
@@ -249,7 +264,7 @@ class ActinicFlux:
         atmo["rayleigh"] = sk.constituent.Rayleigh()
         atmo["surface"] = sk.constituent.LambertianSurface(albedo)
         atmo["solar"] = sk.constituent.SolarIrradiance(
-            photon_units=True, mode="average"
+            photon_units=True, mode="average", source=SOLAR_SOURCE
         )
 
         engine = sk.Engine(config, geometry, viewing)

@@ -213,9 +213,15 @@ def budget(mechanism: Mechanism, solution: xr.Dataset, state: str) -> xr.DataArr
         for p, s, c in zip(processes, state_index, coefficients, strict=True)
         if s == target and c != 0.0
     ]
-    coefficient = xr.DataArray([c for _, c in rows], dims="process")
+    ids = mechanism.processes
+    coefficient = xr.DataArray(
+        [c for _, c in rows],
+        dims="process",
+        coords={"process": [ids[p] for p, _ in rows]},
+    )
+    # Select by id, so the solution may hold other mechanisms' processes too.
     contributions = (
-        solution["process_rate"].isel(process=[p for p, _ in rows]) * coefficient
+        solution["process_rate"].sel(process=coefficient["process"]) * coefficient
     )
     contributions.attrs["units"] = "m^-3 s^-1"
     contributions.name = f"budget {state}"

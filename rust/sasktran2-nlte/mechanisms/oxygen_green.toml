@@ -1,0 +1,147 @@
+# O(1S), the upper level of the 557.7 nm green line, in the daytime
+# mesosphere and lower thermosphere.
+#
+# Solved after the `oxygen` mechanism: O(1S) is quenched by O2(a), which is a
+# state there and a background species here.
+#
+# Sources:
+#   * O2 photodissociation into O(1S), mostly by 95-121 nm photons
+#     (J_O2_O1S, the per-molecule rate of the O(1S) channel), dominant below
+#     about 100 km in daytime.
+#   * The Barth mechanism, O + O + M -> O2*, O2* + O -> O2 + O(1S), with the
+#     McDade et al. (1986) empirical constants: 30-50% of the photolytic
+#     source at 85-90 km, small above 95 km.
+#   * Ionospheric sources (N2(A) + O, photoelectron impact on O, O2+ + e),
+#     dominant above about 105 km, enter as a volume production expressed as
+#     a per-atom rate on O(3P), P_O1S_ION = production / [O].
+#
+# The Barth precursor O2* is a state with an arbitrary reference rate k3 for
+# O2* + O -> O(1S); its other losses are C_O2 k3 [O2] and (C_O - 1) k3 [O],
+# so the O(1S) production is k1 [O]^3 [M] / (C_O2 [O2] + C_O [O]), McDade's
+# form, independent of k3.
+
+[mechanism]
+name = "oxygen_green"
+version = "0.1.0"
+description = "O(1S) and the 557.7 nm green line from O2 photodissociation, the Barth mechanism and ionospheric sources"
+background = ["O2", "N2", "O(3P)", "M", "O2(a)"]
+
+[references]
+mcdade1986 = """\
+McDade, I. C., D. P. Murtagh, R. G. H. Greer, P. H. G. Dickinson, G. Witt, \
+J. Stegman, E. J. Llewellyn, L. Thomas and D. B. Jenkins (1986), ETON 2: \
+Quenching parameters for the proposed precursors of O2(b) and O(1S) in the \
+terrestrial nightglow, Planet. Space Sci. 34, 789-800."""
+reference_rate = """\
+Arbitrary reference rate for the Barth precursor; it cancels in the O(1S) \
+production, which follows McDade et al. (1986)."""
+slanger1972 = """\
+Slanger, T. G., B. J. Wood and G. Black (1972), Temperature coefficients for \
+N2O photolysis and O(1S) quenching by O2, Chem. Phys. Lett. 17, 401-404; \
+4.0e-12 exp(-865/T) as used by McDade et al. (1986)."""
+slanger1981 = """\
+Slanger, T. G. and G. Black (1981), Quenching of O(1S) by O2(a1Delta_g), \
+Geophys. Res. Lett. 8, 535-538: (1.7 +- 0.3)e-10 cm3 s-1."""
+nist = """\
+NIST Atomic Spectra Database; Froese Fischer, C. and G. Tachiev (2004), \
+At. Data Nucl. Data Tables 87, 1-184: O I 2p4 1S0 transitions."""
+photolysis = """\
+Computed by sasktran2.photolysis: O2 photodissociation weighted by O(1S) \
+quantum yields."""
+ionosphere = """\
+Supplied volume production rate of O(1S) from ionospheric processes, \
+divided by [O(3P)]."""
+
+[[state]]
+id = "O2(barth)"
+description = "Barth-mechanism precursor (c1Sigma_u-, A'3Delta_u or A3Sigma_u+)"
+
+[[state]]
+id = "O(1S)"
+
+
+[[photo_reaction]]
+id = "o2_o1s"
+reactant = "O2"
+products = ["O(1S)", "O(3P)"]
+rate_input = "J_O2_O1S"
+reference = "photolysis"
+
+[[photo_reaction]]
+id = "ionospheric_o1s"
+reactant = "O(3P)"
+products = ["O(1S)"]
+rate_input = "P_O1S_ION"
+reference = "ionosphere"
+
+
+[[reaction]]
+id = "barth_recombination"
+reactants = ["O(3P)", "O(3P)", "M"]
+products = ["O2(barth)", "M"]
+rate = { law = "arrhenius", a = 4.7e-33, n = -2.0, t0 = 300.0, units = "cm6 s-1" }
+reference = "mcdade1986"
+
+[[reaction]]
+id = "barth_o1s"
+reactants = ["O2(barth)", "O(3P)"]
+products = ["O2", "O(1S)"]
+rate = { law = "constant", value = 1.0e-11, units = "cm3 s-1" }
+reference = "reference_rate"
+
+# C_O2 = 15 (McDade et al. 1986).
+[[reaction]]
+id = "barth_quench_o2"
+reactants = ["O2(barth)", "O2"]
+products = ["O2", "O2"]
+rate = { law = "constant", value = 1.5e-10, units = "cm3 s-1" }
+reference = "mcdade1986"
+
+# C_O = 211 (McDade et al. 1986): 210 k3 besides the O(1S) channel.
+[[reaction]]
+id = "barth_quench_o"
+reactants = ["O2(barth)", "O(3P)"]
+products = ["O2", "O(3P)"]
+rate = { law = "constant", value = 2.1e-9, units = "cm3 s-1" }
+reference = "mcdade1986"
+
+
+# The green line ends on O(1D), which is not tracked here; all three
+# transitions return to O(3P) for bookkeeping.
+[[transition]]
+id = "o1s_green_line"
+upper = "O(1S)"
+lower = "O(3P)"
+einstein_a_s = 1.26
+wavelength_nm = 557.7
+reference = "nist"
+
+[[transition]]
+id = "o1s_297"
+upper = "O(1S)"
+lower = "O(3P)"
+einstein_a_s = 7.54e-2
+wavelength_nm = 297.2
+reference = "nist"
+
+[[transition]]
+id = "o1s_296"
+upper = "O(1S)"
+lower = "O(3P)"
+einstein_a_s = 2.42e-4
+wavelength_nm = 295.8
+reference = "nist"
+
+[[reaction]]
+id = "o1s_o2"
+reactants = ["O(1S)", "O2"]
+products = ["O(3P)", "O2"]
+rate = { law = "arrhenius", a = 4.0e-12, ea_over_r = 865.0, units = "cm3 s-1" }
+reference = "slanger1972"
+
+[[reaction]]
+id = "o1s_o2a"
+reactants = ["O(1S)", "O2(a)"]
+products = ["O(3P)", "O2"]
+rate = { law = "constant", value = 1.7e-10, units = "cm3 s-1" }
+reference = "slanger1981"
