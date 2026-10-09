@@ -12,6 +12,12 @@ def _has_local_o2_hitran_cache():
     return (db._db_root / "O2.data").exists() and (db._db_root / "O2.header").exists()
 
 
+needs_o2_lines = pytest.mark.skipif(
+    not _has_local_o2_hitran_cache(), reason="local HITRAN O2 cache is not available"
+)
+
+
+@needs_o2_lines
 def test_population_emission_rate_exposes_a_and_b_components():
     altitude = np.array([90_000.0, 95_000.0])
     state = xr.Dataset(
@@ -40,6 +46,7 @@ def test_population_emission_rate_exposes_a_and_b_components():
     np.testing.assert_allclose(constituent.line_list_photon_ver(1), 5.0 * 7.34e-3)
 
 
+@needs_o2_lines
 def test_population_emission_rate_source_integral_matches_photon_ver():
     altitude = np.array([90_000.0, 95_000.0])
     temperature = np.array([220.0, 230.0])
@@ -87,6 +94,7 @@ def test_population_emission_rate_source_integral_matches_photon_ver():
     )
 
 
+@needs_o2_lines
 def test_population_emission_rate_line_strength_fallback():
     altitude = np.array([90_000.0, 95_000.0])
     state = xr.Dataset(
@@ -109,6 +117,7 @@ def test_population_emission_rate_line_strength_fallback():
     np.testing.assert_allclose(constituent.line_list_weights(1).sum(axis=1), 1.0)
 
 
+@needs_o2_lines
 def test_oxygen_a_band_emission_absorption_engine_smoke():
     pytest.importorskip("hapi")
 
