@@ -237,26 +237,18 @@ def test_duplicate_rate_names():
         )
 
 
-def test_oxygen_yankovsky_rates_match_the_mechanism():
+def test_oxygen_photolysis_supplies_the_oxygen_mechanism():
     flux = _flux(
         sk.photolysis.airglow_wavelength_grid(),
         cross_sections={"O3": 1.0e-23, "O2": 1.0e-26},
     )
-    channels = photolysis_rates(flux, presets.oxygen_photolysis())
-    rates = presets.oxygen_yankovsky_rates(flux)
+    rates = photolysis_rates(flux, presets.oxygen_photolysis())
 
-    mechanism = sk.nlte.Mechanism.bundled("oxygen_yankovsky")
-    assert sorted(rates.data_vars) == sorted(mechanism.rate_inputs)
-    np.testing.assert_allclose(
-        sum(rates[f"J_O3_A{v}"] for v in range(6)), channels["J_O3_O1D"], rtol=1e-12
-    )
-    np.testing.assert_allclose(
-        sum(rates[f"J_O3_X{v}"] for v in range(1, 36)),
-        channels["J_O3_O3P"],
-        rtol=1e-12,
-    )
+    mechanism = sk.nlte.Mechanism.bundled("oxygen")
+    # Only the ionospheric production is supplied separately.
+    assert set(mechanism.rate_inputs) - set(rates.data_vars) == {"P_O1D_ION"}
     # The Schumann-Runge continuum rate covers 130-175 nm only.
-    np.testing.assert_allclose(channels["J_O2_SRC"], 1.0e-26 * 45.0, rtol=1e-9)
+    np.testing.assert_allclose(rates["J_O2_SRC"], 1.0e-26 * 45.0, rtol=1e-9)
 
 
 def test_actinic_flux_ozone_only_atmosphere():

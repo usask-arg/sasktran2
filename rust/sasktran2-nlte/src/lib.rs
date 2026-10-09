@@ -17,8 +17,6 @@
 pub mod emission;
 mod linalg;
 pub mod mechanism;
-pub mod models;
 mod prelude;
 pub mod rates;
 pub mod solver;
-pub mod types;

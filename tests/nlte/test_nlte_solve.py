@@ -105,12 +105,20 @@ def test_invalid_mechanism_raises_value_error():
         nlte.Mechanism.from_toml(CHAIN.replace('["O(1D)", "O2"]', '["O(1D)", "O3"]'))
 
 
-def test_bundled_oxygen_mechanism():
-    assert "oxygen_yankovsky" in nlte.Mechanism.bundled_names()
-    mechanism = nlte.Mechanism.bundled("oxygen_yankovsky")
+def test_bundled_oxygen_mechanisms():
+    assert sorted(nlte.Mechanism.bundled_names()) == ["oxygen", "oxygen_green"]
+    mechanism = nlte.Mechanism.bundled("oxygen")
 
-    assert len(mechanism.states) == 46
+    assert mechanism.states == [
+        "O(1D)",
+        *(f"O2(b{'' if v == 0 else f', v={v}'})" for v in range(3)),
+        *(f"O2(a{'' if v == 0 else f', v={v}'})" for v in range(6)),
+    ]
     assert mechanism.background == ["O2", "O3", "N2", "CO2", "O(3P)"]
-    assert "J_O3_A0" in mechanism.rate_inputs
-    assert "legacy_photchem" in mechanism.references
-    assert "46 states" in repr(mechanism)
+    assert "J_O3_O1D_A0" in mechanism.rate_inputs
+    assert {"jpl19", "ym2019", "hitran"} <= set(mechanism.references)
+    assert "10 states" in repr(mechanism)
+
+    green = nlte.Mechanism.bundled("oxygen_green")
+    assert green.states == ["O2(barth)", "O(1S)"]
+    assert "O2(a)" in green.background

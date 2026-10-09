@@ -19,10 +19,6 @@ const BUNDLED: &[(&str, &str)] = &[
         "oxygen_green",
         include_str!("../../mechanisms/oxygen_green.toml"),
     ),
-    (
-        "oxygen_yankovsky",
-        include_str!("../../mechanisms/oxygen_yankovsky.toml"),
-    ),
 ];
 
 /// A participant in a process: either an unknown state population or a
