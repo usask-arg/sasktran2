@@ -197,3 +197,46 @@ def test_rates_from_the_actinic_flux():
     assert np.all((o2b.sel(altitude=[50e3, 70e3, 90e3]) > 1e11).to_numpy())
     assert np.all((o2b.sel(altitude=[50e3, 70e3, 90e3]) < 1e15).to_numpy())
     assert float(solution["J_O2_EXC_B0"].sel(altitude=120e3)) > 0.0
+
+
+@needs_o2_lines
+def test_gamma_band_conserves_ver():
+    z = np.arange(0.0, 120_001.0, 2_000.0)
+    config = sk.Config()
+    config.emission_source = sk.EmissionSource.VolumeEmissionRate
+    config.single_scatter_source = sk.SingleScatterSource.NoSource
+    geometry = sk.Geometry1D(
+        0.6,
+        0.0,
+        6_372_000.0,
+        z,
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.Spherical,
+    )
+    step = 0.0005
+    atmosphere = sk.Atmosphere(
+        geometry, config, wavelengths_nm=np.arange(625.0, 640.0, step)
+    )
+    atmosphere.temperature_k = np.full(z.size, 200.0)
+    atmosphere.pressure_pa = 101325.0 * np.exp(-z / 7000.0)
+    ver = 1.0e9 * np.exp(-0.5 * ((z - 90e3) / 5e3) ** 2)
+    atmosphere["gamma"] = sk.constituent.O2BandEmissionRate(z, ver, band="2-0")
+    viewing = sk.ViewingGeometry()
+    tangent = 85_000.0
+    viewing.add_ray(sk.TangentAltitudeSolar(tangent, 0.0, 600_000.0, 0.6))
+    radiance = sk.Engine(config, geometry, viewing).calculate_radiance(atmosphere)
+    band = float(radiance["radiance"].sum()) * step
+    r_t = 6_372_000.0 + tangent
+    s = np.linspace(-1_300e3, 1_300e3, 200_001)
+    altitude = np.sqrt(r_t**2 + s**2) - 6_372_000.0
+    expected = np.trapezoid(np.interp(altitude, z, ver, right=0.0), s) / (4.0 * np.pi)
+    np.testing.assert_allclose(band, expected, rtol=1e-3)
+
+
+def test_emission_wavelength_grid():
+    grid = sk.nlte.emission_wavelength_grid(["O(1S)"], range_nm=(550.0, 560.0))
+    assert np.all(np.diff(grid) > 0)
+    near = grid[np.abs(grid - 557.8888) < 0.01]
+    # Doppler FWHM of O at 180 K is about 0.0015 nm: several points across it.
+    assert near.size >= 15
+    np.testing.assert_allclose(np.diff(grid[grid < 557.8]), 0.1, rtol=1e-6)

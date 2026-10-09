@@ -32,7 +32,8 @@ class O2BandEmissionRate(Constituent):
         Total photon VER of this band in photons m^-3 s^-1, integrated over all
         directions and all its lines. The source includes the 1 / (4 pi) factor.
     band : str
-        ``"0-0"`` or ``"1-1"`` for the A-band, or ``"1-0"`` for the B-band.
+        ``"0-0"`` or ``"1-1"`` for the A-band, ``"1-0"`` for the B-band, or
+        ``"2-0"`` for the gamma band.
     line_weight_model : str
         ``"einstein_a_branching"`` or ``"hitran_line_strength"``.
     db : HITRANLineDatabase, optional

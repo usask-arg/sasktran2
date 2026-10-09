@@ -17,6 +17,10 @@ pub const O2_B0_X0_EINSTEIN_A_S: f64 = 7.58e-2;
 pub const O2_B1_X0_EINSTEIN_A_S: f64 = 7.34e-3;
 pub const O2_B1_X1_EINSTEIN_A_S: f64 = 7.0e-2;
 pub const O2_B2_X2_EINSTEIN_A_S: f64 = 5.4e-2;
+/// O2 b-X(2,0), the gamma band, from the 16O2 HITRAN2020 lines (220 K).
+pub const O2_B2_X0_EINSTEIN_A_S: f64 = 2.56e-4;
+pub const O2_GAMMA_BAND_MIN_WAVELENGTH_NM: f64 = 625.0;
+pub const O2_GAMMA_BAND_MAX_WAVELENGTH_NM: f64 = 640.0;
 pub const O2_A_BAND_MIN_WAVELENGTH_NM: f64 = 759.0;
 pub const O2_A_BAND_MAX_WAVELENGTH_NM: f64 = 776.0;
 pub const O2_B_BAND_MIN_WAVELENGTH_NM: f64 = 675.0;

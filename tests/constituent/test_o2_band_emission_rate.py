@@ -418,7 +418,7 @@ def test_ver_update_and_band_validation(line_db):
     with pytest.raises(ValueError, match="non-negative"):
         emission.photon_ver = [-1.0, 2.0, 3.0]
     with pytest.raises(ValueError, match="Unsupported O2 band"):
-        constituent(line_db, band="2-0")
+        constituent(line_db, band="3-0")
 
 
 @pytest.mark.parametrize(

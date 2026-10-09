@@ -91,6 +91,34 @@ pub fn oxygen_b_band_from_hitran(db: &OpticalLineDB) -> Result<Option<EmissionBa
     .map(Some)
 }
 
+pub fn oxygen_gamma_band_from_hitran(db: &OpticalLineDB) -> Result<Option<EmissionBand>> {
+    let mut lines: Vec<EmissionBandLine> = db
+        .lines
+        .iter()
+        .filter(|line| {
+            line_matches_o2_gamma_band_vibrational_sequence(line)
+                && line.wavelength_nm() >= O2_GAMMA_BAND_MIN_WAVELENGTH_NM
+                && line.wavelength_nm() <= O2_GAMMA_BAND_MAX_WAVELENGTH_NM
+        })
+        .filter_map(|line| emission_band_line_from_optical_line(line).transpose())
+        .collect::<Result<Vec<_>>>()?;
+
+    if lines.is_empty() {
+        return Ok(None);
+    }
+
+    lines.sort_by(|lhs, rhs| lhs.wavelength_nm.partial_cmp(&rhs.wavelength_nm).unwrap());
+
+    EmissionBand::new(
+        "oxygen_gamma_band",
+        "O2(b, v=2)",
+        "O2(X)",
+        O2_B2_X0_EINSTEIN_A_S,
+        lines,
+    )
+    .map(Some)
+}
+
 fn emission_band_line_from_optical_line(line: &OpticalLine) -> Result<Option<EmissionBandLine>> {
     let Some(einstein_a_s) = line.einstein_a else {
         return Ok(None);
@@ -210,6 +238,16 @@ fn line_matches_o2_b_band_vibrational_sequence(line: &OpticalLine) -> bool {
     matches!(
         (upper_tokens.as_slice(), lower_tokens.as_slice()),
         (["b", "1"], ["X", "0"])
+    )
+}
+
+fn line_matches_o2_gamma_band_vibrational_sequence(line: &OpticalLine) -> bool {
+    let upper_tokens: Vec<&str> = line.upper_quanta.split_whitespace().collect();
+    let lower_tokens: Vec<&str> = line.lower_quanta.split_whitespace().collect();
+
+    matches!(
+        (upper_tokens.as_slice(), lower_tokens.as_slice()),
+        (["b", "2"], ["X", "0"])
     )
 }
 
