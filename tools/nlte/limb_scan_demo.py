@@ -2,7 +2,8 @@
 
 An OSIRIS-like scan through a CAIRT ERS day atmosphere: Rayleigh-scattered
 sunlight with O3, O2 and NO2 absorption, and O2(b) (A, B and gamma bands),
-OH A-X fluorescence and O(1S) (557.7 and 297.2 nm) emission from
+OH A-X fluorescence (with OH self-absorption), O(1S) (557.7 and 297.2 nm)
+and O(1D) (630.0 and 636.4 nm) emission from
 sasktran2.nlte.add_photochemical_species. No instrument convolution.
 
     python tools/nlte/limb_scan_demo.py /Volumes/T9/data/cairt_ers_kopra/ERS_kopra_ascii april+00 out_prefix
@@ -25,7 +26,7 @@ import kopra_prf  # noqa: E402
 import validate_photolysis_ers as ers  # noqa: E402
 
 K_BOLTZMANN = 1.380649e-23
-SPECIES = ["O2(b)", "OH(A)", "O(1S)"]
+SPECIES = ["O2(b)", "OH(A)", "O(1S)", "O(1D)"]
 TANGENTS_KM = np.arange(10.0, 100.1, 5.0)
 
 
@@ -164,7 +165,7 @@ def main(root: str, scenario: str, out_prefix: str) -> None:
     axes[1].set_yscale("log")
     axes[1].legend()
     fig.suptitle(
-        f"{scenario}: cos SZA {cos_sza:.2f}; emission from O2(b), OH(A), O(1S)"
+        f"{scenario}: cos SZA {cos_sza:.2f}; emission from O2(b), OH(A), O(1S), O(1D)"
     )
     fig.tight_layout()
     fig.savefig(f"{out_prefix}.png", dpi=120)

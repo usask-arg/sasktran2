@@ -82,6 +82,14 @@ PHOTOCHEMICAL_SPECIES = {
             "the B band (1-0, 688 nm) and the gamma band (2-0, 628 nm)"
         ),
     ),
+    "O(1D)": _Emitter(
+        mechanism="oxygen",
+        lines={"o1d_630": (630.2046, 15.999), "o1d_636": (636.5535, 15.999)},
+        description=(
+            "The O(1D) red line (630.0 nm) and 636.4 nm line; above about 150 km "
+            "they need a supplied ionospheric production"
+        ),
+    ),
     "O(1S)": _Emitter(
         mechanism="oxygen_green",
         lines={"o1s_green_line": (557.8888, 15.999), "o1s_297": (297.3159, 15.999)},
@@ -162,6 +170,8 @@ def add_photochemical_species(
     actinic_flux=None,
     rates: xr.Dataset | None = None,
     ionospheric_o1s_production=None,
+    ionospheric_o1d_production=None,
+    oh_self_absorption: bool = True,
 ) -> xr.Dataset:
     """Solve the photochemistry of ``species`` and add their emission to ``atmosphere``.
 
@@ -208,6 +218,14 @@ def add_photochemical_species(
         processes (N2(A) + O, photoelectron impact, O2+ + e), on the
         photochemistry grid. These dominate above about 105 km; without them
         the green line is underestimated there.
+    ionospheric_o1d_production
+        For ``"O(1D)"``: O(1D) volume production [m^-3 s^-1] from ionospheric
+        processes, on the photochemistry grid; dominant above about 150 km.
+    oh_self_absorption
+        For ``"OH(A)"``: also add OH as a HITRAN line absorber (constituent
+        ``"OH absorption"``), so the emission and the scattered sunlight are
+        absorbed by OH along the line of sight. Skipped if the atmosphere
+        already has an ``"OH"`` constituent.
 
     Returns
     -------
@@ -347,6 +365,21 @@ def add_photochemical_species(
         )
     if mechanisms and rates is None:
         rates = xr.merge([_RATE_FUNCTIONS[name](flux) for name in order])
+    if "oxygen" in mechanisms:
+        if "O(1D)" in emitters and ionospheric_o1d_production is None:
+            warnings.warn(
+                "No ionospheric O(1D) production given; the red line is "
+                "underestimated above about 150 km",
+                stacklevel=2,
+            )
+        production = (
+            np.zeros_like(altitude)
+            if ionospheric_o1d_production is None
+            else np.asarray(ionospheric_o1d_production, dtype=float)
+        )
+        rates = rates.assign(
+            P_O1D_ION=("altitude", production / np.maximum(densities["O(3P)"], 1.0))
+        )
     if "oxygen_green" in mechanisms:
         if ionospheric_o1s_production is None:
             warnings.warn(
@@ -402,6 +435,16 @@ def add_photochemical_species(
                 name, flux, temperature, densities[emitter.absorber], altitude
             )
             atmosphere[f"{name} emission"] = constituent
+            if (
+                name == "OH(A)"
+                and oh_self_absorption
+                and atmosphere[emitter.absorber] is None
+            ):
+                atmosphere["OH absorption"] = sk.constituent.VMRAltitudeAbsorber(
+                    sk.optical.HITRANAbsorber("OH"),
+                    altitude,
+                    densities[emitter.absorber] / air,
+                )
             results.append(
                 xr.Dataset(
                     {f"{name} photon_ver": ("altitude", ver)},

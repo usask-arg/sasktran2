@@ -79,10 +79,12 @@ def _rates():
     mechanism = sk.nlte.Mechanism.bundled("oxygen")
     z_km = ALTITUDES / 1e3
     shape = 1.0 / (1.0 + np.exp(-(z_km - 50.0) / 5.0))
-    return xr.Dataset(
+    rates = xr.Dataset(
         {name: ("altitude", 1e-5 * shape) for name in mechanism.rate_inputs},
         coords={"altitude": ALTITUDES},
     )
+    # add_photochemical_species sets the ionospheric production itself.
+    return rates.assign(P_O1D_ION=("altitude", np.zeros(ALTITUDES.size)))
 
 
 @needs_o2_lines
@@ -240,3 +242,26 @@ def test_emission_wavelength_grid():
     # Doppler FWHM of O at 180 K is about 0.0015 nm: several points across it.
     assert near.size >= 15
     np.testing.assert_allclose(np.diff(grid[grid < 557.8]), 0.1, rtol=1e-6)
+
+
+@needs_o2_lines
+def test_red_line_with_ionospheric_production():
+    atmosphere, _, _ = _atmosphere()
+    production = np.full(ALTITUDES.size, 1.0e8)
+    result = sk.nlte.add_photochemical_species(
+        atmosphere,
+        ["O(1D)"],
+        cos_sza=COS_SZA,
+        background=_background(),
+        rates=_rates(),
+        ionospheric_o1d_production=production,
+    )
+    assert atmosphere["O(1D) emission"] is not None
+    budget = sk.nlte.budget(sk.nlte.Mechanism.bundled("oxygen"), result, "O(1D)")
+    np.testing.assert_allclose(
+        budget.sel(process="ionospheric_o1d"), production, rtol=1e-6
+    )
+    red = result["photon_ver"].sel(transition="o1d_630")
+    np.testing.assert_allclose(
+        red, 5.63e-3 * result["density"].sel(state="O(1D)"), rtol=1e-12
+    )

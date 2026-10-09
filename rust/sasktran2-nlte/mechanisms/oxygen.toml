@@ -15,7 +15,7 @@
 # Not modelled:
 #   * O2(X, v): vibrationally excited ground-state products go to O2. They do
 #     not feed O2(a) or O2(b).
-#   * O(1S): no daytime source has been reviewed yet.
+#   * O(1S): see the oxygen_green mechanism.
 #   * Reverse (endothermic) energy transfer, negligible for these states at
 #     mesospheric temperatures.
 #   * Quenching by H2O, about 2% of O2(b, v=0) loss at 6 ppmv.
@@ -57,6 +57,9 @@ b-X, summed over lines from each upper level and averaged at 220 K."""
 nist = """\
 Kramida, A., Yu. Ralchenko, J. Reader and NIST ASD Team, NIST Atomic Spectra \
 Database (version 5.11), O I 2p4 1D2 - 3P2,1 transitions."""
+ionosphere = """\
+Supplied volume production rate of O(1D) from ionospheric processes, \
+divided by [O(3P)]."""
 photolysis = """\
 Computed by sasktran2.photolysis from the actinic flux, O2 and O3 cross \
 sections and quantum yields; see presets.oxygen_photolysis."""
@@ -140,6 +143,16 @@ reference = "photolysis"
 
 
 # --- O(1D) -------------------------------------------------------------------
+
+# Ionospheric O(1D) sources (O2+ + e, N(2D) + O2, photoelectron impact),
+# which dominate the red line above about 150 km, as a supplied volume
+# production divided by [O(3P)].
+[[photo_reaction]]
+id = "ionospheric_o1d"
+reactant = "O(3P)"
+products = ["O(1D)"]
+rate_input = "P_O1D_ION"
+reference = "ionosphere"
 
 # JPL 19-5: O2(b) yield 0.8 +- 0.2, O2(a) 0.2. The O2(b) part is split 4:1
 # between v=1 and v=0 (Pejakovic et al. 2014, via ym2019, which has a total
