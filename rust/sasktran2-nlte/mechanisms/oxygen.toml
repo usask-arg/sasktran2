@@ -8,7 +8,7 @@
 # database for the products.
 #
 # Inputs are physical rates from sasktran2.photolysis
-# (presets.oxygen_photolysis): J_O3_O1D, J_O2_SRC, J_O2_LYA (O(1D) channel)
+# (presets.oxygen_photolysis): J_O3_O1D_A{v}, J_O3_O1D_X, J_O2_SRC, J_O2_LYA (O(1D) channel)
 # and the resonant excitation rates J_O2_EXC_*. Product distributions are
 # yields here.
 #
@@ -76,22 +76,23 @@ for_v = [0, 5]
 
 # --- Photolysis and resonant absorption -------------------------------------
 
-# Every O(1D) from O3 comes with O2(a) (spin conservation). Fractions of
-# O2(a, v) at 254 nm, near the Hartley-band peak, from yv2020 Eqs. 3-4 and
-# Table 1 with the tabulated x at threshold.
+# O(1D) from the spin-allowed channel comes with O2(a, v); the split depends
+# on wavelength (yv2020 Eqs. 3-4), so each level has its own rate,
+# J_O3_O1D_A{v}. Beyond 310 nm, O(1D) comes with O2(X) (J_O3_O1D_X).
 [[photo_reaction]]
-id = "o3_o1d"
+id = "o3_o1d_a{v}"
+for_v = [0, 5]
 reactant = "O3"
-rate_input = "J_O3_O1D"
-channels = [
-  { yield = 0.362, products = ["O(1D)", "O2(a, v=0)"] },
-  { yield = 0.276, products = ["O(1D)", "O2(a, v=1)"] },
-  { yield = 0.115, products = ["O(1D)", "O2(a, v=2)"] },
-  { yield = 0.075, products = ["O(1D)", "O2(a, v=3)"] },
-  { yield = 0.076, products = ["O(1D)", "O2(a, v=4)"] },
-  { yield = 0.095, products = ["O(1D)", "O2(a, v=5)"] },
-]
+products = ["O(1D)", "O2(a, v={v})"]
+rate_input = "J_O3_O1D_A{v}"
 reference = "yv2020"
+
+[[photo_reaction]]
+id = "o3_o1d_x"
+reactant = "O3"
+products = ["O(1D)", "O2"]
+rate_input = "J_O3_O1D_X"
+reference = "jpl19"
 
 # Schumann-Runge continuum, O(1D) yield 1 over 139-175 nm.
 [[photo_reaction]]
@@ -140,15 +141,17 @@ reference = "photolysis"
 
 # --- O(1D) -------------------------------------------------------------------
 
-# Total O2(b) yield 1.0 with 4:1 v=1:v=0 (Pejakovic et al. 2014, via ym2019);
-# JPL 19-5 recommends a total of 0.8 +- 0.2.
+# JPL 19-5: O2(b) yield 0.8 +- 0.2, O2(a) 0.2. The O2(b) part is split 4:1
+# between v=1 and v=0 (Pejakovic et al. 2014, via ym2019, which has a total
+# O2(b) yield of 1.0).
 [[reaction]]
 id = "o1d_o2"
 reactants = ["O(1D)", "O2"]
 rate = { law = "arrhenius", a = 3.3e-11, ea_over_r = -55.0, units = "cm3 s-1" }
 channels = [
-  { yield = 0.8, products = ["O2(b, v=1)", "O(3P)"] },
-  { yield = 0.2, products = ["O2(b, v=0)", "O(3P)"] },
+  { yield = 0.64, products = ["O2(b, v=1)", "O(3P)"] },
+  { yield = 0.16, products = ["O2(b, v=0)", "O(3P)"] },
+  { yield = 0.20, products = ["O2(a, v=0)", "O(3P)"] },
 ]
 reference = "jpl19"
 

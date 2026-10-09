@@ -298,3 +298,33 @@ def test_actinic_flux_ozone_only_atmosphere():
     assert 0.75 < float(rates["J_O3_O1D"][-1] / total[-1]) < 0.9
     # The ozone layer removes most O(1D)-producing UV below it.
     assert float(rates["J_O3_O1D"][0]) < 0.05 * float(rates["J_O3_O1D"][-1])
+
+
+def test_o2a_fractions():
+    from sasktran2.photolysis.quantum_yields import (
+        o3_o1d_o2x_fraction,
+        o3_o2a_fractions,
+    )
+
+    wavelength = np.array([220.0, 254.0, 280.0, 300.0, 315.0])
+    fractions = o3_o2a_fractions(wavelength)
+    np.testing.assert_allclose(fractions[:, :4].sum(axis=0), 1.0)
+    # Yankovsky and Vorobeva (2020) at 254 nm.
+    np.testing.assert_allclose(
+        fractions[:, 1], [0.362, 0.276, 0.115, 0.076, 0.076, 0.095], atol=2e-3
+    )
+    # Only v=0 is open just below 310 nm; nothing spin-allowed beyond it.
+    np.testing.assert_allclose(fractions[:, 3], [1, 0, 0, 0, 0, 0])
+    np.testing.assert_allclose(
+        o3_o1d_o2x_fraction(wavelength), [0, 0, 0, 0, 1], atol=1e-12
+    )
+
+
+def test_o1d_channels_sum_to_the_total():
+    flux = _flux(np.arange(200.0, 340.1, 0.5), cross_sections={"O3": 1.0e-23})
+    reactions = [
+        r for r in presets.oxygen_photolysis(excitation=False) if "O3" in r.name
+    ]
+    rates = photolysis_rates(flux, reactions)
+    parts = sum(rates[f"J_O3_O1D_A{v}"] for v in range(6)) + rates["J_O3_O1D_X"]
+    np.testing.assert_allclose(parts, rates["J_O3_O1D"], rtol=1e-12)

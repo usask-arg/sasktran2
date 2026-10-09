@@ -86,8 +86,15 @@ def test_binned_line_rate_uses_the_bin_containing_the_line():
 
 def test_oxygen_photolysis_without_excitation():
     names = [r.name for r in presets.oxygen_photolysis(excitation=False)]
-    assert names == ["J_O3_O1D", "J_O3_O3P", "J_O2_SRC", "J_O2_LYA"]
-    assert len(presets.oxygen_photolysis()) == 8
+    assert names == [
+        "J_O3_O1D",
+        "J_O3_O3P",
+        *(f"J_O3_O1D_A{v}" for v in range(6)),
+        "J_O3_O1D_X",
+        "J_O2_SRC",
+        "J_O2_LYA",
+    ]
+    assert len(presets.oxygen_photolysis()) == 15
 
 
 def test_chabrillat_kockarts_cross_section():

@@ -49,7 +49,7 @@ Rates in cm³ s⁻¹ (T in K) unless noted; ✓ marks the value chosen.
 
 | Process | Legacy | ym2019 / yv2020 | JPL 19-5 | `oxygen` |
 |---|---|---|---|---|
-| O3 → O(1D) + O2(a, v) | 6 inputs; yields 0.49, 0.15, 0.15, 0.08, 0.08, 0.05 (ym2006, 254 nm) | λ-dependent (yv2020 Eqs. 3-4); at 254 nm 0.362, 0.276, 0.115, 0.075, 0.076, 0.095 | Φ(O1D) only | ✓ yv2020 at 254 nm, on `J_O3_O1D`. Eq. 2 of yv2020 does not reproduce its Table 1, so the tabulated thresholds are used. O2(a, v≥1) relax to v=0 within milliseconds, so only the vibrational distribution depends on this. |
+| O3 → O(1D) + O2(a, v) | 6 inputs; yields 0.49, 0.15, 0.15, 0.08, 0.08, 0.05 (ym2006, 254 nm) | λ-dependent (yv2020 Eqs. 3-4); at 254 nm 0.362, 0.276, 0.115, 0.075, 0.076, 0.095 | Φ(O1D) only | ✓ yv2020, wavelength-dependent: one rate per level (`J_O3_O1D_A{v}`), plus `J_O3_O1D_X` for the spin-forbidden O(1D) + O2(X) channel beyond 310 nm. Eq. 2 of yv2020 does not reproduce its Table 1, so x(λ) is interpolated between the tabulated thresholds. O2(a, v≥1) relax to v=0 within milliseconds, so only the vibrational distribution depends on this. |
 | O2 SRC → O(3P) + O(1D) | yield 1 | yield 1 | Φ = 1 at 139-175 nm | ✓ |
 | O2 Lyman-α → O(1D) | Φ = 0.53 in the rate | 0.48-0.58 | 0.44 ± 0.05 at line centre | ✓ Φ = 0.53 in `J_O2_LYA` |
 | O2 + hν → O2(b, v=0-2), O2(a) | line-by-line | top-of-atmosphere 5.35e-9, 2.94e-10, 7.94e-12, 1.54e-10 s⁻¹ (ym2006) | — | ✓ line-by-line; ours at the top of the atmosphere: 6.2e-9, 3.7e-10, 1.2e-11, 1.2e-10 |
@@ -58,7 +58,7 @@ Rates in cm³ s⁻¹ (T in K) unless noted; ✓ marks the value chosen.
 
 | Process | Legacy | ym2019 | JPL 19-5 | `oxygen` |
 |---|---|---|---|---|
-| + O2 | 3.2e-11 exp(67/T); b(v=1) 0.40, b(v=0) 0.55, a 0.05 | 3.3e-11 exp(55/T); b(v=1) 0.8, b(v=0) 0.2 (Pejakovic et al. 2014) | 3.3e-11 exp(55/T); total b 0.8 ± 0.2 | ✓ JPL rate, ym2019 yields. Open: JPL's total b yield would lower the O(1D) route by 20%. |
+| + O2 | 3.2e-11 exp(67/T); b(v=1) 0.40, b(v=0) 0.55, a 0.05 | 3.3e-11 exp(55/T); b(v=1) 0.8, b(v=0) 0.2 (Pejakovic et al. 2014) | 3.3e-11 exp(55/T); total b 0.8 ± 0.2 | ✓ JPL rate and yields: b 0.8 split 4:1 between v=1 and v=0 (0.64, 0.16), a(v=0) 0.2. |
 | + N2 | 2.0e-11 exp(107/T) | 2.15e-11 exp(110/T) | 2.15e-11 exp(110/T) | ✓ JPL (+9% vs legacy) |
 | + O3 | 2.4e-10 → 2 O2 | 2.4e-10, 50% → O2 + 2O | 2.4e-10, 50/50 | ✓ JPL |
 | + CO2 | — | 7.5e-11 exp(115/T) | 7.5e-11 exp(115/T) | ✓ JPL (new; negligible) |
@@ -170,10 +170,19 @@ An audit of the source (Kopra/source_10.0.0/modules) found no physics error in t
 
 The flat, roughly 1.2e-8 s⁻¹ pumping inferred above fits the unattenuated routes. The ERS O2(b) is therefore not a reference for daytime O2(b) below about 80 km.
 
+### Update: JPL yield and wavelength-dependent O2(a, v)
+
+With the JPL O2(b) yield of 0.8 and the wavelength-dependent O2(a, v) split, april+00 gives the following against GRANADA (sasktran2 / GRANADA):
+
+| Altitude | O(1D) | O2(a) | O2(b) |
+|---|---|---|---|
+| 40-60 km | 0.97-0.99 | 0.83-0.89 | 0.44-0.47 |
+| 70-80 km | 0.94-0.99 | 0.70 | 0.50-0.55 |
+
+O2(b) drops by about 18% at 40 km, where the O(1D) route dominates, and is unchanged at 80 km, where pumping dominates.
+
 ## Open items
 
-- O(1D) + O2 total O2(b) yield: 1.0 here (ym2019) against 0.8 ± 0.2 (JPL).
 - GRANADA's A-band pumping (about 1.2e-8 s⁻¹, nearly unattenuated to 30 km), about 2-10× ours.
-- Wavelength-dependent O2(a, v) yields from O3 photolysis (yv2020, or GRANADA's).
 - γ-band (2-0) and a-X (1.27 µm) emission constituents.
 - O(1S) daytime sources.

@@ -117,7 +117,7 @@ def test_populations_match_the_kinetics():
         rtol=1e-6,
         atol=1.0,
     )
-    assert "J_O3_O1D" in solution
+    assert "J_O3_O1D_A0" in solution
 
 
 @needs_o2_lines
