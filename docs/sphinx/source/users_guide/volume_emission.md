@@ -8,11 +8,12 @@ mystnb:
   output_stderr: remove
 ---
 
-(_users_photochemical_emission)=
-# Photochemical Emission
+(_users_volume_emission)=
+# Volume Emission
 
 Use a volume emission rate (VER) profile to specify how much light the atmosphere
-emits at each altitude. This example calculates O2 A-band limb radiance from a
+emits at each altitude. To compute the emission from photochemistry instead, see
+{ref}`_users_airglow`. This example calculates O2 A-band limb radiance from a
 VER profile, includes absorption by O2, and shows how to obtain weighting
 functions for VER and temperature.
 

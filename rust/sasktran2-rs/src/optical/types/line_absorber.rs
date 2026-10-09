@@ -121,19 +121,53 @@ fn gaussian_assign(
 
 pub fn assign_normalized_doppler_line_shape(
     wavenumber_cminv: &[f64],
+    monotonic: bool,
     line_center_cminv: f64,
     doppler_width_cminv: f64,
     area: f64,
     output: &mut [f64],
 ) {
+    // Beyond 6 Doppler widths the profile is below exp(-36); on a monotonic
+    // grid (see `is_monotonic`), only the window around the line is evaluated.
+    let (start, end) = if monotonic {
+        doppler_window(
+            wavenumber_cminv,
+            line_center_cminv,
+            6.0 * doppler_width_cminv,
+        )
+    } else {
+        (0, wavenumber_cminv.len())
+    };
+    if start >= end {
+        return;
+    }
     gaussian_assign(
-        wavenumber_cminv,
+        &wavenumber_cminv[start..end],
         line_center_cminv,
         doppler_width_cminv,
         0.0,
         area / (SQRT_PI * doppler_width_cminv),
-        output,
+        &mut output[start..end],
     );
+}
+
+/// Whether a grid is non-decreasing or non-increasing throughout.
+pub fn is_monotonic(grid: &[f64]) -> bool {
+    grid.windows(2).all(|w| w[0] <= w[1]) || grid.windows(2).all(|w| w[0] >= w[1])
+}
+
+/// Index range of a monotonic grid within `half_width` of `center`.
+fn doppler_window(grid: &[f64], center: f64, half_width: f64) -> (usize, usize) {
+    let n = grid.len();
+    if n < 2 {
+        return (0, n);
+    }
+    let (lo, hi) = (center - half_width, center + half_width);
+    if grid[0] <= grid[n - 1] {
+        (grid.partition_point(|&x| x < lo), grid.partition_point(|&x| x <= hi))
+    } else {
+        (grid.partition_point(|&x| x > hi), grid.partition_point(|&x| x >= lo))
+    }
 }
 
 fn split_and_assign(
@@ -755,6 +789,42 @@ impl OpticalProperty for LineAbsorber {
 
     fn is_scatterer(&self) -> bool {
         false
+    }
+}
+
+#[cfg(test)]
+mod doppler_window_tests {
+    use super::*;
+
+    #[test]
+    fn window_matches_the_full_evaluation() {
+        for grid in [
+            (0..20001).map(|i| 13000.0 + 0.01 * i as f64).collect::<Vec<_>>(),
+            (0..20001).map(|i| 13200.0 - 0.01 * i as f64).collect::<Vec<_>>(),
+        ] {
+            let mut windowed = vec![0.0; grid.len()];
+            assign_normalized_doppler_line_shape(&grid, true, 13100.0, 0.02, 1.0, &mut windowed);
+            let mut full = vec![0.0; grid.len()];
+            gaussian_assign(&grid, 13100.0, 0.02, 0.0, 1.0 / (SQRT_PI * 0.02), &mut full);
+            for (a, b) in windowed.iter().zip(full.iter()) {
+                assert!((a - b).abs() <= 1e-15 * b.abs().max(1.0) + 1e-14);
+            }
+            let area: f64 = windowed.iter().sum::<f64>() * 0.01;
+            assert!((area - 1.0).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn unsorted_grids_use_the_full_evaluation() {
+        let mut grid: Vec<f64> = (0..2001).map(|i| 13090.0 + 0.01 * i as f64).collect();
+        grid.swap(10, 1000);
+        assert!(!is_monotonic(&grid));
+        let mut out = vec![0.0; grid.len()];
+        assign_normalized_doppler_line_shape(&grid, false, 13100.0, 0.02, 1.0, &mut out);
+        let mut full = vec![0.0; grid.len()];
+        gaussian_assign(&grid, 13100.0, 0.02, 0.0, 1.0 / (SQRT_PI * 0.02), &mut full);
+        assert_eq!(out, full);
+        assert!(out[10] > 0.0);
     }
 }
 

@@ -5,8 +5,9 @@ use crate::atmosphere::StorageInputs;
 use crate::optical::line::OpticalLineDB;
 use crate::photchem::emission::{
     AEmissionLineWeightModel, EmissionBand, O2_B0_X0_EINSTEIN_A_S, O2_B1_X0_EINSTEIN_A_S,
-    O2_B1_X1_EINSTEIN_A_S, oxygen_a_band_lte_line_weights,
-    oxygen_a_band_lte_line_weights_with_temperature_derivative,
+    O2_B1_X1_EINSTEIN_A_S, O2_B2_X0_EINSTEIN_A_S, oxygen_a_band_from_hitran,
+    oxygen_a_band_lte_line_weights, oxygen_gamma_band_from_hitran,
+    oxygen_a_band_lte_line_weights_with_temperature_derivative, oxygen_b_band_from_hitran,
 };
 use crate::prelude::*;
 
@@ -80,27 +81,34 @@ impl BandEmissionModel for O2BandEmissionModel {
 pub fn oxygen_emission_band(db: &OpticalLineDB, transition: &str) -> Result<EmissionBand> {
     let (mut band, upper, lower, a) = match transition {
         "0-0" => (
-            EmissionBand::oxygen_a_band_from_hitran(db)?,
+            oxygen_a_band_from_hitran(db)?,
             "O2(b)",
             "O2(X)",
             O2_B0_X0_EINSTEIN_A_S,
         ),
         "1-1" => (
-            EmissionBand::oxygen_a_band_from_hitran(db)?,
+            oxygen_a_band_from_hitran(db)?,
             "O2(b, v=1)",
             "O2(X, v=1)",
             O2_B1_X1_EINSTEIN_A_S,
         ),
         "1-0" => (
-            EmissionBand::oxygen_b_band_from_hitran(db)?
+            oxygen_b_band_from_hitran(db)?
                 .ok_or_else(|| anyhow!("No O2 1-0 emission lines in database"))?,
             "O2(b, v=1)",
             "O2(X)",
             O2_B1_X0_EINSTEIN_A_S,
         ),
+        "2-0" => (
+            oxygen_gamma_band_from_hitran(db)?
+                .ok_or_else(|| anyhow!("No O2 2-0 emission lines in database"))?,
+            "O2(b, v=2)",
+            "O2(X)",
+            O2_B2_X0_EINSTEIN_A_S,
+        ),
         _ => {
             return Err(anyhow!(
-                "Unsupported O2 band '{transition}'; expected '0-0', '1-1', or '1-0'"
+                "Unsupported O2 band '{transition}'; expected '0-0', '1-1', '1-0' or '2-0'"
             ));
         }
     };

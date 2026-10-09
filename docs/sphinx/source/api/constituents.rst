@@ -57,7 +57,6 @@ Photochemical Models
 .. autosummary::
     :toctree: generated/
 
-    sasktran2.photchem.models.Yankovsky
 
 Dummy Constituents
 ------------------

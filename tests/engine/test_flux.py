@@ -194,3 +194,54 @@ def test_actinic_flux_output():
     assert rad["actinic_flux"].shape == (3, 1)
     assert np.all(np.isfinite(rad["actinic_flux"].values))
     assert np.any(rad["actinic_flux"].values > 0.0)
+
+
+def test_direct_beam_flux_is_attenuated_to_the_observer():
+    # A pure absorber with constant extinction, so the optical depth above
+    # any altitude is exactly extinction * (top - altitude). The flux is then
+    # only the direct beam, at grid levels and between them.
+    extinction_per_m = 2.0e-5
+    altitude_grid = np.arange(0.0, 50001.0, 1000.0)
+    observers = np.array([0.0, 2500.0, 10000.0, 17300.0, 30000.0, 49500.0])
+
+    for cos_sza in (1.0, 0.5):
+        config = sk.Config()
+        config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
+        config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
+        config.flux_types = [sk.FluxType.Actinic, sk.FluxType.Downwelling]
+        config.num_streams = 4
+        config.num_forced_azimuth = 1
+
+        geometry = sk.Geometry1D(
+            cos_sza,
+            0.0,
+            6371000.0,
+            altitude_grid,
+            sk.InterpolationMethod.LinearInterpolation,
+            sk.GeometryType.PlaneParallel,
+        )
+        viewing = sk.ViewingGeometry()
+        for altitude in observers:
+            viewing.add_flux_observer(sk.FluxObserverSolar(cos_sza, altitude))
+
+        atmosphere = sk.Atmosphere(
+            geometry, config, np.array([500.0]), calculate_derivatives=False
+        )
+        atmosphere.storage.total_extinction[:] = extinction_per_m
+        atmosphere.storage.ssa[:] = 0.0
+        atmosphere.storage.solar_irradiance[:] = 1.0
+        atmosphere.leg_coeff.a1[0] = 1.0
+
+        rad = sk.Engine(config, geometry, viewing).calculate_radiance(atmosphere)
+
+        transmission = np.exp(
+            -extinction_per_m * (altitude_grid[-1] - observers) / cos_sza
+        )
+        np.testing.assert_allclose(
+            rad["actinic_flux"].to_numpy()[0], transmission, rtol=1e-10
+        )
+        np.testing.assert_allclose(
+            rad["downwelling_flux"].to_numpy()[0],
+            cos_sza * transmission,
+            rtol=1e-10,
+        )
