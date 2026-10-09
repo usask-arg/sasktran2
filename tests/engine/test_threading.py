@@ -122,3 +122,60 @@ def test_native_linearization_threading(threading_lib, threading_model):
     np.testing.assert_allclose(
         threaded.vjp(cotangent)["pressure_pa"], serial_vjp, rtol=1e-12
     )
+
+
+@pytest.mark.parametrize(("threading_lib", "threading_model"), testdata)
+@pytest.mark.parametrize("num_threads", [1, 4])
+def test_solver_error_raises(threading_lib, threading_model, num_threads):
+    """
+    A discrete ordinates failure inside a threaded wavelength or source loop
+    must surface as a Python exception rather than aborting the process.
+    """
+    if (
+        not build_info.openmp_support_enabled()
+        and threading_lib == sk.ThreadingLib.OpenMP
+    ):
+        pytest.skip("OpenMP support is not enabled in this build of sasktran2.")
+
+    config = sk.Config()
+    config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
+    config.num_streams = 4
+    config.threading_lib = threading_lib
+    config.threading_model = threading_model
+    config.num_threads = num_threads
+    # Validation would reject the atmosphere before the solver runs
+    config.input_validation_mode = sk.InputValidationMode.Disabled
+
+    model_geometry = sk.Geometry1D(
+        cos_sza=0.6,
+        solar_azimuth=0,
+        earth_radius_m=6372000,
+        altitude_grid_m=np.arange(0, 65001, 1000.0),
+        interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+        geometry_type=sk.GeometryType.Spherical,
+    )
+
+    viewing_geo = sk.ViewingGeometry()
+    for alt in [10000, 20000, 30000, 40000]:
+        viewing_geo.add_ray(
+            sk.TangentAltitudeSolar(
+                tangent_altitude_m=alt,
+                relative_azimuth=0,
+                observer_altitude_m=200000,
+                cos_sza=0.6,
+            )
+        )
+
+    atmosphere = sk.Atmosphere(
+        model_geometry, config, wavelengths_nm=np.arange(280.0, 800.0, 10)
+    )
+    atmosphere.storage.total_extinction[:] = 1e-4
+    atmosphere.storage.ssa[:] = 0.9
+    atmosphere.leg_coeff.a1[0] = 1
+    # An asymmetry factor of 10 gives imaginary homogeneous solutions, which
+    # the discrete ordinates solver reports by throwing
+    atmosphere.leg_coeff.a1[1] = 30
+
+    engine = sk.Engine(config, model_geometry, viewing_geo)
+    with pytest.raises(RuntimeError):
+        engine.calculate_radiance(atmosphere)
