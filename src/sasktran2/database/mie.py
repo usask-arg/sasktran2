@@ -19,6 +19,7 @@ from sasktran2.mie.refractive import RefractiveIndex
 from sasktran2.optical.database import (
     OpticalDatabaseGenericScatterer,  # noqa: F401
     OpticalDatabaseGenericScattererRust,
+    _validate_wavelength_out_of_bounds_mode,
 )
 
 from .base import CachedDatabase
@@ -35,6 +36,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
         max_legendre_moments: int = 64,
         num_size_quadrature: int = 1000,
         num_threads=1,
+        wavelength_out_of_bounds_mode: str = "warn",
         **kwargs,
     ) -> None:
         """
@@ -60,9 +62,15 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
             Number of Rust workers for particle-size calculations and distribution
             integration, by default 1. Zero selects the automatic thread count.
             Applies to the sasktran2_cpp backend.
+        wavelength_out_of_bounds_mode: str, optional
+            Treatment of requested wavelengths outside the range of ``wavelengths_nm``. "warn" issues a
+            UserWarning and otherwise behaves like "zero", "raise" raises a ValueError, "zero" sets the
+            cross sections, single scatter albedo and phase function to 0, and "extend" uses the optical
+            properties at the nearest database wavelength. By default "warn"
         kwargs
             Additional arguments to pass to the particle size distribution, these should match the psize_distribution.args() method
         """
+        _validate_wavelength_out_of_bounds_mode(wavelength_out_of_bounds_mode)
 
         class NumpyEncoder(json.JSONEncoder):
             def default(self, obj):
@@ -110,7 +118,11 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
 
         self._kwargs = kwargs
 
-        OpticalDatabaseGenericScattererRust.__init__(self, self.path())
+        OpticalDatabaseGenericScattererRust.__init__(
+            self,
+            self.path(),
+            wavelength_out_of_bounds_mode=wavelength_out_of_bounds_mode,
+        )
 
     def generate(self):
         if self._backend == "sasktran_legacy":

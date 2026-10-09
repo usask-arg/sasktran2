@@ -11,6 +11,58 @@ from sasktran2.optical.base import OpticalProperty
 from .base import Constituent
 
 
+def _reference_cross_sections(
+    optical_property: OpticalProperty,
+    wavelength_nm: float,
+    wavelength_name: str,
+    altitudes_m: np.ndarray,
+    **kwargs,
+) -> np.ndarray:
+    """
+    Extinction cross sections used to convert a profile specified at ``wavelength_nm`` to number
+    density, flattened over the spatial points.
+
+    Raises
+    ------
+    ValueError
+        If ``wavelength_nm`` is outside the optical property wavelength range, or if any cross
+        section is zero, negative, or non-finite.
+    """
+    wavelength_nm = float(wavelength_nm)
+    wavelength_range_nm = getattr(optical_property, "wavelength_range_nm", None)
+
+    range_note = ""
+    if wavelength_range_nm is not None:
+        lower, upper = wavelength_range_nm
+        range_note = f" (optical property wavelength range {lower:g} to {upper:g} nm)"
+        if not lower <= wavelength_nm <= upper:
+            msg = (
+                f"{wavelength_name}={wavelength_nm:g} nm is outside the optical property "
+                f"wavelength range of {lower:g} to {upper:g} nm. Specify the profile at a "
+                "wavelength inside this range, or extend the optical property wavelength grid"
+            )
+            raise ValueError(msg)
+
+    cross_sections = np.asarray(
+        optical_property.cross_sections(
+            np.array([wavelength_nm]), altitudes_m=altitudes_m, **kwargs
+        ).extinction,
+        dtype=np.float64,
+    ).reshape(-1)
+
+    invalid = ~(np.isfinite(cross_sections) & (cross_sections > 0))
+    if np.any(invalid):
+        msg = (
+            f"The optical property extinction cross section at {wavelength_name}="
+            f"{wavelength_nm:g} nm must be finite and positive to convert extinction to number "
+            f"density, but {np.count_nonzero(invalid)} of {cross_sections.size} values are zero, "
+            f"negative, or non-finite{range_note}"
+        )
+        raise ValueError(msg)
+
+    return cross_sections
+
+
 class NumberDensityScatterer(Constituent):
     _constituent: PyNumberDensityScatterer
 
@@ -152,11 +204,18 @@ class ExtinctionScatterer(NumberDensityScatterer):
         extinction_per_m : np.array
             Extinction in [m^-1]
         extinction_wavelength_nm : float
-            Wavelength that the extinction profile is specified at
+            Wavelength that the extinction profile is specified at. Must be inside the
+            ``wavelength_range_nm`` of the optical property, if it has one
         out_of_bounds_mode : str, optional
             Interpolation mode outside of the boundaries, "extend" and "zero" are supported, by default "zero"
         kwargs : dict
             Additional arguments passed to the optical property
+
+        Raises
+        ------
+        ValueError
+            If ``extinction_wavelength_nm`` is outside the optical property wavelength range, or the
+            optical property cross section there is not finite and positive at every altitude
         """
         self._extinction_per_m = extinction_per_m
         self._extinction_wavelength_nm = extinction_wavelength_nm
@@ -169,11 +228,13 @@ class ExtinctionScatterer(NumberDensityScatterer):
         self._wf_name = "extinction"
 
     def _update_numberdensity(self):
-        self._extinction_to_numden_factors = self._optical_property.cross_sections(
-            np.array([self._extinction_wavelength_nm]),
-            altitudes_m=self._altitudes_m,
+        self._extinction_to_numden_factors = _reference_cross_sections(
+            self._optical_property,
+            self._extinction_wavelength_nm,
+            "extinction_wavelength_nm",
+            self._altitudes_m,
             **self._kwargs,
-        ).extinction.flatten()
+        )
         self._vertical_deriv_factor = 1 / self._extinction_to_numden_factors
 
         self.number_density = (

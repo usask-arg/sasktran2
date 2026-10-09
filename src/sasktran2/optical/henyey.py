@@ -12,7 +12,10 @@ from sasktran2._core_rust import (
     PyScatteringDatabaseDim4,
 )
 from sasktran2.atmosphere import Atmosphere
-from sasktran2.optical.database import OpticalDatabase
+from sasktran2.optical.database import (
+    OpticalDatabase,
+    _validate_wavelength_out_of_bounds_mode,
+)
 from sasktran2.optical.quantities import OpticalQuantities
 
 from .quantities import OpticalQuantities as RustOpticalQuantities
@@ -27,6 +30,7 @@ class HenyeyGreenstein(OpticalDatabase):
         ssa: np.array,
         g: np.array,
         max_num_moments: int = 128,
+        wavelength_out_of_bounds_mode: str = "warn",
     ) -> HenyeyGreenstein:
         """
         Create a Henyey-Greenstein optical database from parameter arrays.  Note that
@@ -45,6 +49,9 @@ class HenyeyGreenstein(OpticalDatabase):
         max_num_moments : int, optional
             Maximum number of moments to use, should be set higher than the number of streams
              used in the calculation. by default 128
+        wavelength_out_of_bounds_mode : str, optional
+            Treatment of requested wavelengths outside the range of ``wavelength_nm``, one of
+            "raise", "warn", "zero", or "extend". See :class:`HenyeyGreenstein`. By default "warn"
         """
 
         ds = xr.Dataset(
@@ -56,13 +63,18 @@ class HenyeyGreenstein(OpticalDatabase):
             coords={"wavelength_nm": wavelength_nm},
         )
 
-        return cls(db=ds, max_num_moments=max_num_moments)
+        return cls(
+            db=ds,
+            max_num_moments=max_num_moments,
+            wavelength_out_of_bounds_mode=wavelength_out_of_bounds_mode,
+        )
 
     def __init__(
         self,
         db_filepath: Path | None = None,
         db: xr.Dataset | None = None,
         max_num_moments: int = 128,
+        wavelength_out_of_bounds_mode: str = "warn",
     ) -> None:
         """
         An optical property that uses a Henyey-Greenstein phase function. I.e., the phase function is defined
@@ -87,7 +99,15 @@ class HenyeyGreenstein(OpticalDatabase):
             Path to a netCDF file containing the database, by default None
         db : xr.Dataset | None, optional
             An xarray Dataset containing the database, by default None
+        max_num_moments : int, optional
+            Maximum number of moments to use, by default 128
+        wavelength_out_of_bounds_mode : str, optional
+            Treatment of requested wavelengths outside the database wavelength range. "warn" issues a
+            UserWarning and otherwise behaves like "zero", "raise" raises a ValueError, "zero" sets the
+            cross sections, single scatter albedo and phase function to 0, and "extend" uses the optical
+            properties at the nearest database wavelength. By default "warn"
         """
+        _validate_wavelength_out_of_bounds_mode(wavelength_out_of_bounds_mode)
         super().__init__(db_filepath, db)
 
         self._validate_db()
@@ -151,8 +171,36 @@ class HenyeyGreenstein(OpticalDatabase):
                 param_names,
             )
 
+        wavelength_nm = db["wavelength_nm"].to_numpy()
+        self._wavelength_range_nm = (
+            float(np.min(wavelength_nm)),
+            float(np.max(wavelength_nm)),
+        )
+        self.wavelength_out_of_bounds_mode = wavelength_out_of_bounds_mode
+
     def _validate_db(self):
         pass
+
+    @property
+    def wavelength_range_nm(self) -> tuple[float, float]:
+        """
+        Smallest and largest database wavelengths in [nm]
+        """
+        return self._wavelength_range_nm
+
+    @property
+    def wavelength_out_of_bounds_mode(self) -> str:
+        """
+        Treatment of requested wavelengths outside :attr:`wavelength_range_nm`, one of "raise", "warn",
+        "zero", or "extend"
+        """
+        return self._db.wavelength_out_of_bounds_mode
+
+    @wavelength_out_of_bounds_mode.setter
+    def wavelength_out_of_bounds_mode(self, mode: str) -> None:
+        self._db.wavelength_out_of_bounds_mode = (
+            _validate_wavelength_out_of_bounds_mode(mode)
+        )
 
     def cross_sections(
         self, wavelengths_nm: np.array, altitudes_m: np.array, **kwargs

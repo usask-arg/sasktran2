@@ -154,7 +154,9 @@ impl PyNumberDensityScatterer2D {
             self.optical_property.clone_ref(atmo.py()),
             atmo.into(),
             aux_names,
-        );
+        )
+        // add_to_atmosphere has already reported any out-of-range wavelengths
+        .without_out_of_bounds_warnings();
 
         let _ = self.inner.with_optical_property(py_optical);
         let result = self.inner.register_derivatives(&mut rust_atmo, name);
@@ -285,7 +287,9 @@ impl PyNumberDensityScatterer {
             self.optical_property.clone_ref(atmo.py()),
             atmo.into(),
             aux_names,
-        );
+        )
+        // add_to_atmosphere has already reported any out-of-range wavelengths
+        .without_out_of_bounds_warnings();
 
         let _ = self.inner.with_optical_property(py_optical);
         let result = self.inner.register_derivatives(&mut rust_atmo, name);
