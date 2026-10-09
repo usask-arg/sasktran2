@@ -143,4 +143,8 @@ developer/compiling.md
 developer/contributing.md
 developer/band_emission.md
 developer/codespaces.md
+developer/nlte_plan.md
+developer/nlte_mechanism_format.md
+developer/nlte_oxygen_audit.md
+developer/nlte_granada_review.md
 ```

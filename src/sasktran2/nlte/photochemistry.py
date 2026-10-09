@@ -432,7 +432,12 @@ def add_photochemical_species(
         emitter = PHOTOCHEMICAL_SPECIES[name]
         if emitter.absorber is not None:
             ver, constituent = _fluorescence(
-                name, flux, temperature, densities[emitter.absorber], altitude
+                name,
+                flux,
+                temperature,
+                densities[emitter.absorber],
+                altitude,
+                model_altitude,
             )
             atmosphere[f"{name} emission"] = constituent
             if (
@@ -473,7 +478,7 @@ def add_photochemical_species(
     return xr.merge(results, compat="no_conflicts", join="outer")
 
 
-def _fluorescence(name, flux, temperature, density, altitude):
+def _fluorescence(name, flux, temperature, density, altitude, model_altitude):
     from . import fluorescence
 
     if name != "OH(A)":
@@ -484,11 +489,17 @@ def _fluorescence(name, flux, temperature, density, altitude):
     ver, weights = fluorescence.oh_ax_fluorescence(
         lines, temperature, density, at_lines
     )
+    # Altitude-dependent line weights must be on the model grid. Linear
+    # interpolation keeps each row summing to one.
+    model_ver = np.interp(model_altitude, altitude, ver, left=0.0, right=0.0)
+    model_weights = np.stack(
+        [np.interp(model_altitude, altitude, w) for w in weights.T], axis=1
+    )
     constituent = sk.constituent.LineListVolumeEmissionRate(
-        altitude,
-        ver,
+        model_altitude,
+        model_ver,
         lines.wavelength_nm,
-        weights,
+        model_weights,
         molecular_mass_g_per_mol=fluorescence.OH_MOLAR_MASS,
     )
     return ver, constituent
