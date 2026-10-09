@@ -1,8 +1,6 @@
 //! Kinetic mechanisms: excited states, background species, and the processes
-//! that couple them, loaded and validated from TOML files.
-//!
-//! The file format is documented in
-//! `docs/sphinx/source/developer/nlte_mechanism_format.md`.
+//! that couple them, loaded and validated from TOML files. The bundled
+//! files in `mechanisms/` are worked examples of the format.
 
 mod file;
 mod template;

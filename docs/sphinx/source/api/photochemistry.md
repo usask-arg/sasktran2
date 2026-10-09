@@ -2,8 +2,6 @@
 # Photolysis and Photochemistry
 
 For executable examples, see {ref}`_users_photolysis` and {ref}`_users_airglow`.
-The mechanism file format is described in the developer documentation,
-`docs/sphinx/source/developer/nlte_mechanism_format.md`.
 
 ## Actinic flux and photolysis rates
 

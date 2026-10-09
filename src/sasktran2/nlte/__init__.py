@@ -4,8 +4,7 @@ A :class:`Mechanism` lists excited states, background species and the
 processes that couple them (reactions, photolysis, radiative transitions).
 :func:`solve` gives the steady-state state populations, process rates and
 production/loss budgets on a column of levels. The kinetics run in the
-``sasktran2-nlte`` Rust crate; the mechanism file format is described in
-``docs/sphinx/source/developer/nlte_mechanism_format.md``.
+``sasktran2-nlte`` Rust crate.
 """
 
 from __future__ import annotations
