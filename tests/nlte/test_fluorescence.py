@@ -82,3 +82,16 @@ def test_add_oh_fluorescence():
     # plus Rayleigh-scattered and reflected light.
     rate = ver[z == 60e3] / oh[z == 60e3]
     assert 7e-4 < rate[0] < 2.5 * 7e-4
+
+
+def test_zero_oh_levels(lines):
+    flux = np.full((3, lines.wavenumber_cminv.size), 1.0e18)
+    ver, weights = fluorescence.oh_ax_fluorescence(
+        lines, [200.0, 200.0, 200.0], [1.0e12, 0.0, 1.0e12], flux
+    )
+    assert ver[1] == 0.0
+    # Every row must still sum to one for LineListVolumeEmissionRate.
+    np.testing.assert_allclose(weights.sum(axis=1), 1.0)
+    sk.constituent.LineListVolumeEmissionRate(
+        np.array([0.0, 1.0, 2.0]), ver, lines.wavelength_nm, weights
+    )
