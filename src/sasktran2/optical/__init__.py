@@ -267,6 +267,39 @@ class NO2Vandaele(database.OpticalDatabaseGenericAbsorber):
             raise OSError(msg)
 
 
+class VUVAbsorber(database.OpticalDatabaseGenericAbsorber):
+    def __init__(self, species: str) -> None:
+        """
+        Photoabsorption of O2, N2 or atomic O in the vacuum ultraviolet, 80-130 nm.
+
+        From the Leiden photodissociation database (Heays, Bosman and van Dishoeck 2017,
+        A&A 602, A105, and the original sources it lists), temperature independent:
+
+        - ``"O2"``: 80-130.1 nm (Holland et al. 1993 below 103 nm, Ogawa and Ogawa 1975
+          above 108.7 nm), zero within 0.05 nm of Lyman-alpha (see :class:`O2LymanAlpha`).
+          Combine with :class:`O2UV` above 130 nm.
+        - ``"N2"``: 80-100 nm, averaged into 0.005 nm bins.
+        - ``"O"``: 80-91 nm, the ionisation continuum.
+
+        Built by ``tools/spectroscopy/build_vuv.py``.
+
+        Raises
+        ------
+        OSError
+            If the table cannot be found
+        """
+        files = {"O2": "o2_vuv.nc", "N2": "n2_vuv.nc", "O": "o_vuv.nc"}
+        if species not in files:
+            msg = f"No VUV cross sections for {species!r}; available: {list(files)}"
+            raise ValueError(msg)
+        path = StandardDatabase().path(f"cross_sections/vuv/{files[species]}")
+        if path.exists():
+            super().__init__(path)
+        else:
+            msg = f"Could not find the {species} VUV cross-section table at {path}"
+            raise OSError(msg)
+
+
 class O2UV(database.OpticalDatabaseGenericAbsorber):
     def __init__(self) -> None:
         """

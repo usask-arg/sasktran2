@@ -5,7 +5,12 @@ from __future__ import annotations
 import xarray as xr
 
 from .flux import O2_LINE_WINDOWS_NM
-from .quantum_yields import O3O1DYield, o3_o1d_matsumi2002, o3_o3p_matsumi2002
+from .quantum_yields import (
+    O3O1DYield,
+    o2_o1s_yield,
+    o3_o1d_matsumi2002,
+    o3_o3p_matsumi2002,
+)
 from .rates import LymanAlphaPhotolysis, Photolysis, photolysis_rates
 from .tuv import TUVXQuantumYield
 
@@ -137,3 +142,20 @@ def oxygen_yankovsky_rates(flux: xr.Dataset) -> xr.Dataset:
     for name in rates.data_vars:
         rates[name].attrs["units"] = "s^-1"
     return rates
+
+
+def green_line_photolysis() -> list[Photolysis]:
+    """``J_O2_O1S``: O2 photodissociation into O(1S), 81-121 nm.
+
+    Needs an actinic flux down to 81 nm (the default grid of
+    :func:`airglow_wavelength_grid`) with O2, N2 and O absorbing.
+    """
+    return [
+        Photolysis(
+            "J_O2_O1S",
+            "O2",
+            o2_o1s_yield,
+            wavelength_range_nm=(80.0, 121.0),
+            reference="Leiden O2 cross sections; GLOW O(1S) yields",
+        )
+    ]

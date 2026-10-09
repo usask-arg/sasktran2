@@ -129,3 +129,26 @@ class O3O1DYield:
 
     def __hash__(self):
         return hash(("O3O1DYield", self.level))
+
+
+# O(1S) yields per absorbed photon in O2 photodissociation, by wavelength
+# interval [nm], as used in the GLOW dayglow model (Solomon and Abreu 1989;
+# Bailey et al. 2002), after Lawrence and McEwan (1973) and Lee et al. (1977).
+_O2_O1S_BINS_NM = np.array([81.0, 86.0, 91.0, 99.0, 110.0, 115.0, 121.0])
+_O2_O1S_YIELDS = np.array([0.01, 0.03, 0.07, 0.10, 0.03, 0.01])
+
+
+def o2_o1s_yield(wavelength_nm, temperature_k=None) -> np.ndarray:
+    """Yield of O(1S) per photon absorbed by O2, 81-121 nm; zero elsewhere.
+
+    The step function used by GLOW, applied to total O2 absorption.
+    Solomon, S. C. and V. J. Abreu (1989), J. Geophys. Res. 94, 6817-6824.
+    """
+    w = np.asarray(wavelength_nm, dtype=float)
+    if temperature_k is not None:
+        w = np.broadcast_arrays(w, np.asarray(temperature_k, dtype=float))[0]
+    index = np.searchsorted(_O2_O1S_BINS_NM, w, side="right") - 1
+    inside = (index >= 0) & (index < _O2_O1S_YIELDS.size)
+    return np.where(
+        inside, _O2_O1S_YIELDS[np.clip(index, 0, _O2_O1S_YIELDS.size - 1)], 0.0
+    )

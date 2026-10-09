@@ -16,6 +16,10 @@ use template::{canonical_species, levels, substitute};
 const BUNDLED: &[(&str, &str)] = &[
     ("oxygen", include_str!("../../mechanisms/oxygen.toml")),
     (
+        "oxygen_green",
+        include_str!("../../mechanisms/oxygen_green.toml"),
+    ),
+    (
         "oxygen_yankovsky",
         include_str!("../../mechanisms/oxygen_yankovsky.toml"),
     ),

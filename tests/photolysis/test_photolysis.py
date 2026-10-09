@@ -278,7 +278,8 @@ def test_actinic_flux_ozone_only_atmosphere():
     )
     flux = calculator.calculate(atmosphere, cos_sza=0.8, albedo=0.1)
 
-    assert list(flux["species"].values) == ["O3"]
+    # Atomic oxygen absorbs below 91 nm only, but is still an absorber.
+    assert list(flux["species"].values) == ["O3", "O(3P)"]
     assert flux["actinic_flux"].shape == (501, altitudes.size)
     np.testing.assert_allclose(
         flux["slant_column"].sel(species="O3")[-2:],

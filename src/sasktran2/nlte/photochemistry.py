@@ -28,7 +28,7 @@ DEFAULT_VMR = {"N2": 0.7808, "CO2": 4.2e-4}
 BACKGROUND_ALIASES = {"O": "O(3P)"}
 
 #: Absorbers passed to the actinic-flux calculation when available.
-PHOTOLYSIS_ABSORBERS = ("O2", "O3", "NO2")
+PHOTOLYSIS_ABSORBERS = ("O2", "O3", "NO2", "N2", "O(3P)")
 
 
 @dataclass(frozen=True)
@@ -40,6 +40,9 @@ class _Emitter:
     bands: dict[str, Callable[[np.ndarray, np.ndarray], object]] | None = None
     #: Background species for emitters driven directly by the actinic flux.
     absorber: str | None = None
+    #: Atomic lines by mechanism transition id: (vacuum wavelength [nm],
+    #: emitter molar mass [g mol^-1]).
+    lines: dict[str, tuple[float, float]] | None = None
 
 
 class _Combined(sk.constituent.base.Constituent):
@@ -78,6 +81,15 @@ PHOTOCHEMICAL_SPECIES = {
             "and the B band (1-0, 688 nm)"
         ),
     ),
+    "O(1S)": _Emitter(
+        mechanism="oxygen_green",
+        lines={"o1s_green_line": (557.8888, 15.999), "o1s_297": (297.3159, 15.999)},
+        description=(
+            "The O(1S) green line (557.7 nm) and 297.2 nm line, from O2 "
+            "photodissociation, the Barth mechanism and a supplied ionospheric "
+            "production"
+        ),
+    ),
     "OH(A)": _Emitter(
         absorber="OH",
         description=(
@@ -89,7 +101,6 @@ PHOTOCHEMICAL_SPECIES = {
 
 _NOT_YET_AVAILABLE = {
     "O2(a)": "the O2 a-X (1.27 um) band emission is not implemented yet",
-    "O(1S)": "the oxygen mechanism has no O(1S) source yet",
 }
 
 
@@ -99,7 +110,15 @@ def _oxygen_rates(flux: xr.Dataset) -> xr.Dataset:
     return photolysis.photolysis_rates(flux, photolysis.presets.oxygen_photolysis())
 
 
-_RATE_FUNCTIONS = {"oxygen": _oxygen_rates}
+def _green_rates(flux: xr.Dataset) -> xr.Dataset:
+    from sasktran2 import photolysis
+
+    return photolysis.photolysis_rates(flux, photolysis.presets.green_line_photolysis())
+
+
+_RATE_FUNCTIONS = {"oxygen": _oxygen_rates, "oxygen_green": _green_rates}
+#: Mechanisms that need another's solution, and the states they take from it.
+_DEPENDS_ON = {"oxygen_green": ("oxygen", ("O2(a)",))}
 
 
 def _canonical(name: str) -> str:
@@ -141,6 +160,7 @@ def add_photochemical_species(
     earth_sun_distance_au: float = 1.0,
     actinic_flux=None,
     rates: xr.Dataset | None = None,
+    ionospheric_o1s_production=None,
 ) -> xr.Dataset:
     """Solve the photochemistry of ``species`` and add their emission to ``atmosphere``.
 
@@ -180,8 +200,13 @@ def add_photochemical_species(
         default one on the atmosphere's altitude grid, e.g. to set the grid
         or the wavelength sampling.
     rates
-        Precomputed rate inputs of the mechanism [s^-1] on the photochemistry
+        Precomputed rate inputs of the mechanisms [s^-1] on the photochemistry
         grid; skips the actinic-flux calculation.
+    ionospheric_o1s_production
+        For ``"O(1S)"``: O(1S) volume production [m^-3 s^-1] from ionospheric
+        processes (N2(A) + O, photoelectron impact, O2+ + e), on the
+        photochemistry grid. These dominate above about 105 km; without them
+        the green line is underestimated there.
 
     Returns
     -------
@@ -213,16 +238,18 @@ def add_photochemical_species(
     from sasktran2 import photolysis
 
     emitters = {_canonical(name): None for name in species}
-    mechanisms = {
+    requested = {
         PHOTOCHEMICAL_SPECIES[name].mechanism
         for name in emitters
         if PHOTOCHEMICAL_SPECIES[name].mechanism is not None
     }
-    if len(mechanisms) > 1:
-        msg = f"species from several mechanisms cannot be combined yet: {mechanisms}"
-        raise NotImplementedError(msg)
-    mechanism_name = next(iter(mechanisms), None)
-    mechanism = Mechanism.bundled(mechanism_name) if mechanism_name else None
+    order = []
+    for name in sorted(requested, key=lambda m: m in _DEPENDS_ON):
+        if name in _DEPENDS_ON and _DEPENDS_ON[name][0] not in order:
+            order.append(_DEPENDS_ON[name][0])
+        if name not in order:
+            order.append(name)
+    mechanisms = {name: Mechanism.bundled(name) for name in order}
     fluorescent = [n for n in emitters if PHOTOCHEMICAL_SPECIES[n].absorber]
 
     if not isinstance(atmosphere.model_geometry, sk.Geometry1D):
@@ -268,11 +295,19 @@ def add_photochemical_species(
             return DEFAULT_VMR[name] * air
         return None
 
+    from_solutions = {
+        state for name in order if name in _DEPENDS_ON for state in _DEPENDS_ON[name][1]
+    }
     needed = [
-        *(mechanism.background if mechanism else []),
+        *(
+            b
+            for m in mechanisms.values()
+            for b in m.background
+            if b not in from_solutions and b != "M"
+        ),
         *(PHOTOCHEMICAL_SPECIES[n].absorber for n in fluorescent),
     ]
-    densities = {name: density(name) for name in needed}
+    densities = {name: density(name) for name in dict.fromkeys(needed)}
     missing = [name for name, values in densities.items() if values is None]
     if missing:
         msg = (
@@ -292,7 +327,7 @@ def add_photochemical_species(
     )
 
     flux = None
-    if fluorescent or (mechanism is not None and rates is None):
+    if fluorescent or (mechanisms and rates is None):
         absorbers = {
             name: values
             for name in PHOTOLYSIS_ABSORBERS
@@ -309,19 +344,41 @@ def add_photochemical_species(
             albedo=albedo,
             earth_sun_distance_au=earth_sun_distance_au,
         )
-    if mechanism is not None and rates is None:
-        rates = _RATE_FUNCTIONS[mechanism_name](flux)
+    if mechanisms and rates is None:
+        rates = xr.merge([_RATE_FUNCTIONS[name](flux) for name in order])
+    if "oxygen_green" in mechanisms:
+        if ionospheric_o1s_production is None:
+            warnings.warn(
+                "No ionospheric O(1S) production given; the green line is "
+                "underestimated above about 100 km",
+                stacklevel=2,
+            )
+            production = np.zeros_like(altitude)
+        else:
+            production = np.asarray(ionospheric_o1s_production, dtype=float)
+        rates = rates.assign(
+            P_O1S_ION=("altitude", production / np.maximum(densities["O(3P)"], 1.0))
+        )
 
     results = []
-    if mechanism is not None:
-        solution = solve(mechanism, chemistry, rates)
+    solutions = {}
+    for name, mechanism in mechanisms.items():
+        inputs = chemistry.assign(M=("altitude", air))
+        if name in _DEPENDS_ON:
+            parent, states = _DEPENDS_ON[name]
+            for state in states:
+                inputs[state] = solutions[parent]["density"].sel(state=state)
+        solutions[name] = solve(mechanism, inputs, rates)
+        solution = solutions[name]
+        if len(mechanisms) > 1:
+            solution = solution.rename(relative_residual=f"relative_residual_{name}")
         results += [
             solution,
             xr.Dataset(
                 {
-                    name: ("altitude", np.asarray(rates[name]))
-                    for name in mechanism.rate_inputs
-                    if name in rates
+                    rate: ("altitude", np.asarray(rates[rate]))
+                    for rate in mechanism.rate_inputs
+                    if rate in rates
                 },
                 coords={"altitude": altitude},
             ),
@@ -351,17 +408,25 @@ def add_photochemical_species(
                 )
             )
             continue
-        atmosphere[f"{name} emission"] = _Combined(
-            {
-                transition: make(
-                    altitude,
-                    solution["photon_ver"].sel(transition=transition).to_numpy(),
-                )
-                for transition, make in emitter.bands.items()
-            }
-        )
+        solution = solutions[emitter.mechanism]
+        parts = {
+            transition: make(
+                altitude,
+                solution["photon_ver"].sel(transition=transition).to_numpy(),
+            )
+            for transition, make in (emitter.bands or {}).items()
+        }
+        for transition, (wavelength, mass) in (emitter.lines or {}).items():
+            parts[transition] = sk.constituent.MonochromaticVolumeEmissionRate(
+                altitude,
+                solution["photon_ver"].sel(transition=transition).to_numpy(),
+                wavelength,
+                line_shape="doppler",
+                emitter_molecular_weight_g_per_mol=mass,
+            )
+        atmosphere[f"{name} emission"] = _Combined(parts)
 
-    return xr.merge(results)
+    return xr.merge(results, compat="no_conflicts", join="outer")
 
 
 def _fluorescence(name, flux, temperature, density, altitude):
