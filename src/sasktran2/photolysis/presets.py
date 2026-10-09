@@ -30,18 +30,18 @@ def oxygen_photolysis(
 ) -> list[Photolysis | LymanAlphaPhotolysis]:
     """Physical channel rates for O3 and O2 photolysis and O2 photoexcitation.
 
-    ===============  ============================================================
-    ``J_O3_O1D``     O3 -> O2 + O(1D)
-    ``J_O3_O3P``     O3 -> O2 + O(3P)
+    =================  ==========================================================
+    ``J_O3_O1D``       O3 -> O2 + O(1D)
+    ``J_O3_O3P``       O3 -> O2 + O(3P)
     ``J_O3_O1D_A{v}``  O3 -> O2(a, v=0-5) + O(1D), wavelength-dependent split
-    ``J_O3_O1D_X``   O3 -> O2(X) + O(1D), the spin-forbidden channel beyond 310 nm
-    ``J_O2_SRC``     O2 -> O(3P) + O(1D) in the Schumann-Runge continuum (130-175 nm)
-    ``J_O2_LYA``     O2 -> O(3P) + O(1D) at Lyman-alpha
-    ``J_O2_EXC_B0``  O2(X) -> O2(b, v=0), A band
-    ``J_O2_EXC_B1``  O2(X) -> O2(b, v=1), B band
-    ``J_O2_EXC_B2``  O2(X) -> O2(b, v=2), gamma band
-    ``J_O2_EXC_A0``  O2(X) -> O2(a, v=0), 1.27 um band
-    ===============  ============================================================
+    ``J_O3_O1D_X``     O3 -> O2(X) + O(1D), the spin-forbidden channel beyond 310 nm
+    ``J_O2_SRC``       O2 -> O(3P) + O(1D) in the Schumann-Runge continuum (130-175 nm)
+    ``J_O2_LYA``       O2 -> O(3P) + O(1D) at Lyman-alpha
+    ``J_O2_EXC_B0``    O2(X) -> O2(b, v=0), A band
+    ``J_O2_EXC_B1``    O2(X) -> O2(b, v=1), B band
+    ``J_O2_EXC_B2``    O2(X) -> O2(b, v=2), gamma band
+    ``J_O2_EXC_A0``    O2(X) -> O2(a, v=0), 1.27 um band
+    =================  ==========================================================
 
     ``J_O2_LYA`` uses the Chabrillat and Kockarts (1997) slant-column
     parameterisation. The excitation rates integrate all O2 absorption in each

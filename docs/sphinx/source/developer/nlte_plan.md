@@ -10,7 +10,7 @@ This note plans a non-LTE excited-state population capability for SASKTRAN2, aim
 | Priority emissions | Oxygen first (O2 and atomic O), then OH and NO. H2O enters as an input (HOx source, quencher, absorber), not as an emitter. IR vibrational non-LTE is deferred. |
 | Isolation | The kinetics are a black box in a new crate, `rust/sasktran2-nlte`, with a small, well-defined API. It has no dependency on `sasktran2-rs`, `sasktran2-core` or `sasktran2-sys`. |
 | Photolysis | A TUV-like actinic flux and photolysis interface, `sasktran2.photolysis`, built on the SASKTRAN2 engine (discrete ordinates). It supplies photolysis and excitation rates to the crate. |
-| Existing code | The current `photchem` module migrates into the new crate, with compatibility shims during the transition. |
+| Existing code | The `photchem` module migrated into the new crate, and was then removed in favour of `sasktran2.photolysis` and `sasktran2.nlte`. |
 | Background chemistry | Prescribed from climatologies (CAIRT ERS, MSIS, WACCM-derived). The crate solves only excited-state populations. |
 | Provenance | Clean-room implementation. Algorithms come from the literature. Every rate constant, yield and A-value carries a citation in data files. No translation of GRANADA/KOPRA (LGPL-2.1) or TUV 5.4 Fortran. |
 
@@ -261,6 +261,8 @@ atmosphere["o2_a"] = sk.nlte.emission_constituent(sol, "o2_a_band", lines=o2_lin
 - Resonance scattering of O2 A-band, OH A–X and NO γ emission can reuse the resonance optics from PR #302. Whether it is needed will be checked per band.
 
 ## Migrating `photchem`
+
+This migration is complete, and the legacy code has since been removed; the table records where each piece went.
 
 | Current | Destination |
 |---|---|
@@ -523,14 +525,26 @@ GRANADA's $r$ is relative to LTE populations normalised over only the modelled s
 
   The O2(b) ratio stays constant while A-band pumping goes from 9% to 80% of its production, which points to GRANADA's loss term (N2 quenching) or its population convention. GRANADA's rate files are not available to check.
 
-**Phase 3, remaining:**
+**Phase 5, more emitters and a full limb scan.**
 
-- O2 cross sections for 121.9–130 nm (between Lyman-α and `O2UV`).
+- **Green line.** The `oxygen_green` mechanism adds O(¹S) from O2 photodissociation below 121 nm (GLOW yields) and the McDade et al. (1986) Barth mechanism, with the 557.7 and 297.2 nm lines. This needed the vacuum ultraviolet: `VUVAbsorber` for O2, N2 and O(³P), 80–130 nm, and a composite WHI 2008 + TSIS-1 HSRS solar spectrum. `ActinicFlux` now runs 80–1280 nm by default. Ionospheric O(¹S) production is an optional input (`ionospheric_o1s_production`).
+- **Red line.** `"O(1D)"` adds the 630.0 and 636.4 nm lines from the `oxygen` mechanism, with optional ionospheric production (`ionospheric_o1d_production`, rate input `P_O1D_ION`).
+- **OH A–X fluorescence.** `"OH(A)"` is line-by-line resonance fluorescence from HITRAN (identical to MoLLIST), with Einstein-A branching and an altitude-dependent `LineListVolumeEmissionRate`. OH is added as a line absorber by default (self-absorption: −17% at a 40 km tangent, −9% at 60 km).
+- **γ band.** `O2BandEmissionRate` supports the b-X 2-0 band, driven by O2(b, v=2).
+- **Wavelength grid.** `emission_wavelength_grid(species)` resolves the O2 bands and the Doppler profile of each line. For all four species over 280–800 nm it has about 76 500 points; `tools/nlte/limb_scan_demo.py` runs 19 tangents in about two minutes.
+- **Legacy removed.** `sasktran2.photchem`, the `Yankovsky` model, `oxygen_yankovsky`, `presets.oxygen_yankovsky_rates`, `PyYankovsky` and the goldens are deleted. `PopulationEmissionRate` stays as a constituent.
+- **User documentation.** `users_guide/photolysis.md` and `users_guide/photochemical_emission.md`.
+
+**Remaining:**
+
+- O2(a) 1.27 µm emission (the 280–800 nm target does not need it).
 - Pressure-induced Herzberg absorption.
 - SZA > 90° (twilight).
 - Per-transition O2 excitation from HITRAN-filtered lines, with a hybrid high-resolution direct beam.
-- NO2, H2O and NO δ-band reactions.
-- Switching `Yankovsky` to computed rates, and deprecating `photchem`.
+- NO2, H2O and NO δ-band reactions; NO γ fluorescence.
+- OH(X, v>0) absorption and OH(A) quenching in the fluorescence model.
+- Night-time chemistry (OH Meinel, O2 Herzberg/Chamberlain).
+- Instrument convolution, and measurement comparisons (OSIRIS stray light makes these uncertain).
 
 ## Phases
 

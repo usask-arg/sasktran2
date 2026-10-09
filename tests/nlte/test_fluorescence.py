@@ -95,3 +95,47 @@ def test_zero_oh_levels(lines):
     sk.constituent.LineListVolumeEmissionRate(
         np.array([0.0, 1.0, 2.0]), ver, lines.wavelength_nm, weights
     )
+
+
+def test_oh_fluorescence_on_a_coarser_photochemistry_grid():
+    # The actinic flux grid differs from the model grid; the emission must
+    # still support radiance (and derivative) calculations.
+    z = np.arange(0.0, 100_001.0, 2_000.0)
+    config = sk.Config()
+    config.emission_source = sk.EmissionSource.VolumeEmissionRate
+    geometry = sk.Geometry1D(
+        0.6,
+        0.0,
+        6_372_000.0,
+        z,
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.Spherical,
+    )
+    atmosphere = sk.Atmosphere(
+        geometry, config, wavelengths_nm=np.arange(308.0, 308.5, 0.001)
+    )
+    atmosphere.temperature_k = np.full(z.size, 220.0)
+    atmosphere.pressure_pa = 101325.0 * np.exp(-z / 7000.0)
+    oh = 1.0e13 * np.exp(-(((z - 60e3) / 10e3) ** 2))
+    background = xr.Dataset({"OH": ("altitude", oh)}, coords={"altitude": z})
+    coarse = np.arange(0.0, 100_001.0, 10_000.0)
+    result = sk.nlte.add_photochemical_species(
+        atmosphere,
+        ["OH(A)"],
+        cos_sza=0.6,
+        background=background,
+        actinic_flux=sk.photolysis.ActinicFlux(
+            coarse, wavelengths_nm=np.arange(270.0, 360.0, 0.5)
+        ),
+        oh_self_absorption=False,
+    )
+    emission = atmosphere["OH(A) emission"]
+    np.testing.assert_allclose(emission.altitudes_m, z)
+    np.testing.assert_allclose(
+        emission.photon_ver[z == 60e3],
+        result["OH(A) photon_ver"].sel(altitude=60e3),
+    )
+    viewing = sk.ViewingGeometry()
+    viewing.add_ray(sk.TangentAltitudeSolar(60_000.0, 0.0, 600_000.0, 0.6))
+    radiance = sk.Engine(config, geometry, viewing).calculate_radiance(atmosphere)
+    assert float(radiance["radiance"].max()) > 0.0

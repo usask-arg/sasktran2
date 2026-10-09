@@ -16,6 +16,9 @@
 [Optical Properties](api/optical.md)
 : The optical properties in `sasktran2.optical.*`
 
+[Photolysis and Photochemistry](api/photochemistry.md)
+: Actinic flux, photolysis rates and excited-state kinetics in `sasktran2.photolysis` and `sasktran2.nlte`
+
 [Viewing Geometry](api/viewing_geometry.rst)
 : Classes related to the viewing geometry construction
 
@@ -44,6 +47,7 @@ api/model_geometry
 api/atmosphere
 api/constituents
 api/optical
+api/photochemistry
 api/viewing_geometry
 api/climatology
 api/geodetic

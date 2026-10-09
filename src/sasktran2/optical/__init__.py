@@ -307,19 +307,22 @@ class O2UV(database.OpticalDatabaseGenericAbsorber):
 
         - Schumann-Runge continuum below 175.44 nm: the CfA table of :class:`O2SchumannRunge`.
         - Schumann-Runge bands, 175.44-204.08 nm: temperature-dependent cross sections at
-          0.5 cm-1 resolution from the polynomial coefficients of [1]. Resolving the bands needs a
-          wavelength grid of about 0.002 nm; coarser grids under-attenuate in the band centres.
-        - Herzberg continuum, 205-240 nm, from [2], extended under the bands to 194 nm and to
-          zero at 242.4 nm. Pressure-induced absorption is not included.
+          0.5 cm-1 resolution from the polynomial coefficients of Minschwaner et al. (1992).
+          Resolving the bands needs a wavelength grid of about 0.002 nm; coarser grids
+          under-attenuate in the band centres.
+        - Herzberg continuum, 205-240 nm, from Yoshino et al. (1988), extended under the bands
+          to 194 nm and to zero at 242.4 nm. Pressure-induced absorption is not included.
 
         Lyman-alpha is not included; see :class:`O2LymanAlpha`. The table is built by
         ``tools/spectroscopy/build_o2_uv.py``.
 
-        .. [1] Minschwaner, K., G. P. Anderson, L. A. Hall and K. Yoshino (1992), Polynomial
-            coefficients for calculating O2 Schumann-Runge cross sections at 0.5 cm-1 resolution,
-            J. Geophys. Res., 97(D9), 10103-10108.
-        .. [2] Yoshino, K., et al. (1988), Improved absorption cross sections of oxygen in the
-            wavelength region 205-240 nm of the Herzberg continuum, Planet. Space Sci., 36, 1469-1475.
+        Minschwaner, K., G. P. Anderson, L. A. Hall and K. Yoshino (1992), Polynomial
+        coefficients for calculating O2 Schumann-Runge cross sections at 0.5 cm-1 resolution,
+        J. Geophys. Res., 97(D9), 10103-10108.
+
+        Yoshino, K., et al. (1988), Improved absorption cross sections of oxygen in the
+        wavelength region 205-240 nm of the Herzberg continuum, Planet. Space Sci., 36,
+        1469-1475.
 
         Raises
         ------
