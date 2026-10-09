@@ -14,7 +14,6 @@ mod nlte;
 mod optical;
 mod orbital;
 mod output;
-mod photchem;
 mod pyrebasis;
 mod viewing_geometry;
 
@@ -123,7 +122,6 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<pyrebasis::grid::PyGrid>()?;
 
     // Photochemistry
-    m.add_class::<photchem::yankovsky::PyYankovsky>()?;
     m.add_class::<nlte::PyMechanism>()?;
 
     Ok(())

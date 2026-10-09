@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import xarray as xr
-
 from .flux import O2_LINE_WINDOWS_NM
 from .quantum_yields import (
     O3O1DYield,
@@ -11,7 +9,7 @@ from .quantum_yields import (
     o3_o1d_matsumi2002,
     o3_o3p_matsumi2002,
 )
-from .rates import LymanAlphaPhotolysis, Photolysis, photolysis_rates
+from .rates import LymanAlphaPhotolysis, Photolysis
 from .tuv import TUVXQuantumYield
 
 #: Line-integrated solar Lyman-alpha photon flux at 1 AU [photons m^-2 s^-1].
@@ -112,36 +110,6 @@ def tuvx_v54_photolysis() -> list[Photolysis]:
         Photolysis("J_O3_O1D", "O3", TUVXQuantumYield("o3_o1d"), reference=reference),
         Photolysis("J_O3_O3P", "O3", TUVXQuantumYield("o3_o3p"), reference=reference),
     ]
-
-
-#: Fractions of the O(1D) channel producing O2(a, v=0..5), and the O2(X, v)
-#: levels sharing the O(3P) channel equally, as in the legacy Yankovsky
-#: model. They are product distributions, kept here only to build that
-#: mechanism's per-channel rate inputs.
-YANKOVSKY_O2A_FRACTIONS = tuple(
-    q / 0.90 for q in (0.441, 0.135, 0.135, 0.072, 0.072, 0.045)
-)
-YANKOVSKY_O2X_LEVELS = range(1, 36)
-
-
-def oxygen_yankovsky_rates(flux: xr.Dataset) -> xr.Dataset:
-    """The rate inputs of the bundled ``oxygen_yankovsky`` mechanism [s^-1].
-
-    ``flux`` is the output of :meth:`ActinicFlux.calculate`. The O3 rates
-    split the physical O(1D) and O(3P) channels with
-    :data:`YANKOVSKY_O2A_FRACTIONS` and :data:`YANKOVSKY_O2X_LEVELS`.
-    """
-    channels = photolysis_rates(flux, oxygen_photolysis())
-    rates = channels.drop_vars(
-        ["J_O3_O1D", "J_O3_O3P", "J_O3_O1D_X", *(f"J_O3_O1D_A{v}" for v in range(6))]
-    )
-    for v, fraction in enumerate(YANKOVSKY_O2A_FRACTIONS):
-        rates[f"J_O3_A{v}"] = channels["J_O3_O1D"] * fraction
-    for v in YANKOVSKY_O2X_LEVELS:
-        rates[f"J_O3_X{v}"] = channels["J_O3_O3P"] / len(YANKOVSKY_O2X_LEVELS)
-    for name in rates.data_vars:
-        rates[name].attrs["units"] = "s^-1"
-    return rates
 
 
 def green_line_photolysis() -> list[Photolysis]:
