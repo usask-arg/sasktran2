@@ -22,6 +22,7 @@ __all__ = [
     "PHOTOCHEMICAL_SPECIES",
     "Mechanism",
     "add_photochemical_species",
+    "emission_wavelength_grid",
     "budget",
     "solve",
 ]
@@ -232,4 +233,5 @@ def budget(mechanism: Mechanism, solution: xr.Dataset, state: str) -> xr.DataArr
 from .photochemistry import (  # noqa: E402
     PHOTOCHEMICAL_SPECIES,
     add_photochemical_species,
+    emission_wavelength_grid,
 )

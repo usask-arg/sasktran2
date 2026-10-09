@@ -75,10 +75,11 @@ PHOTOCHEMICAL_SPECIES = {
             "o2b0_a_band": _o2_band("0-0"),
             "o2b1_x1": _o2_band("1-1"),
             "o2b1_b_band": _o2_band("1-0"),
+            "o2b2_gamma_band": _o2_band("2-0"),
         },
         description=(
             "O2 b-X emission: the A band (0-0, 762 nm) with the 1-1 hot band, "
-            "and the B band (1-0, 688 nm)"
+            "the B band (1-0, 688 nm) and the gamma band (2-0, 628 nm)"
         ),
     ),
     "O(1S)": _Emitter(
@@ -448,3 +449,86 @@ def _fluorescence(name, flux, temperature, density, altitude):
         molecular_mass_g_per_mol=fluorescence.OH_MOLAR_MASS,
     )
     return ver, constituent
+
+
+#: Windows [nm] sampled uniformly by :func:`emission_wavelength_grid`, by
+#: emitter: the O2 b-X bands, which also absorb along the line of sight.
+BAND_WINDOWS_NM = {
+    "O2(b)": ((759.0, 772.0), (686.0, 697.0), (627.0, 635.0)),
+}
+
+
+def _doppler_fwhm_nm(wavelength_nm, mass_g_per_mol, temperature_k):
+    from scipy import constants
+
+    mass = mass_g_per_mol * 1.0e-3 / constants.N_A
+    return wavelength_nm * np.sqrt(
+        8.0 * np.log(2.0) * constants.k * temperature_k / (mass * constants.c**2)
+    )
+
+
+def emission_wavelength_grid(
+    species: Sequence[str],
+    range_nm: tuple[float, float] = (280.0, 800.0),
+    resolution_nm: float = 0.1,
+    band_resolution_nm: float = 0.0005,
+    temperature_k: float = 180.0,
+    points_per_fwhm: int = 3,
+    line_extent_fwhm: float = 3.0,
+    line_fraction: float = 0.999,
+) -> np.ndarray:
+    """Wavelength grid [nm] for limb radiance with photochemical emission.
+
+    ``resolution_nm`` over ``range_nm``; ``band_resolution_nm`` over the
+    :data:`BAND_WINDOWS_NM` of band emitters; and around each line of
+    discrete-line emitters (OH(A), O(1S)), ``points_per_fwhm`` points per
+    Doppler FWHM at ``temperature_k`` out to ``line_extent_fwhm`` FWHM. For
+    OH(A), only the strongest lines carrying ``line_fraction`` of the
+    top-of-atmosphere emission are resolved.
+    """
+    lo, hi = range_nm
+    parts = [np.arange(lo, hi + resolution_nm / 2, resolution_nm)]
+
+    def around(centres, mass):
+        centres = np.asarray(centres, dtype=float)
+        centres = centres[(centres >= lo) & (centres <= hi)]
+        if centres.size == 0:
+            return
+        fwhm = _doppler_fwhm_nm(centres, mass, temperature_k)
+        steps = np.arange(
+            -line_extent_fwhm,
+            line_extent_fwhm + 0.5 / points_per_fwhm,
+            1.0 / points_per_fwhm,
+        )
+        parts.append(
+            (
+                centres[:, np.newaxis] + steps[np.newaxis, :] * fwhm[:, np.newaxis]
+            ).ravel()
+        )
+
+    for name in (_canonical(n) for n in species):
+        emitter = PHOTOCHEMICAL_SPECIES[name]
+        for w_lo, w_hi in BAND_WINDOWS_NM.get(name, ()):
+            a, b = max(w_lo, lo), min(w_hi, hi)
+            if a < b:
+                parts.append(
+                    np.arange(a, b + band_resolution_nm / 2, band_resolution_nm)
+                )
+        for wavelength, mass in (emitter.lines or {}).values():
+            around([wavelength], mass)
+        if name == "OH(A)":
+            from . import fluorescence
+
+            lines = fluorescence.oh_ax_lines()
+            hsrs_wavelength, hsrs = fluorescence._hsrs_photons()
+            solar = np.interp(lines.wavelength_nm, hsrs_wavelength, hsrs)[np.newaxis, :]
+            _, weights = fluorescence.oh_ax_fluorescence(
+                lines, [temperature_k], [1.0], solar
+            )
+            order = np.argsort(weights[0])[::-1]
+            keep = order[
+                : np.searchsorted(np.cumsum(weights[0][order]), line_fraction) + 1
+            ]
+            around(lines.wavelength_nm[keep], fluorescence.OH_MOLAR_MASS)
+    grid = np.unique(np.round(np.concatenate(parts), 7))
+    return grid[(grid >= lo) & (grid <= hi)]
