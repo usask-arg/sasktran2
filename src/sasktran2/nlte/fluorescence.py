@@ -157,10 +157,12 @@ def oh_ax_fluorescence(
     branching = lines.einstein_a_s / total_a[lines.upper_level]
     line_ver = production[:, lines.upper_level] * branching
     photon_ver = line_ver.sum(axis=1)
+    # Rows without emission get uniform placeholder weights: the VER there is
+    # zero, and line-list emission requires every row to sum to one.
     weights = np.divide(
         line_ver,
         photon_ver[:, np.newaxis],
-        out=np.zeros_like(line_ver),
+        out=np.full_like(line_ver, 1.0 / line_ver.shape[1]),
         where=photon_ver[:, np.newaxis] > 0,
     )
     return photon_ver, weights

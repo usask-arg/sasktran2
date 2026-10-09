@@ -3,7 +3,7 @@ use crate::atmosphere::*;
 use crate::constituent::traits::*;
 use crate::interpolation::linear::linear_interpolating_matrix;
 use crate::optical::line::OpticalLine;
-use crate::optical::types::line_absorber::assign_normalized_doppler_line_shape;
+use crate::optical::types::line_absorber::{assign_normalized_doppler_line_shape, is_monotonic};
 use crate::prelude::*;
 
 const O2_MOLECULAR_MASS_G_PER_MOL: f64 = 31.9988;
@@ -108,6 +108,7 @@ impl LineListVolumeEmissionRate {
         spectrum: &mut Array1<f64>,
     ) {
         let wavenumber_cminv = spectral_grid.central_wavenumber_cminv();
+        let monotonic = is_monotonic(wavenumber_cminv.as_slice().unwrap());
 
         for (line_idx, &line_area) in line_areas.iter().enumerate() {
             if line_area == 0.0 {
@@ -123,6 +124,7 @@ impl LineListVolumeEmissionRate {
 
             assign_normalized_doppler_line_shape(
                 wavenumber_cminv.as_slice().unwrap(),
+                monotonic,
                 line_center_cminv,
                 doppler_width_cminv,
                 line_area,
