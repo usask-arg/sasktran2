@@ -319,8 +319,8 @@ def test_population_conversion_uses_same_band_path(line_db):
     pop = population(line_db)
     bands = pop.to_band_emissions()
     assert set(bands) == {"0-0", "1-1", "1-0"}
-    np.testing.assert_allclose(bands["0-0"].photon_ver, np.array([1, 10, 5]) * 0.0758)
-    np.testing.assert_allclose(bands["1-1"].photon_ver, np.array([3, 4, 2]) * 0.07)
+    np.testing.assert_allclose(bands["0-0"].photon_ver, np.array([1, 10, 5]) * 0.0875)
+    np.testing.assert_allclose(bands["1-1"].photon_ver, np.array([3, 4, 2]) * 0.0699)
     atmo, engine = scenario()
     atmo["population"] = pop
     combined = engine.calculate_radiance(atmo)

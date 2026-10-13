@@ -113,12 +113,50 @@ def test_bundled_oxygen_mechanisms():
         "O(1D)",
         *(f"O2(b{'' if v == 0 else f', v={v}'})" for v in range(3)),
         *(f"O2(a{'' if v == 0 else f', v={v}'})" for v in range(6)),
+        "O2(barth, b)",
     ]
-    assert mechanism.background == ["O2", "O3", "N2", "CO2", "O(3P)"]
+    assert mechanism.background == ["O2", "O3", "N2", "CO2", "O(3P)", "M"]
     assert "J_O3_O1D_A0" in mechanism.rate_inputs
-    assert {"jpl19", "ym2019", "hitran"} <= set(mechanism.references)
-    assert "10 states" in repr(mechanism)
+    assert {"jpl19", "ym2019", "hitran", "mcdade1986"} <= set(mechanism.references)
+    assert "11 states" in repr(mechanism)
 
     green = nlte.Mechanism.bundled("oxygen_green")
     assert green.states == ["O2(barth)", "O(1S)"]
     assert "O2(a)" in green.background
+
+
+def test_barth_o2b_matches_mcdade():
+    mechanism = nlte.Mechanism.bundled("oxygen")
+    temperature = np.array([190.0, 200.0])
+    n = np.array([5e19, 1e19])
+    o, o2 = np.array([3e17, 5e17]), 0.21 * n
+    column = xr.Dataset(
+        {
+            "temperature_k": ("altitude", temperature),
+            "O2": ("altitude", o2),
+            "O3": ("altitude", np.zeros(2)),
+            "N2": ("altitude", 0.78 * n),
+            "CO2": ("altitude", np.zeros(2)),
+            "O(3P)": ("altitude", o),
+            "M": ("altitude", n),
+        },
+        coords={"altitude": [85e3, 95e3]},
+    )
+    rates = {name: np.zeros(2) for name in mechanism.rate_inputs}
+    solution = nlte.solve(mechanism, column, rates)
+    budget = nlte.budget(mechanism, solution, "O2(b)")
+    cm = 1e-6
+    # McDade et al. (1986): k1 [O]^2 [M] [O2] / (C_O2 [O2] + C_O [O]).
+    expected = (
+        4.7e-33
+        * (300 / temperature) ** 2
+        * (o * cm) ** 2
+        * n
+        * cm
+        * o2
+        * cm
+        / (6.6 * o2 * cm + 19.1 * o * cm)
+    )
+    np.testing.assert_allclose(
+        budget.sel(process="barth_o2b") * cm, expected, rtol=1e-6
+    )
