@@ -202,7 +202,10 @@ def test_rates_from_the_actinic_flux():
 
 
 @needs_o2_lines
-def test_gamma_band_conserves_ver():
+@pytest.mark.parametrize(
+    ("band", "window"), [("2-0", (625.0, 640.0)), ("2-1", (694.0, 704.0))]
+)
+def test_weak_bands_conserve_ver(band, window):
     z = np.arange(0.0, 120_001.0, 2_000.0)
     config = sk.Config()
     config.emission_source = sk.EmissionSource.VolumeEmissionRate
@@ -217,12 +220,12 @@ def test_gamma_band_conserves_ver():
     )
     step = 0.0005
     atmosphere = sk.Atmosphere(
-        geometry, config, wavelengths_nm=np.arange(625.0, 640.0, step)
+        geometry, config, wavelengths_nm=np.arange(*window, step)
     )
     atmosphere.temperature_k = np.full(z.size, 200.0)
     atmosphere.pressure_pa = 101325.0 * np.exp(-z / 7000.0)
     ver = 1.0e9 * np.exp(-0.5 * ((z - 90e3) / 5e3) ** 2)
-    atmosphere["gamma"] = sk.constituent.O2BandEmissionRate(z, ver, band="2-0")
+    atmosphere["band"] = sk.constituent.O2BandEmissionRate(z, ver, band=band)
     viewing = sk.ViewingGeometry()
     tangent = 85_000.0
     viewing.add_ray(sk.TangentAltitudeSolar(tangent, 0.0, 600_000.0, 0.6))
@@ -233,6 +236,24 @@ def test_gamma_band_conserves_ver():
     altitude = np.sqrt(r_t**2 + s**2) - 6_372_000.0
     expected = np.trapezoid(np.interp(altitude, z, ver, right=0.0), s) / (4.0 * np.pi)
     np.testing.assert_allclose(band, expected, rtol=1e-3)
+
+
+@needs_o2_lines
+def test_emission_wavelength_grid_resolves_hot_band_lines():
+    grid = sk.nlte.emission_wavelength_grid(["O2(b)"], range_nm=(680.0, 790.0))
+    for band in ("1-1", "2-1"):
+        lines = sk.constituent.O2BandEmissionRate(
+            np.array([0.0, 1.0]), np.zeros(2), band=band
+        )
+        weights = lines.line_weights(180.0)[0]
+        strongest = lines.wavelengths_nm[np.argmax(weights)]
+        # Outside the uniformly sampled windows, each line has its own points.
+        beyond = lines.wavelengths_nm[lines.wavelengths_nm > 772.0]
+        for centre in [
+            strongest,
+            *beyond[np.argsort(weights[lines.wavelengths_nm > 772.0])[-3:]],
+        ]:
+            assert np.sum(np.abs(grid - centre) < 0.004) >= 10
 
 
 def test_emission_wavelength_grid():

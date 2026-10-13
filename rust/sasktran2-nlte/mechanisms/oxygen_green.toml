@@ -9,8 +9,9 @@
 #     (J_O2_O1S, the per-molecule rate of the O(1S) channel), dominant below
 #     about 100 km in daytime.
 #   * The Barth mechanism, O + O + M -> O2*, O2* + O -> O2 + O(1S), with the
-#     McDade et al. (1986) empirical constants: 30-50% of the photolytic
-#     source at 85-90 km, small above 95 km.
+#     McDade et al. (1986) empirical constants. It scales as [O]^3: with
+#     daytime [O] of 3-6e11 cm-3 at 90-95 km it gives most of the O(1S)
+#     there, and little above about 105 km.
 #   * Ionospheric sources (N2(A) + O, photoelectron impact on O, O2+ + e),
 #     dominant above about 105 km, enter as a volume production expressed as
 #     a per-atom rate on O(3P), P_O1S_ION = production / [O].
@@ -18,11 +19,14 @@
 # The Barth precursor O2* is a state with an arbitrary reference rate k3 for
 # O2* + O -> O(1S); its other losses are C_O2 k3 [O2] and (C_O - 1) k3 [O],
 # so the O(1S) production is k1 [O]^3 [M] / (C_O2 [O2] + C_O [O]), McDade's
-# form, independent of k3.
+# form, independent of k3. McDade et al. fitted C_O2 and C_O with A(557.7) =
+# 1.18 s-1 and a total O(1S) radiative rate of 1.35 s-1; with the NIST values
+# here (1.26 and 1.336), 0.927 of the recombinations reach the precursor so
+# that the fitted 557.7 nm emission is unchanged.
 
 [mechanism]
 name = "oxygen_green"
-version = "0.1.0"
+version = "0.2.0"
 description = "O(1S) and the 557.7 nm green line from O2 photodissociation, the Barth mechanism and ionospheric sources"
 background = ["O2", "N2", "O(3P)", "M", "O2(a)"]
 
@@ -31,20 +35,28 @@ mcdade1986 = """\
 McDade, I. C., D. P. Murtagh, R. G. H. Greer, P. H. G. Dickinson, G. Witt, \
 J. Stegman, E. J. Llewellyn, L. Thomas and D. B. Jenkins (1986), ETON 2: \
 Quenching parameters for the proposed precursors of O2(b) and O(1S) in the \
-terrestrial nightglow, Planet. Space Sci. 34, 789-800."""
+terrestrial nightglow, Planet. Space Sci. 34, 789-800, \
+doi:10.1016/0032-0633(86)90075-9."""
 reference_rate = """\
 Arbitrary reference rate for the Barth precursor; it cancels in the O(1S) \
 production, which follows McDade et al. (1986)."""
 slanger1972 = """\
-Slanger, T. G., B. J. Wood and G. Black (1972), Temperature coefficients for \
-N2O photolysis and O(1S) quenching by O2, Chem. Phys. Lett. 17, 401-404; \
-4.0e-12 exp(-865/T) as used by McDade et al. (1986)."""
+Slanger, T. G., B. J. Wood and G. Black (1972), The temperature dependence \
+of O(1S) quenching by O2, Chem. Phys. Lett. 17, 401-403, \
+doi:10.1016/0009-2614(72)87106-9; 4.0e-12 exp(-865/T) as used by McDade et \
+al. (1986). Later measurements (Zipf 1979; Capetanakis et al. 1993) are \
+7-13% higher at 150-250 K."""
 slanger1981 = """\
 Slanger, T. G. and G. Black (1981), Quenching of O(1S) by O2(a1Delta_g), \
-Geophys. Res. Lett. 8, 535-538: (1.7 +- 0.3)e-10 cm3 s-1."""
+Geophys. Res. Lett. 8, 535-538, doi:10.1029/GL008i005p00535: \
+(1.7 +- 0.3)e-10 cm3 s-1. Kenner and Ogryzlo (1982) give 2.6e-10."""
 nist = """\
-NIST Atomic Spectra Database; Froese Fischer, C. and G. Tachiev (2004), \
-At. Data Nucl. Data Tables 87, 1-184: O I 2p4 1S0 transitions."""
+NIST Atomic Spectra Database, O I 2p4 1S0 transitions, from Froese Fischer, \
+C. and H. P. Saha (1983), Phys. Rev. A 28, 3169-3178, and Baluja, K. L. and \
+C. J. Zeippen (1988), J. Phys. B 21, 1455-1471. Their 557.7/297.2 nm ratio, \
+16.7, agrees with theory and a Mars measurement (16.5, Gerard et al. 2020); \
+Earth airglow measurements give about 9.4 (e.g. Gattinger et al. 2009, \
+Odin-OSIRIS: 9.3 +- 0.5)."""
 photolysis = """\
 Computed by sasktran2.photolysis: O2 photodissociation weighted by O(1S) \
 quantum yields."""
@@ -78,7 +90,10 @@ reference = "ionosphere"
 [[reaction]]
 id = "barth_recombination"
 reactants = ["O(3P)", "O(3P)", "M"]
-products = ["O2(barth)", "M"]
+channels = [
+  { yield = 0.927, products = ["O2(barth)", "M"] },
+  { yield = 0.073, products = ["O2", "M"] },
+]
 rate = { law = "arrhenius", a = 4.7e-33, n = -2.0, t0 = 300.0, units = "cm6 s-1" }
 reference = "mcdade1986"
 

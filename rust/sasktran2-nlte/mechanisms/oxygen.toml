@@ -33,7 +33,8 @@ background = ["O2", "O3", "N2", "CO2", "O(3P)"]
 jpl19 = """\
 Burkholder, J. B., et al. (2019), Chemical Kinetics and Photochemical Data for \
 Use in Atmospheric Studies, Evaluation No. 19, JPL Publication 19-5. Unchanged \
-for these entries in Evaluation No. 20 (JPL Publication 25-1, 2025)."""
+for these entries in Evaluation No. 20 (JPL Publication 25-1, 2025, \
+doi:10.48577/jpl.KFQ0TZ)."""
 ym2019 = """\
 Yankovsky, V. A., E. V. Vorobeva and R. O. Manuilova (2019), New techniques for \
 retrieving the [O(3P)], [O3] and [CO2] altitude profiles from dayglow oxygen \
@@ -96,7 +97,10 @@ products = ["O(1D)", "O2"]
 rate_input = "J_O3_O1D_X"
 reference = "jpl19"
 
-# Schumann-Runge continuum, O(1D) yield 1 over 139-175 nm.
+# Schumann-Runge continuum, 130-175 nm, O(1D) yield 1 (JPL: 139-175 nm). The
+# yield is lower at 130-139 nm (0.4-0.8, Lambert et al. 2004), and O2
+# photolysis at 116-130 nm, also about 1, is not included; the two offset
+# each other to within a few percent of the O(1D) production.
 [[photo_reaction]]
 id = "o2_src"
 reactant = "O2"
@@ -104,7 +108,9 @@ products = ["O(3P)", "O(1D)"]
 rate_input = "J_O2_SRC"
 reference = "jpl19"
 
-# Lyman-alpha; J_O2_LYA already holds the O(1D) yield.
+# Lyman-alpha; J_O2_LYA already holds the O(1D) yield, 0.53. JPL gives 0.44
+# +- 0.05 at line centre, but the yield varies across the line; effective
+# values are 0.48-0.58 (Reddmann and Uhl 2003).
 [[photo_reaction]]
 id = "o2_lyman_alpha"
 reactant = "O2"
@@ -154,8 +160,9 @@ rate_input = "P_O1D_ION"
 reference = "ionosphere"
 
 # JPL 19-5: O2(b) yield 0.8 +- 0.2, O2(a) 0.2. The O2(b) part is split 4:1
-# between v=1 and v=0 (Pejakovic et al. 2014, via ym2019, which has a total
-# O2(b) yield of 1.0).
+# between v=1 and v=0 (Pejakovic et al. 2014, J. Chem. Phys. 141, 024303:
+# v=1 fraction 0.8 +- 0.1). ym2019 instead uses 0.8 and 0.2 as absolute
+# yields, a total O2(b) yield of 1.0.
 [[reaction]]
 id = "o1d_o2"
 reactants = ["O(1D)", "O2"]
@@ -191,7 +198,9 @@ products = ["O(3P)", "CO2"]
 rate = { law = "arrhenius", a = 7.5e-11, ea_over_r = -115.0, units = "cm3 s-1" }
 reference = "jpl19"
 
-# Kalogerakis et al. (2009), via ym2019.
+# SRI room-temperature measurement, (2.2 +- 0.6)e-11, reported by
+# Kalogerakis et al. (2009), Ann. Geophys. 27, 2183; via ym2019. GLOW uses
+# 3e-12. It matters only above about 100 km.
 [[reaction]]
 id = "o1d_o"
 reactants = ["O(1D)", "O(3P)"]

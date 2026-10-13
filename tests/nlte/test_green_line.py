@@ -40,12 +40,13 @@ def test_barth_matches_mcdade():
     production = (
         4.7e-33 * (300 / temperature) ** 2 * o**3 * n * cm / (15 * o2 + 211 * o)
     )
-    loss = 1.26 + 7.54e-2 + 2.42e-4 + 4.0e-12 * np.exp(-865 / temperature) * o2
-    np.testing.assert_allclose(
-        solution["photon_ver"].sel(transition="o1s_green_line") * cm,
-        1.26 * production / loss,
-        rtol=1e-6,
-    )
+    quench = 4.0e-12 * np.exp(-865 / temperature) * o2
+    green = solution["photon_ver"].sel(transition="o1s_green_line") * cm
+    loss = 1.26 + 7.54e-2 + 2.42e-4 + quench
+    np.testing.assert_allclose(green, 1.26 * 0.927 * production / loss, rtol=1e-6)
+    # The emission McDade et al. fitted, with their A(557.7) = 1.18 s-1 and
+    # total A = 1.35 s-1.
+    np.testing.assert_allclose(green, 1.18 * production / (1.35 + quench), rtol=5e-3)
 
 
 def test_o2a_quenches_o1s():

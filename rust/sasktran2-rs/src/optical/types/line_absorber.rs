@@ -164,9 +164,15 @@ fn doppler_window(grid: &[f64], center: f64, half_width: f64) -> (usize, usize) 
     }
     let (lo, hi) = (center - half_width, center + half_width);
     if grid[0] <= grid[n - 1] {
-        (grid.partition_point(|&x| x < lo), grid.partition_point(|&x| x <= hi))
+        (
+            grid.partition_point(|&x| x < lo),
+            grid.partition_point(|&x| x <= hi),
+        )
     } else {
-        (grid.partition_point(|&x| x > hi), grid.partition_point(|&x| x >= lo))
+        (
+            grid.partition_point(|&x| x > hi),
+            grid.partition_point(|&x| x >= lo),
+        )
     }
 }
 
@@ -799,8 +805,12 @@ mod doppler_window_tests {
     #[test]
     fn window_matches_the_full_evaluation() {
         for grid in [
-            (0..20001).map(|i| 13000.0 + 0.01 * i as f64).collect::<Vec<_>>(),
-            (0..20001).map(|i| 13200.0 - 0.01 * i as f64).collect::<Vec<_>>(),
+            (0..20001)
+                .map(|i| 13000.0 + 0.01 * i as f64)
+                .collect::<Vec<_>>(),
+            (0..20001)
+                .map(|i| 13200.0 - 0.01 * i as f64)
+                .collect::<Vec<_>>(),
         ] {
             let mut windowed = vec![0.0; grid.len()];
             assign_normalized_doppler_line_shape(&grid, true, 13100.0, 0.02, 1.0, &mut windowed);

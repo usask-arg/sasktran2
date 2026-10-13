@@ -5,9 +5,9 @@ use crate::atmosphere::StorageInputs;
 use crate::optical::line::OpticalLineDB;
 use crate::photchem::emission::{
     AEmissionLineWeightModel, EmissionBand, O2_B0_X0_EINSTEIN_A_S, O2_B1_X0_EINSTEIN_A_S,
-    O2_B1_X1_EINSTEIN_A_S, O2_B2_X0_EINSTEIN_A_S, oxygen_a_band_from_hitran,
-    oxygen_a_band_lte_line_weights, oxygen_gamma_band_from_hitran,
-    oxygen_a_band_lte_line_weights_with_temperature_derivative, oxygen_b_band_from_hitran,
+    O2_B1_X1_EINSTEIN_A_S, O2_B2_X0_EINSTEIN_A_S, O2_B2_X1_EINSTEIN_A_S, oxygen_a_band_from_hitran,
+    oxygen_a_band_lte_line_weights, oxygen_a_band_lte_line_weights_with_temperature_derivative,
+    oxygen_b_band_from_hitran, oxygen_b_x_band_from_hitran, oxygen_gamma_band_from_hitran,
 };
 use crate::prelude::*;
 
@@ -106,9 +106,24 @@ pub fn oxygen_emission_band(db: &OpticalLineDB, transition: &str) -> Result<Emis
             "O2(X)",
             O2_B2_X0_EINSTEIN_A_S,
         ),
+        "2-1" => (
+            oxygen_b_x_band_from_hitran(
+                db,
+                "oxygen_b2_x1_band",
+                2,
+                1,
+                O2_B2_X1_EINSTEIN_A_S,
+                690.0,
+                706.0,
+            )?
+            .ok_or_else(|| anyhow!("No O2 2-1 emission lines in database"))?,
+            "O2(b, v=2)",
+            "O2(X, v=1)",
+            O2_B2_X1_EINSTEIN_A_S,
+        ),
         _ => {
             return Err(anyhow!(
-                "Unsupported O2 band '{transition}'; expected '0-0', '1-1', '1-0' or '2-0'"
+                "Unsupported O2 band '{transition}'; expected '0-0', '1-1', '1-0', '2-0' or '2-1'"
             ));
         }
     };

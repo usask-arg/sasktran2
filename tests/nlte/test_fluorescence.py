@@ -139,3 +139,32 @@ def test_oh_fluorescence_on_a_coarser_photochemistry_grid():
     viewing.add_ray(sk.TangentAltitudeSolar(60_000.0, 0.0, 600_000.0, 0.6))
     radiance = sk.Engine(config, geometry, viewing).calculate_radiance(atmosphere)
     assert float(radiance["radiance"].max()) > 0.0
+
+
+def test_quenching_and_vibrational_transfer(lines):
+    temperature = np.array([250.0, 245.0, 200.0])
+    air = np.array([7.2e22, 6.4e21, 4.0e20])  # 40, 60 and 80 km [m^-3]
+    flux = np.full((3, lines.wavenumber_cminv.size), 1.0e18)
+    free, free_weights = fluorescence.oh_ax_fluorescence(
+        lines, temperature, np.ones(3), flux
+    )
+    ver, weights = fluorescence.oh_ax_fluorescence(
+        lines,
+        temperature,
+        np.ones(3),
+        flux,
+        n2_density_m3=0.7808 * air,
+        o2_density_m3=0.2095 * air,
+    )
+    # Bailey et al. (1997): about 75% of OH(A, v'=0) is quenched at 40 km,
+    # about 20% at 60 km and little at 80 km.
+    np.testing.assert_allclose(ver / free, [0.26, 0.80, 0.98], atol=0.03)
+    np.testing.assert_allclose(weights.sum(axis=1), 1.0)
+    # N2 moves v'=1 into v'=0, so the 0-0 band gains at depth.
+    v00 = (lines.v_upper == 0) & (lines.v_lower == 0)
+    assert weights[0][v00].sum() > free_weights[0][v00].sum() + 0.1
+    # Without colliders nothing changes.
+    unchanged, _ = fluorescence.oh_ax_fluorescence(
+        lines, temperature, np.ones(3), flux, n2_density_m3=None, o2_density_m3=None
+    )
+    np.testing.assert_array_equal(unchanged, free)
