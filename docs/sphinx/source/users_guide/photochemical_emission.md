@@ -256,8 +256,9 @@ fig.tight_layout();
 ### OH fluorescence and self-absorption
 
 `"OH(A)"` adds solar resonance fluorescence of OH A-X, computed line by line from
-HITRAN, from an OH density in `background`. By default it also adds OH as a line
-absorber, so that OH absorbs both the scattered sunlight and its own emission along
+HITRAN, from an OH density in `background`. Collisions with N2 and O2 quench the
+excited OH, removing about a fifth of the emission at 60 km and three quarters at
+40 km. By default it also adds OH as a line absorber, so that OH absorbs both the scattered sunlight and its own emission along
 the line of sight. The ERS profiles have no OH, so we use a simple daytime-like
 profile peaking near 75 km.
 

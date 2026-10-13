@@ -119,6 +119,56 @@ pub fn oxygen_gamma_band_from_hitran(db: &OpticalLineDB) -> Result<Option<Emissi
     .map(Some)
 }
 
+/// The lines of one O2 b-X vibrational band (`v_upper`-`v_lower`) between
+/// `min_wavelength_nm` and `max_wavelength_nm`, or `None` if there are none.
+pub fn oxygen_b_x_band_from_hitran(
+    db: &OpticalLineDB,
+    name: &str,
+    v_upper: u32,
+    v_lower: u32,
+    total_einstein_a_s: f64,
+    min_wavelength_nm: f64,
+    max_wavelength_nm: f64,
+) -> Result<Option<EmissionBand>> {
+    let (upper, lower) = (v_upper.to_string(), v_lower.to_string());
+    let mut lines: Vec<EmissionBandLine> = db
+        .lines
+        .iter()
+        .filter(|line| {
+            let upper_tokens: Vec<&str> = line.upper_quanta.split_whitespace().collect();
+            let lower_tokens: Vec<&str> = line.lower_quanta.split_whitespace().collect();
+            matches!(
+                (upper_tokens.as_slice(), lower_tokens.as_slice()),
+                (["b", u], ["X", l]) if *u == upper && *l == lower
+            ) && line.wavelength_nm() >= min_wavelength_nm
+                && line.wavelength_nm() <= max_wavelength_nm
+        })
+        .filter_map(|line| emission_band_line_from_optical_line(line).transpose())
+        .collect::<Result<Vec<_>>>()?;
+
+    if lines.is_empty() {
+        return Ok(None);
+    }
+
+    lines.sort_by(|lhs, rhs| lhs.wavelength_nm.partial_cmp(&rhs.wavelength_nm).unwrap());
+
+    let state = |electronic: &str, v: u32| {
+        if v == 0 {
+            format!("O2({electronic})")
+        } else {
+            format!("O2({electronic}, v={v})")
+        }
+    };
+    EmissionBand::new(
+        name,
+        state("b", v_upper),
+        state("X", v_lower),
+        total_einstein_a_s,
+        lines,
+    )
+    .map(Some)
+}
+
 fn emission_band_line_from_optical_line(line: &OpticalLine) -> Result<Option<EmissionBandLine>> {
     let Some(einstein_a_s) = line.einstein_a else {
         return Ok(None);

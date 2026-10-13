@@ -571,8 +571,11 @@ rate_input = "J_O2_SRC""#,
 
     #[test]
     fn photolysis_needs_products_or_channels() {
-        let err = error_with(r#"products = ["O(3P)", "O(1D)"]
-rate_input"#, "rate_input");
+        let err = error_with(
+            r#"products = ["O(3P)", "O(1D)"]
+rate_input"#,
+            "rate_input",
+        );
         assert!(err.contains("exactly one of 'products' or 'channels'"));
         let err = error_with(
             r#"rate_input = "J_O2_SRC""#,

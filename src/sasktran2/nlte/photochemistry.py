@@ -76,10 +76,12 @@ PHOTOCHEMICAL_SPECIES = {
             "o2b1_x1": _o2_band("1-1"),
             "o2b1_b_band": _o2_band("1-0"),
             "o2b2_gamma_band": _o2_band("2-0"),
+            "o2b2_x1": _o2_band("2-1"),
         },
         description=(
             "O2 b-X emission: the A band (0-0, 762 nm) with the 1-1 hot band, "
-            "the B band (1-0, 688 nm) and the gamma band (2-0, 628 nm)"
+            "the B band (1-0, 688 nm) with the 2-1 band (697 nm), and the gamma "
+            "band (2-0, 628 nm)"
         ),
     ),
     "O(1D)": _Emitter(
@@ -431,6 +433,7 @@ def add_photochemical_species(
     for name in emitters:
         emitter = PHOTOCHEMICAL_SPECIES[name]
         if emitter.absorber is not None:
+            o2 = density("O2")
             ver, constituent = _fluorescence(
                 name,
                 flux,
@@ -438,6 +441,10 @@ def add_photochemical_species(
                 densities[emitter.absorber],
                 altitude,
                 model_altitude,
+                colliders={
+                    "n2_density_m3": density("N2"),
+                    "o2_density_m3": 0.2095 * air if o2 is None else o2,
+                },
             )
             atmosphere[f"{name} emission"] = constituent
             if (
@@ -478,7 +485,9 @@ def add_photochemical_species(
     return xr.merge(results, compat="no_conflicts", join="outer")
 
 
-def _fluorescence(name, flux, temperature, density, altitude, model_altitude):
+def _fluorescence(
+    name, flux, temperature, density, altitude, model_altitude, colliders
+):
     from . import fluorescence
 
     if name != "OH(A)":
@@ -487,7 +496,7 @@ def _fluorescence(name, flux, temperature, density, altitude, model_altitude):
     lines = fluorescence.oh_ax_lines()
     at_lines = fluorescence.actinic_flux_at_lines(flux, lines.wavelength_nm)
     ver, weights = fluorescence.oh_ax_fluorescence(
-        lines, temperature, density, at_lines
+        lines, temperature, density, at_lines, **colliders
     )
     # Altitude-dependent line weights must be on the model grid. Linear
     # interpolation keeps each row summing to one.
@@ -504,6 +513,9 @@ def _fluorescence(name, flux, temperature, density, altitude, model_altitude):
     )
     return ver, constituent
 
+
+#: Molar mass of 16O2 [g mol^-1].
+O2_MOLAR_MASS = 31.9988
 
 #: Windows [nm] sampled uniformly by :func:`emission_wavelength_grid`, by
 #: emitter: the O2 b-X bands, which also absorb along the line of sight.
@@ -537,8 +549,12 @@ def emission_wavelength_grid(
     :data:`BAND_WINDOWS_NM` of band emitters; and around each line of
     discrete-line emitters (OH(A), O(1S)), ``points_per_fwhm`` points per
     Doppler FWHM at ``temperature_k`` out to ``line_extent_fwhm`` FWHM. For
-    OH(A), only the strongest lines carrying ``line_fraction`` of the
-    top-of-atmosphere emission are resolved.
+    OH(A) and the band emitters, only the strongest lines carrying
+    ``line_fraction`` of each emission are resolved; band lines inside the
+    windows are already resolved.
+
+    Lines between points of the coarse ``resolution_nm`` grid are lost, not
+    spread out, so every emitted line needs fine sampling.
     """
     lo, hi = range_nm
     parts = [np.arange(lo, hi + resolution_nm / 2, resolution_nm)]
@@ -570,6 +586,22 @@ def emission_wavelength_grid(
                 )
         for wavelength, mass in (emitter.lines or {}).values():
             around([wavelength], mass)
+        windows = BAND_WINDOWS_NM.get(name, ())
+        for make in (emitter.bands or {}).values():
+            # Hot bands (1-1, 2-1) and band tails extend past the windows.
+            band = make(np.array([0.0, 1.0]), np.zeros(2))
+            wavelength = np.asarray(band.wavelengths_nm)
+            weights = np.asarray(band.line_weights(temperature_k))[0]
+            order = np.argsort(weights)[::-1]
+            keep = order[
+                : np.searchsorted(np.cumsum(weights[order]), line_fraction) + 1
+            ]
+            outside = [
+                w
+                for w in wavelength[keep]
+                if not any(w_lo <= w <= w_hi for w_lo, w_hi in windows)
+            ]
+            around(outside, O2_MOLAR_MASS)
         if name == "OH(A)":
             from . import fluorescence
 
