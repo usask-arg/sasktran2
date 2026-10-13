@@ -10,10 +10,10 @@ mod derivative_mapping;
 mod engine;
 mod geodetic;
 mod geometry;
+mod nlte;
 mod optical;
 mod orbital;
 mod output;
-mod photchem;
 mod pyrebasis;
 mod viewing_geometry;
 
@@ -110,7 +110,10 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Wigner
     m.add_class::<accel::wigner::WignerD>()?;
-    m.add_function(wrap_pyfunction!(accel::greek::compute_greek_coefficients, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        accel::greek::compute_greek_coefficients,
+        m
+    )?)?;
 
     // Information functions
     m.add_function(wrap_pyfunction!(common::openmp_support_enabled, m)?)?;
@@ -121,7 +124,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<pyrebasis::grid::PyGrid>()?;
 
     // Photochemistry
-    m.add_class::<photchem::yankovsky::PyYankovsky>()?;
+    m.add_class::<nlte::PyMechanism>()?;
 
     Ok(())
 }

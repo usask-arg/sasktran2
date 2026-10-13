@@ -9,7 +9,7 @@ use crate::interpolation::{OutOfBoundsMode, linear::linear_interpolating_matrix}
 use crate::math::errorfunctions::optimized::SQRT_PI;
 use crate::optical::line::shape::{LineShape, LineShapeDirection, assign_with_derivative};
 use crate::optical::line::{AdjustedLineParameters, OpticalLine};
-use crate::optical::types::line_absorber::assign_normalized_doppler_line_shape;
+use crate::optical::types::line_absorber::{assign_normalized_doppler_line_shape, is_monotonic};
 use crate::prelude::*;
 
 const FOUR_PI: f64 = 4.0 * std::f64::consts::PI;
@@ -214,6 +214,7 @@ pub(crate) fn doppler_spectrum(
     }
     .ok_or_else(|| anyhow!("Spectral grid must be set for line emission"))?;
     let wavenumbers = grid.central_wavenumber_cminv();
+    let monotonic = is_monotonic(wavenumbers.as_slice().unwrap());
     let mut values = Array2::zeros((temperature.len(), wavenumbers.len()));
     let mut derivatives = d_areas.map(|_| Array2::zeros(values.raw_dim()));
     for (alt, &t) in temperature.iter().enumerate() {
@@ -249,6 +250,7 @@ pub(crate) fn doppler_spectrum(
             } else if area != 0.0 {
                 assign_normalized_doppler_line_shape(
                     wavenumbers.as_slice().unwrap(),
+                    monotonic,
                     center,
                     width,
                     area,

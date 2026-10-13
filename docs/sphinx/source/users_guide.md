@@ -39,8 +39,14 @@
 [Orbital-Plane 2D Calculations](users_guide/orbital_plane.md)
 : Grouping timestamped ECEF limb measurements into persistent local 2D engines
 
-[Photochemical Emission](users_guide/volume_emission.md)
-: Photochemical emission support as a source term
+[Volume Emission](users_guide/volume_emission.md)
+: Specified volume emission rate profiles as a source term
+
+[Photolysis and Actinic Flux](users_guide/photolysis.md)
+: Actinic flux and photolysis rates, at full resolution or in TUV mode
+
+[Photochemical Emission (Airglow)](users_guide/photochemical_emission.md)
+: Daytime O2, O(1S), O(1D) and OH emission from photochemistry, in limb calculations
 
 [Built in Geodesy Tools](users_guide/geodetic.md)
 : Methods to work with datums such as WGS84
@@ -68,6 +74,8 @@ users_guide/brdf.md
 users_guide/performance.md
 users_guide/phase.md
 users_guide/volume_emission.md
+users_guide/photolysis.md
+users_guide/photochemical_emission.md
 users_guide/geodetic.md
 users_guide/input_validation.md
 ```

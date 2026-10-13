@@ -6,7 +6,8 @@ use crate::constituent::types::volume_emission_rate::MonochromaticVolumeEmission
 use crate::emission::o2::{O2BandEmissionModel, oxygen_emission_band};
 use crate::optical::line::OpticalLineDB;
 use crate::photchem::emission::{
-    AEmissionLineWeightModel, EmissionBand, oxygen_a_band_line_list_weights_from_populations,
+    AEmissionLineWeightModel, oxygen_a_band_from_hitran,
+    oxygen_a_band_line_list_weights_from_populations, oxygen_b_band_from_hitran,
     oxygen_b_band_line_list_weights_from_populations,
 };
 use crate::prelude::*;
@@ -126,8 +127,8 @@ impl PopulationEmissionRate {
                     {
                         line_list_emissions.push(emission);
                     }
-                    let a_band = EmissionBand::oxygen_a_band_from_hitran(db)?;
-                    let b_band = EmissionBand::oxygen_b_band_from_hitran(db)?;
+                    let a_band = oxygen_a_band_from_hitran(db)?;
+                    let b_band = oxygen_b_band_from_hitran(db)?;
                     for (transition, state, available) in [
                         ("0-0", "O2(b)", Some(&a_band)),
                         ("1-1", "O2(b, v=1)", Some(&a_band)),
@@ -221,7 +222,7 @@ fn o2_a_band_line_list_emission(
     db: &OpticalLineDB,
     line_weight_model: AEmissionLineWeightModel,
 ) -> Result<LineListVolumeEmissionRate> {
-    let band = EmissionBand::oxygen_a_band_from_hitran(db)?;
+    let band = oxygen_a_band_from_hitran(db)?;
     let o2_b0 = profiles.required_population("O2(b)")?;
     let o2_b1 = profiles.optional_population("O2(b, v=1)");
     let o2_b2 = profiles.optional_population("O2(b, v=2)");
@@ -248,7 +249,7 @@ fn o2_b_band_line_list_emission(
     db: &OpticalLineDB,
     line_weight_model: AEmissionLineWeightModel,
 ) -> Result<Option<LineListVolumeEmissionRate>> {
-    let Some(band) = EmissionBand::oxygen_b_band_from_hitran(db)? else {
+    let Some(band) = oxygen_b_band_from_hitran(db)? else {
         return Ok(None);
     };
     let o2_b1 = profiles.optional_population("O2(b, v=1)");
@@ -271,6 +272,7 @@ fn o2_b_band_line_list_emission(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::photchem::emission::EmissionBand;
 
     #[test]
     fn missing_optional_b1_and_b2_populations_contribute_zero() {

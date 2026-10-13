@@ -22,8 +22,8 @@ class PopulationEmissionRate(Constituent):
         Photochemical population-to-emission constituent.
 
         The current implementation supports O2 A-band and B-band emission from
-        population profiles such as the output of
-        :class:`sasktran2.photchem.models.Yankovsky`. The population dataset must
+        population profiles such as the ``density`` output of
+        :func:`sasktran2.nlte.solve`. The population dataset must
         contain ``altitude`` in meters, ``temperature`` in kelvin, and ``O2(b)``
         number density in m^-3. ``O2(b, v=1)`` and ``O2(b, v=2)`` are optional
         m^-3 number-density profiles.

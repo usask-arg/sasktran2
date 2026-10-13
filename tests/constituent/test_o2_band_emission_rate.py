@@ -319,8 +319,8 @@ def test_population_conversion_uses_same_band_path(line_db):
     pop = population(line_db)
     bands = pop.to_band_emissions()
     assert set(bands) == {"0-0", "1-1", "1-0"}
-    np.testing.assert_allclose(bands["0-0"].photon_ver, np.array([1, 10, 5]) * 0.0758)
-    np.testing.assert_allclose(bands["1-1"].photon_ver, np.array([3, 4, 2]) * 0.07)
+    np.testing.assert_allclose(bands["0-0"].photon_ver, np.array([1, 10, 5]) * 0.0875)
+    np.testing.assert_allclose(bands["1-1"].photon_ver, np.array([3, 4, 2]) * 0.0699)
     atmo, engine = scenario()
     atmo["population"] = pop
     combined = engine.calculate_radiance(atmo)
@@ -418,7 +418,7 @@ def test_ver_update_and_band_validation(line_db):
     with pytest.raises(ValueError, match="non-negative"):
         emission.photon_ver = [-1.0, 2.0, 3.0]
     with pytest.raises(ValueError, match="Unsupported O2 band"):
-        constituent(line_db, band="2-0")
+        constituent(line_db, band="3-0")
 
 
 @pytest.mark.parametrize(

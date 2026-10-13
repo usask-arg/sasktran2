@@ -541,32 +541,41 @@ namespace sasktran2 {
                     }
                 }
 
-                // Now add in the downwelling solar flux
+                // Now add in the direct solar flux
                 if (m_config->single_scatter_source() ==
-                    sasktran2::Config::SingleScatterSource::
-                        discrete_ordinates) {
-                    if (flux_type == sasktran2::Config::FluxType::downwelling) {
-                        // The solar flux is just the transmission * cos_sza
-                        double csz =
-                            m_geometry.coordinates().cos_sza_at_reference();
-                        m_flux[threadidx][flux_obs_idx].value(flux_type_idx) +=
-                            transmission.value * csz;
+                        sasktran2::Config::SingleScatterSource::
+                            discrete_ordinates &&
+                    (flux_type == sasktran2::Config::FluxType::downwelling ||
+                     flux_type == sasktran2::Config::FluxType::actinic)) {
+                    // Attenuate the beam from the layer ceiling down to the
+                    // observer, x optical depth below it:
+                    // T_obs = T_ceiling * exp(-x * average_secant)
+                    const double attenuation =
+                        std::exp(-x * average_secant.value);
+                    const double direct = transmission.value * attenuation;
 
-                        // Derivatives
-                        for (int d = 0; d < num_total_derivatives; ++d) {
-                            temp_deriv(d) += transmission.deriv(d) * csz;
-                        }
+                    // Actinic flux is the transmission; downwelling flux is
+                    // the transmission * cos_sza
+                    const double factor =
+                        flux_type == sasktran2::Config::FluxType::downwelling
+                            ? m_geometry.coordinates().cos_sza_at_reference()
+                            : 1.0;
+
+                    m_flux[threadidx][flux_obs_idx].value(flux_type_idx) +=
+                        direct * factor;
+
+                    // Derivatives of the ceiling transmission and the secant
+                    for (int d = 0; d < num_total_derivatives; ++d) {
+                        temp_deriv(d) +=
+                            factor * (transmission.deriv(d) * attenuation -
+                                      direct * x * average_secant.deriv(d));
                     }
-
-                    if (flux_type == sasktran2::Config::FluxType::actinic) {
-                        // The solar flux is just the transmission
-                        m_flux[threadidx][flux_obs_idx].value(flux_type_idx) +=
-                            transmission.value;
-
-                        // Derivatives
-                        for (int d = 0; d < num_total_derivatives; ++d) {
-                            temp_deriv(d) += transmission.deriv(d);
-                        }
+                    // and of the layer thickness, x = layer_fraction *
+                    // thickness
+                    for (int d = 0; d < num_layer_derivatives; ++d) {
+                        temp_deriv(d + layer_d_start) -=
+                            factor * direct * average_secant.value *
+                            layer_fraction * dual_thickness.deriv(d);
                     }
                 }
 
