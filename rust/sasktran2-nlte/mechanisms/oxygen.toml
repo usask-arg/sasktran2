@@ -1,5 +1,6 @@
-# Daytime O(1D), O2(b, v=0-2) and O2(a, v=0-5) from O3 and O2 photolysis and
-# resonant absorption, for the UV-visible and near-infrared O2 dayglow.
+# Daytime O(1D), O2(b, v=0-2) and O2(a, v=0-5) from O3 and O2 photolysis,
+# resonant absorption and O + O + M recombination, for the UV-visible and
+# near-infrared O2 dayglow.
 #
 # Audited process by process against the newest Yankovsky model database
 # (status March 2019, the supplement of Yankovsky et al. 2019), JPL 19-5 and
@@ -25,9 +26,9 @@
 
 [mechanism]
 name = "oxygen"
-version = "0.1.0"
-description = "Daytime O(1D), O2(a, v) and O2(b, v) from O3 and O2 photolysis and resonant absorption"
-background = ["O2", "O3", "N2", "CO2", "O(3P)"]
+version = "0.2.0"
+description = "Daytime O(1D), O2(a, v) and O2(b, v) from O3 and O2 photolysis, resonant absorption and the Barth mechanism"
+background = ["O2", "O3", "N2", "CO2", "O(3P)", "M"]
 
 [references]
 jpl19 = """\
@@ -54,6 +55,19 @@ hitran = """\
 Gordon, I. E., et al. (2022), The HITRAN2020 molecular spectroscopic database, \
 J. Quant. Spectrosc. Radiat. Transfer 277, 107949. Band Einstein A of 16O2 \
 b-X, summed over lines from each upper level and averaged at 220 K."""
+mcdade1986 = """\
+McDade, I. C., D. P. Murtagh, R. G. H. Greer, P. H. G. Dickinson, G. Witt, \
+J. Stegman, E. J. Llewellyn, L. Thomas and D. B. Jenkins (1986), ETON 2: \
+Quenching parameters for the proposed precursors of O2(b) and O(1S) in the \
+terrestrial nightglow, Planet. Space Sci. 34, 789-800, \
+doi:10.1016/0032-0633(86)90075-9. O2(b) precursor constants C_O2 = 6.6 +- 0.4 \
+and C_O / C_O2 = 2.9 (MSIS-83 temperatures), as given by Grygalashvyly, M., \
+et al. (2019), Atmospheric band fitting coefficients derived from a \
+self-consistent rocket-borne experiment, Atmos. Chem. Phys. 19, 1207-1220, \
+doi:10.5194/acp-19-1207-2019."""
+reference_rate = """\
+Arbitrary reference rate for the Barth precursor of O2(b); it cancels in the \
+O2(b) production, which follows McDade et al. (1986)."""
 nist = """\
 Kramida, A., Yu. Ralchenko, J. Reader and NIST ASD Team, NIST Atomic Spectra \
 Database (version 5.11), O I 2p4 1D2 - 3P2,1 transitions."""
@@ -75,6 +89,10 @@ for_v = [0, 2]
 [[state]]
 id = "O2(a, v={v})"
 for_v = [0, 5]
+
+[[state]]
+id = "O2(barth, b)"
+description = "Barth-mechanism precursor of O2(b) (possibly O2(5Pi_g) or O2(A'3Delta_u))"
 
 
 # --- Photolysis and resonant absorption -------------------------------------
@@ -439,6 +457,45 @@ channels = [
 ]
 rate = { law = "constant", value = 8.0e-14, units = "cm3 s-1" }
 reference = "jpl19"
+
+
+# The Barth mechanism, O + O + M -> O2*, O2* + O2 -> O2(b) + O2, which makes
+# the A-band nightglow and runs by day as well. With McDade et al.'s
+# empirical constants, the O2(b) production is
+# k1 [O]^2 [M] [O2] / (C_O2 [O2] + C_O [O]); the precursor has an arbitrary
+# reference rate k3 for O2(b) formation, and other losses (C_O2 - 1) k3 [O2]
+# and C_O k3 [O], so that k3 cancels. It scales as [O]^2: 1-10% of the
+# daytime O2(b, v=0) production near 95-100 km with SABER [O] (yv2020
+# Fig. 8), and up to 20% with [O] of 6e11 cm-3 at 95 km.
+[[reaction]]
+id = "barth_recombination_b"
+reactants = ["O(3P)", "O(3P)", "M"]
+products = ["O2(barth, b)", "M"]
+rate = { law = "arrhenius", a = 4.7e-33, n = -2.0, t0 = 300.0, units = "cm6 s-1" }
+reference = "mcdade1986"
+
+[[reaction]]
+id = "barth_o2b"
+reactants = ["O2(barth, b)", "O2"]
+products = ["O2(b, v=0)", "O2"]
+rate = { law = "constant", value = 1.0e-11, units = "cm3 s-1" }
+reference = "reference_rate"
+
+# C_O2 = 6.6.
+[[reaction]]
+id = "barth_b_quench_o2"
+reactants = ["O2(barth, b)", "O2"]
+products = ["O2", "O2"]
+rate = { law = "constant", value = 5.6e-11, units = "cm3 s-1" }
+reference = "mcdade1986"
+
+# C_O = 2.9 x 6.6 = 19.1.
+[[reaction]]
+id = "barth_b_quench_o"
+reactants = ["O2(barth, b)", "O(3P)"]
+products = ["O2", "O(3P)"]
+rate = { law = "constant", value = 1.91e-10, units = "cm3 s-1" }
+reference = "mcdade1986"
 
 
 # --- O2(a, v) ----------------------------------------------------------------

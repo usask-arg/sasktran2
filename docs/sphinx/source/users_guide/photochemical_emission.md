@@ -73,9 +73,10 @@ species whose densities are inputs, the processes that couple them, and the
 per-molecule rates (photolysis and photoexcitation) that must be supplied. Two are
 bundled:
 
-- `oxygen`: O(1D), O2(b, v=0-2) and O2(a, v=0-5) from O3 and O2 photolysis and
-  resonant absorption in the O2 atmospheric bands, with JPL 19-5 rates and the
-  Yankovsky et al. (2019) vibrational product distributions.
+- `oxygen`: O(1D), O2(b, v=0-2) and O2(a, v=0-5) from O3 and O2 photolysis,
+  resonant absorption in the O2 atmospheric bands, and O + O + M recombination
+  (the Barth mechanism, McDade et al. 1986), with JPL rates and the Yankovsky et
+  al. (2019) vibrational product distributions.
 - `oxygen_green`: O(1S) and the Barth mechanism precursor, from O2
   photodissociation and O recombination (McDade et al. 1986).
 
