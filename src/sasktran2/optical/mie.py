@@ -8,6 +8,7 @@ from sasktran2.atmosphere import Atmosphere
 from sasktran2.mie.distribution import (
     ParticleSizeDistribution,
     integrate_mie_cpp,
+    integrate_mie_scatrs,
 )
 from sasktran2.mie.refractive import RefractiveIndex
 from sasktran2.optical.base import OpticalProperty, OpticalQuantities
@@ -19,6 +20,7 @@ class Mie(OpticalProperty):
         self,
         psize_distribution: ParticleSizeDistribution,
         refractive_index: RefractiveIndex,
+        rtol: float = 3e-4,
     ):
         """
         Mie scattering optical property where the Mie calculations are done on the fly.
@@ -32,12 +34,17 @@ class Mie(OpticalProperty):
             Particle size distribution to use for the Mie calculations
         refractive_index : RefractiveIndex
             Refraction index to use for the Mie calculations
+        rtol : float, optional
+            Relative tolerance of the size integration, by default 3e-4. Applies to the
+            distributions that scatrs supports (see `ParticleSizeDistribution.supports_scatrs`),
+            which are integrated adaptively; the others use a fixed quadrature.
         """
         self._psize_distribution = psize_distribution
 
         self._geometry_dependent = len(psize_distribution.args()) > 0
 
         self._refrac_index = refractive_index
+        self._rtol = rtol
 
         self._calculation_ds = {}
         self._xs_ds = {}
@@ -65,33 +72,45 @@ class Mie(OpticalProperty):
                     "Calculating Mie scattering parameters for a large number of particle size distribution arguments. You may want to use the MieDatabase class instead."
                 )
 
-            dists = [
-                self._psize_distribution.distribution(
-                    **dict(zip(dist_args, args, strict=True))
-                )
-                for args in unique_args
-            ]
-
-            ds = integrate_mie_cpp(
-                dists,
-                self._refrac_index.refractive_index_fn,
+            ds = self._integrate(
+                [dict(zip(dist_args, args, strict=True)) for args in unique_args],
                 wavelengths_nm,
-                num_coeffs=kwargs.get("num_legendre", 10),
-                num_threads=kwargs.get("num_threads", 1),
+                **kwargs,
             )
 
             for i, args in enumerate(unique_args):
                 result_ds[tuple(args)] = ds.isel(distribution=i)
         else:
-            ds = integrate_mie_cpp(
-                [self._psize_distribution.distribution()],
-                self._refrac_index.refractive_index_fn,
-                wavelengths_nm,
-                num_coeffs=kwargs.get("num_legendre", 10),
-                num_threads=kwargs.get("num_threads", 1),
-            )
+            ds = self._integrate([{}], wavelengths_nm, **kwargs)
 
             result_ds[()] = ds.isel(distribution=0)
+
+    def _integrate(self, dist_kwargs: list[dict], wavelengths_nm, **kwargs):
+        """
+        Integrates over the distribution at each of `dist_kwargs`, with scatrs where it
+        supports the distribution
+        """
+        options = {
+            "num_coeffs": kwargs.get("num_legendre", 10),
+            "num_threads": kwargs.get("num_threads", 1),
+        }
+        if self._psize_distribution.supports_scatrs:
+            return integrate_mie_scatrs(
+                [
+                    self._psize_distribution.scatrs_distribution(**k)
+                    for k in dist_kwargs
+                ],
+                self._refrac_index.refractive_index_fn,
+                wavelengths_nm,
+                rtol=self._rtol,
+                **options,
+            )
+        return integrate_mie_cpp(
+            [self._psize_distribution.distribution(**k) for k in dist_kwargs],
+            self._refrac_index.refractive_index_fn,
+            wavelengths_nm,
+            **options,
+        )
 
     def atmosphere_quantities(self, atmo: Atmosphere, **kwargs) -> OpticalQuantities:
         self._internal_generate(

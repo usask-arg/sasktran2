@@ -69,11 +69,23 @@ The database is a function of wavelength, and any arguments of the particle size
 When it is created for the first time the local database will be generated. Any subsequent instantiations of the
 object will re-use the cached database.
 
+The database is generated with [scatrs](https://usask-arg.github.io/scatrs/), which
+integrates over every combination of the distribution arguments at once, refining the
+size integral adaptively until the cross sections of each distribution meet the relative
+tolerance `rtol` (default `3e-4`). The lognormal, gamma, uniform and triangular
+distributions are supported; other distributions are integrated with a fixed quadrature
+(`backend="sasktran2_cpp"`, which can also be requested explicitly).
+
 Set `num_threads=4` when constructing `MieDatabase` to use four Rust workers
-during database generation. Workers calculate particle sizes and integrate
-distributions in parallel, sharing the precomputed angular basis. The default
-is one thread; `num_threads=0` selects Rayon's automatic thread count. The same
-option is available in `sasktran2.mie.distribution.integrate_mie_cpp`.
+during database generation. The default is one thread; `num_threads=0` selects
+Rayon's automatic thread count. The results do not depend on the number of threads.
+The same options are available in `sasktran2.mie.distribution.integrate_mie_scatrs`.
+
+The radiative transfer calculation only needs the Legendre coefficients of the phase matrix.
+To also store the phase matrix elements `p11`, `p12`, `p33` and `p34` in the database, pass
+`phase_matrix=True`; they are computed at every degree of scattering angle unless
+`phase_cos_angles` gives other cosines. This is off by default because it makes the database
+several times more expensive to generate.
 
 
 We can look at the created database

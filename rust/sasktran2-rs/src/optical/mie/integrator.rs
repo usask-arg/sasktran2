@@ -114,7 +114,7 @@ impl MieIntegrator {
             pool.install(calculate_mie)
         } else {
             calculate_mie()
-        };
+        }?;
 
         // Split every output into disjoint distribution rows before dispatch.
         // Reductions within a row keep their serial order, independent of the
@@ -238,7 +238,7 @@ mod tests {
         integrator
             .integrate(
                 500.0,
-                Complex64::new(1.5, 0.01),
+                Complex64::new(1.5, -0.01),
                 array![2.0].view(),
                 array![[1.0]].view(),
                 array![1.0].view(),

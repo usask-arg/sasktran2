@@ -2,9 +2,13 @@
 
 use crate::prelude::*;
 use numpy::*;
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyComplex};
-use sasktran2_rs::optical::mie::integrator;
+use pyo3::{
+    exceptions::PyValueError,
+    prelude::*,
+    types::{PyComplex, PyDict},
+};
 use sasktran2_rs::optical::mie::mie_f::{MieOutput, mie};
+use sasktran2_rs::optical::mie::{ensemble, integrator};
 
 #[pyclass]
 pub struct PyMieOutput {
@@ -84,7 +88,8 @@ impl PyMie {
             size_param.as_array(),
             refractive_index,
             cos_angles.as_array(),
-        );
+        )
+        .into_pyresult()?;
 
         Ok(PyMieOutput { output })
     }
@@ -159,4 +164,126 @@ impl PyMieIntegrator {
             )
             .map_err(|err| PyValueError::new_err(err.to_string()))
     }
+}
+
+/// A size distribution from its kind and parameters, as `sasktran2.mie.distribution` passes
+/// them: lognormal (median_radius, width), modified_gamma (alpha, b, gamma), power_law
+/// (exponent, min_radius, max_radius) and tabulated (the radii, then the densities).
+fn size_distribution(kind: &str, params: &[f64]) -> PyResult<ensemble::SizeDistribution> {
+    use ensemble::SizeDistribution as D;
+    let expect = |n: usize| -> PyResult<()> {
+        if params.len() == n {
+            Ok(())
+        } else {
+            Err(PyValueError::new_err(format!(
+                "a {kind} distribution takes {n} parameters, got {}",
+                params.len()
+            )))
+        }
+    };
+    Ok(match kind {
+        "lognormal" => {
+            expect(2)?;
+            D::LogNormal {
+                median_radius: params[0],
+                width: params[1],
+            }
+        }
+        "modified_gamma" => {
+            expect(3)?;
+            D::ModifiedGamma {
+                alpha: params[0],
+                b: params[1],
+                gamma: params[2],
+            }
+        }
+        "power_law" => {
+            expect(3)?;
+            D::PowerLaw {
+                exponent: params[0],
+                min_radius: params[1],
+                max_radius: params[2],
+            }
+        }
+        "tabulated" => {
+            if !params.len().is_multiple_of(2) {
+                return Err(PyValueError::new_err(
+                    "a tabulated distribution takes as many densities as radii",
+                ));
+            }
+            let (radius, density) = params.split_at(params.len() / 2);
+            D::Tabulated {
+                radius: radius.to_vec(),
+                density: density.to_vec(),
+            }
+        }
+        _ => {
+            return Err(PyValueError::new_err(format!(
+                "unknown size distribution {kind}"
+            )));
+        }
+    })
+}
+
+/// Integrates the Mie optical properties over each distribution (`kinds[i]`, `params[i]`) at
+/// each wavelength. Returns a dict of xs_total, xs_scattering, xs_absorption and converged
+/// [wavelength, distribution], lm_a1 ... lm_b2 [wavelength, distribution, legendre] and, if
+/// `cos_angles` is not empty, p11, p12, p33, p34 [wavelength, distribution, angle].
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn integrate_mie_ensemble<'py>(
+    py: Python<'py>,
+    kinds: Vec<String>,
+    params: Vec<Vec<f64>>,
+    wavelengths: PyReadonlyArray1<f64>,
+    refractive_index: PyReadonlyArray1<Complex64>,
+    num_coefficients: usize,
+    cos_angles: PyReadonlyArray1<f64>,
+    rtol: f64,
+    max_panels: usize,
+    num_threads: usize,
+) -> PyResult<Bound<'py, PyDict>> {
+    if kinds.len() != params.len() {
+        return Err(PyValueError::new_err(
+            "kinds and params must have one entry per distribution",
+        ));
+    }
+    let distributions = kinds
+        .iter()
+        .zip(&params)
+        .map(|(kind, params)| size_distribution(kind, params))
+        .collect::<PyResult<Vec<_>>>()?;
+    let wavelengths = wavelengths.as_array().to_owned();
+    let refractive_index = refractive_index.as_array().to_owned();
+    let cos_angles = cos_angles.as_array().to_owned();
+    let tables = py
+        .detach(|| {
+            ensemble::integrate_batch(
+                &distributions,
+                wavelengths.view(),
+                refractive_index.view(),
+                num_coefficients,
+                cos_angles.view(),
+                rtol,
+                max_panels,
+                num_threads,
+            )
+        })
+        .map_err(|err| PyValueError::new_err(err.to_string()))?;
+
+    let result = PyDict::new(py);
+    result.set_item("xs_total", tables.xs_total.into_pyarray(py))?;
+    result.set_item("xs_scattering", tables.xs_scattering.into_pyarray(py))?;
+    result.set_item("xs_absorption", tables.xs_absorption.into_pyarray(py))?;
+    result.set_item("converged", tables.converged.into_pyarray(py))?;
+    let names = ["lm_a1", "lm_a2", "lm_a3", "lm_a4", "lm_b1", "lm_b2"];
+    for (name, table) in names.into_iter().zip(tables.greek) {
+        result.set_item(name, table.into_pyarray(py))?;
+    }
+    if let Some(phase) = tables.phase {
+        for (name, table) in ["p11", "p12", "p33", "p34"].into_iter().zip(phase) {
+            result.set_item(name, table.into_pyarray(py))?;
+        }
+    }
+    Ok(result)
 }

@@ -16,6 +16,7 @@ sasktran2-core = { version = "*", path = "../sasktran2-core" }
 rebasis = { version = "*", path = "../rebasis" }
 gauss-quad = "0.2.4"
 rayon = "*"
+scatrs = "0.2"
 libc = "*"
 
 [features]

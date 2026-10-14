@@ -104,6 +104,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<optical::mie::PyMieIntegrator>()?;
     m.add_class::<optical::mie::PyMieOutput>()?;
     m.add_class::<optical::mie::PyMie>()?;
+    m.add_function(wrap_pyfunction!(optical::mie::integrate_mie_ensemble, m)?)?;
 
     // Geodetic
     m.add_class::<geodetic::PyGeodetic>()?;

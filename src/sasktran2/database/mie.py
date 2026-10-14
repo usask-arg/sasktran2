@@ -14,6 +14,7 @@ from sasktran2.mie.distribution import (
     ParticleSizeDistribution,
     integrate_mie,
     integrate_mie_cpp,
+    integrate_mie_scatrs,
 )
 from sasktran2.mie.refractive import RefractiveIndex
 from sasktran2.optical.database import (
@@ -31,10 +32,13 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
         refractive_index: RefractiveIndex,
         wavelengths_nm: np.array,
         db_root: Path | None = None,
-        backend: str = "sasktran2_cpp",
+        backend: str | None = None,
         max_legendre_moments: int = 64,
         num_size_quadrature: int = 1000,
         num_threads=1,
+        rtol: float = 3e-4,
+        phase_matrix: bool = False,
+        phase_cos_angles: np.ndarray | None = None,
         **kwargs,
     ) -> None:
         """
@@ -53,13 +57,26 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
         db_root : Path, optional
             The root directory to store the database, by default None
         backend : str, optional
-            The backend to use, by default "sasktran2_cpp". Currently supported
-            options are ["sasktran_legacy", "sasktran2", "sasktran2_cpp"]. "sasktran_legacy"
-            requires the module `sasktran` to be installed.
+            The backend to use. Currently supported options are ["scatrs", "sasktran2_cpp",
+            "sasktran2", "sasktran_legacy"]. The default is "scatrs", which integrates over
+            the size distribution adaptively to `rtol`, for the distributions it supports
+            (see `ParticleSizeDistribution.supports_scatrs`), and "sasktran2_cpp" for the
+            others. "sasktran_legacy" requires the module `sasktran` to be installed.
         num_threads: int, optional
             Number of Rust workers for particle-size calculations and distribution
             integration, by default 1. Zero selects the automatic thread count.
-            Applies to the sasktran2_cpp backend.
+            Applies to the scatrs and sasktran2_cpp backends.
+        rtol: float, optional
+            Relative tolerance of the size integration of the scatrs backend, by default
+            3e-4.
+        phase_matrix: bool, optional
+            Also store the phase matrix elements p11, p12, p33 and p34 in the database, with
+            the scatrs backend. Off by default: they are not needed for the radiative transfer
+            calculation, which uses the Legendre coefficients, and they add several times the
+            cost of generating the database.
+        phase_cos_angles: np.ndarray, optional
+            Cosines of the scattering angle of the phase matrix, by default every degree from
+            0 to 180.
         kwargs
             Additional arguments to pass to the particle size distribution, these should match the psize_distribution.args() method
         """
@@ -70,6 +87,27 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
                     return obj.tolist()
                 return json.JSONEncoder.default(self, obj)
 
+        if backend is None:
+            backend = (
+                "scatrs" if psize_distribution.supports_scatrs else "sasktran2_cpp"
+            )
+        if backend == "scatrs" and not psize_distribution.supports_scatrs:
+            msg = f"The scatrs backend does not support the {psize_distribution.identifier} distribution"
+            raise ValueError(msg)
+        if phase_matrix and backend != "scatrs":
+            msg = "phase_matrix needs the scatrs backend"
+            raise ValueError(msg)
+        if phase_matrix and phase_cos_angles is None:
+            phase_cos_angles = np.cos(np.deg2rad(np.arange(0, 181)))
+        if not phase_matrix:
+            phase_cos_angles = None
+        # Only the scatrs backend uses rtol, and only a phase matrix its angles; leaving them
+        # out of the other hashes keeps the existing cached files
+        backend_options = {"rtol": rtol} if backend == "scatrs" else {}
+        if phase_cos_angles is not None:
+            phase_cos_angles = np.atleast_1d(np.asarray(phase_cos_angles, dtype=float))
+            backend_options["phase_cos_angles"] = phase_cos_angles
+
         hasher = hashlib.sha1()
         encoded = json.dumps(
             {
@@ -77,6 +115,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
                 "wavelengths": wavelengths_nm,
                 "max_legendre_moments": max_legendre_moments,
                 "backend": backend,
+                **backend_options,
             },
             sort_keys=True,
             cls=NumpyEncoder,
@@ -102,6 +141,8 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
         self._max_legendre_moments = max_legendre_moments
         self._num_threads = num_threads
         self._num_size_quadrature = num_size_quadrature
+        self._rtol = rtol
+        self._phase_cos_angles = phase_cos_angles
 
         for arg in kwargs:
             if arg not in self._psize_args:
@@ -119,6 +160,8 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
             self._generate_sasktran2()
         elif self._backend == "sasktran2_cpp":
             self._generate_sasktran2_cpp()
+        elif self._backend == "scatrs":
+            self._generate_scatrs()
         elif self._backend == "sasktran2_rust":
             self._generate_sasktran2_rust()
         else:
@@ -327,6 +370,36 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
             num_threads=self._num_threads,
         )
 
+        self._unstack_distributions(ds).to_netcdf(self._data_file)
+
+    def _generate_scatrs(self):
+        """
+        Generates the data file with scatrs, integrating over every distribution at once
+        """
+        distributions = [
+            self._psize_dist.scatrs_distribution(
+                **dict(zip(self._kwargs.keys(), vals, strict=True))
+            )
+            for vals in product(*self._kwargs.values())
+        ]
+
+        ds = integrate_mie_scatrs(
+            distributions,
+            self._refractive_index.refractive_index_fn,
+            self._wavelengths_nm,
+            num_coeffs=self._max_legendre_moments,
+            rtol=self._rtol,
+            num_threads=self._num_threads,
+            phase_cos_angles=self._phase_cos_angles,
+        )
+
+        self._unstack_distributions(ds).to_netcdf(self._data_file)
+
+    def _unstack_distributions(self, ds: xr.Dataset) -> xr.Dataset:
+        """
+        Replaces the distribution dimension of `ds`, in the order of the product of the
+        distribution arguments, by one dimension per argument
+        """
         if len(self._kwargs) > 1:
             multi = pd.MultiIndex.from_product(
                 [self._kwargs[k] for k in self._kwargs],
@@ -349,7 +422,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
             # length is 0
             ds = ds.isel(distribution=0)
 
-        ds.to_netcdf(self._data_file)
+        return ds
 
     def clear(self):
         if self._data_file.exists():
