@@ -84,7 +84,8 @@ impl PyMie {
             size_param.as_array(),
             refractive_index,
             cos_angles.as_array(),
-        );
+        )
+        .into_pyresult()?;
 
         Ok(PyMieOutput { output })
     }
