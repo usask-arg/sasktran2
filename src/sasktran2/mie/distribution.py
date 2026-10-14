@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 import logging
 import time
+import warnings
 
 import numpy as np
 import scipy.integrate as integrate
@@ -10,7 +11,7 @@ import xarray as xr
 from scipy.stats import gamma, lognorm, rv_continuous, triang, uniform
 
 from sasktran2 import mie
-from sasktran2._core_rust import PyMieIntegrator
+from sasktran2._core_rust import PyMieIntegrator, integrate_mie_ensemble
 from sasktran2.legendre import compute_greek_coefficients
 
 from .wrappers import LinearizedMie, MieOutput
@@ -229,6 +230,15 @@ def integrate_mie(
     return all_output
 
 
+def _positive_radius(radius: float, max_radius: float) -> float:
+    """
+    scatrs needs a positive smallest radius; a distribution starting at 0 starts instead at
+    1e-9 of its largest radius, which drops at most 1e-9 of its particles (and less of any
+    cross section, which grows at least like the radius squared).
+    """
+    return radius if radius > 0 else 1e-9 * max_radius
+
+
 class ParticleSizeDistribution(abc.ABC):
     def __init__(self, identifier: str) -> None:
         """
@@ -271,6 +281,30 @@ class ParticleSizeDistribution(abc.ABC):
         A list of arguments that are required to define this distribution when calling distribution
         """
 
+    @property
+    def supports_scatrs(self) -> bool:
+        """
+        Whether :py:meth:`scatrs_distribution` gives this distribution's scatrs equivalent, so
+        that :py:func:`integrate_mie_scatrs` can integrate over it.
+
+        Returns
+        -------
+        bool
+        """
+        return False
+
+    def scatrs_distribution(self, **kwargs) -> tuple[str, list[float]]:
+        """
+        The equivalent scatrs size distribution, as its kind and parameters, for
+        :py:func:`integrate_mie_scatrs`.
+
+        Returns
+        -------
+        tuple[str, list[float]]
+        """
+        msg = f"{type(self).__name__} has no scatrs equivalent"
+        raise NotImplementedError(msg)
+
     def freeze(self, **kwargs):
         """
         Freeze some of the arguments of this distribution. E.g. if `y` is an argument of this distrubtion, calling
@@ -300,6 +334,13 @@ class LogNormalDistribution(ParticleSizeDistribution):
     def args(self):
         return ["median_radius", "mode_width"]
 
+    @property
+    def supports_scatrs(self) -> bool:
+        return True
+
+    def scatrs_distribution(self, **kwargs) -> tuple[str, list[float]]:
+        return ("lognormal", [kwargs["median_radius"], kwargs["mode_width"]])
+
 
 class UniformDistribution(ParticleSizeDistribution):
     def __init__(self) -> None:
@@ -321,6 +362,18 @@ class UniformDistribution(ParticleSizeDistribution):
     def args(self):
         return ["min_radius", "max_radius"]
 
+    @property
+    def supports_scatrs(self) -> bool:
+        return True
+
+    def scatrs_distribution(self, **kwargs) -> tuple[str, list[float]]:
+        self.distribution(**kwargs)  # validates the bounds
+        right = kwargs["max_radius"]
+        return (
+            "power_law",
+            [0.0, _positive_radius(kwargs["min_radius"], right), right],
+        )
+
 
 class GammaDistribution(ParticleSizeDistribution):
     def __init__(self) -> None:
@@ -339,6 +392,14 @@ class GammaDistribution(ParticleSizeDistribution):
 
     def args(self):
         return ["alpha", "beta"]
+
+    @property
+    def supports_scatrs(self) -> bool:
+        return True
+
+    def scatrs_distribution(self, **kwargs) -> tuple[str, list[float]]:
+        # n(r) ∝ r^(alpha - 1) exp(-beta r), Deirmendjian's modified gamma with gamma = 1
+        return ("modified_gamma", [kwargs["alpha"] - 1.0, kwargs["beta"], 1.0])
 
 
 class TriangularDistribution(ParticleSizeDistribution):
@@ -365,6 +426,25 @@ class TriangularDistribution(ParticleSizeDistribution):
 
     def args(self):
         return ["min_radius", "max_radius", "center_radius"]
+
+    @property
+    def supports_scatrs(self) -> bool:
+        return True
+
+    def scatrs_distribution(self, **kwargs) -> tuple[str, list[float]]:
+        self.distribution(**kwargs)  # validates the bounds
+        left = kwargs["min_radius"]
+        right = kwargs["max_radius"]
+        mode = kwargs["center_radius"]
+        # The density is piecewise linear; a mode at a bound leaves a single segment
+        if mode <= left:
+            radius, density = [left, right], [1.0, 0.0]
+        elif mode >= right:
+            radius, density = [left, right], [0.0, 1.0]
+        else:
+            radius, density = [left, mode, right], [0.0, 1.0, 0.0]
+        radius[0] = _positive_radius(left, right)
+        return ("tabulated", [*radius, *density])
 
 
 class FrozenDistribution(ParticleSizeDistribution):
@@ -400,6 +480,15 @@ class FrozenDistribution(ParticleSizeDistribution):
 
     def args(self):
         return self._args
+
+    @property
+    def supports_scatrs(self) -> bool:
+        return self._distribution.supports_scatrs
+
+    def scatrs_distribution(self, **kwargs) -> tuple[str, list[float]]:
+        return self._distribution.scatrs_distribution(
+            **{**self._frozen_parameters, **kwargs}
+        )
 
 
 def integrate_mie_cpp(
@@ -597,3 +686,113 @@ def integrate_mie_cpp(
     result["xs_absorption"].values *= 1e-4 * 1e-14
 
     return result
+
+
+def integrate_mie_scatrs(
+    distributions: list[tuple[str, list[float]]],
+    refrac_index_fn,
+    wavelengths,
+    num_coeffs=64,
+    rtol=3e-4,
+    max_panels=4096,
+    num_threads=1,
+    phase_cos_angles=None,
+) -> xr.Dataset:
+    """Integrate Mie cross sections and Greek coefficients over size distributions with scatrs.
+
+    All of the distributions are integrated at once on shared size nodes, refined adaptively
+    until the cross sections and the asymmetry parameter of every distribution meet ``rtol``.
+    See https://usask-arg.github.io/scatrs/ for the method and its validation.
+
+    Parameters
+    ----------
+    distributions : list[tuple[str, list[float]]]
+        The distributions, from :py:meth:`ParticleSizeDistribution.scatrs_distribution`.
+        Radii are in nm.
+    refrac_index_fn : fn
+        Function taking a wavelength in nm and returning the complex refractive index,
+        m = n - ik.
+    wavelengths : np.array
+        Wavelengths in nm.
+    num_coeffs : int, optional
+        Number of Greek coefficients. Default 64.
+    rtol : float, optional
+        Relative tolerance of the size integration, in [1e-13, 0.1]. Default 3e-4.
+    max_panels : int, optional
+        The most size panels per wavelength; integrations that reach it without meeting
+        ``rtol`` give a warning. Default 4096.
+    num_threads : int, optional
+        Number of Rust worker threads. 0 selects Rayon's automatic thread count; results do
+        not depend on it. Default 1.
+    phase_cos_angles : np.array, optional
+        Cosines of the scattering angle at which to also compute the phase matrix. Default
+        None, no phase matrix: it adds several times the cost of the rest.
+
+    Returns
+    -------
+    xr.Dataset
+        ``xs_total``, ``xs_scattering`` and ``xs_absorption`` in m^2 per particle, and the
+        normalized Greek coefficients ``lm_a1`` to ``lm_b2``, with dimensions
+        ``wavelength_nm``, ``distribution`` and ``legendre``. With ``phase_cos_angles``,
+        also the normalized phase matrix elements ``p11``, ``p12``, ``p33`` and ``p34``
+        (half the integral of ``p11`` over the cosine is 1), with dimension ``cos_angle``.
+    """
+    wavelengths = np.atleast_1d(np.asarray(wavelengths, dtype=np.float64))
+    refractive_index = np.array(
+        [np.cdouble(refrac_index_fn(w)) for w in wavelengths], dtype=np.complex128
+    )
+    cos_angles = np.atleast_1d(
+        np.asarray(
+            [] if phase_cos_angles is None else phase_cos_angles, dtype=np.float64
+        )
+    )
+    kinds = [kind for kind, _ in distributions]
+    params = [[float(p) for p in params] for _, params in distributions]
+
+    values = integrate_mie_ensemble(
+        kinds,
+        params,
+        wavelengths,
+        refractive_index,
+        num_coeffs,
+        cos_angles,
+        rtol,
+        max_panels,
+        num_threads,
+    )
+
+    converged = values.pop("converged")
+    if not converged.all():
+        warnings.warn(
+            f"The Mie size integration did not meet rtol={rtol} within {max_panels} panels "
+            f"for {np.count_nonzero(~converged)} of {converged.size} (wavelength, "
+            "distribution) pairs; increase max_panels, or rtol",
+            stacklevel=2,
+        )
+
+    dims = ["wavelength_nm", "distribution"]
+    phase = {
+        key: ([*dims, "cos_angle"], values[key])
+        for key in ["p11", "p12", "p33", "p34"]
+        if key in values
+    }
+    coords = {"cos_angle": cos_angles} if phase else {}
+    return xr.Dataset(
+        {
+            # nm^2 to m^2
+            **{
+                key: (dims, values[key] * 1e-18)
+                for key in ["xs_total", "xs_scattering", "xs_absorption"]
+            },
+            **{
+                key: ([*dims, "legendre"], values[key])
+                for key in ["lm_a1", "lm_a2", "lm_a3", "lm_a4", "lm_b1", "lm_b2"]
+            },
+            **phase,
+        },
+        coords={
+            "distribution": np.arange(len(distributions)),
+            "wavelength_nm": wavelengths,
+            **coords,
+        },
+    )
