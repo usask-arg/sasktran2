@@ -18,7 +18,10 @@ def _refractive_index(wavelength):
 @pytest.mark.parametrize(
     ("dist", "dist_args"),
     [
-        (distribution.LogNormalDistribution(), {"median_radius": 150, "mode_width": 1.6}),
+        (
+            distribution.LogNormalDistribution(),
+            {"median_radius": 150, "mode_width": 1.6},
+        ),
         (distribution.GammaDistribution(), {"alpha": 4, "beta": 0.02}),
         (distribution.UniformDistribution(), {"min_radius": 50, "max_radius": 300}),
         (distribution.UniformDistribution(), {"min_radius": 0, "max_radius": 300}),
