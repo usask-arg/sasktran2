@@ -543,30 +543,38 @@ namespace sasktran2 {
 
                 // Now add in the downwelling solar flux
                 if (m_config->single_scatter_source() ==
-                    sasktran2::Config::SingleScatterSource::
-                        discrete_ordinates) {
-                    if (flux_type == sasktran2::Config::FluxType::downwelling) {
-                        // The solar flux is just the transmission * cos_sza
-                        double csz =
-                            m_geometry.coordinates().cos_sza_at_reference();
-                        m_flux[threadidx][flux_obs_idx].value(flux_type_idx) +=
-                            transmission.value * csz;
+                        sasktran2::Config::SingleScatterSource::
+                            discrete_ordinates &&
+                    (flux_type == sasktran2::Config::FluxType::downwelling ||
+                     flux_type == sasktran2::Config::FluxType::actinic)) {
+                    // Direct beam at the observer, attenuated from the layer
+                    // ceiling down to the observer, consistent with the beam
+                    // source used in d_minus_sampled/d_plus_sampled
+                    double attenuation = std::exp(-x * average_secant.value);
+                    double direct = transmission.value * attenuation;
 
-                        // Derivatives
-                        for (int d = 0; d < num_total_derivatives; ++d) {
-                            temp_deriv(d) += transmission.deriv(d) * csz;
-                        }
+                    // Downwelling is the transmission * cos_sza, actinic is
+                    // just the transmission
+                    double factor =
+                        flux_type == sasktran2::Config::FluxType::downwelling
+                            ? m_geometry.coordinates().cos_sza_at_reference()
+                            : 1.0;
+
+                    m_flux[threadidx][flux_obs_idx].value(flux_type_idx) +=
+                        direct * factor;
+
+                    // Derivatives, transmission and average_secant have total
+                    // derivatives
+                    for (int d = 0; d < num_total_derivatives; ++d) {
+                        temp_deriv(d) +=
+                            factor * (transmission.deriv(d) * attenuation -
+                                      direct * x * average_secant.deriv(d));
                     }
-
-                    if (flux_type == sasktran2::Config::FluxType::actinic) {
-                        // The solar flux is just the transmission
-                        m_flux[threadidx][flux_obs_idx].value(flux_type_idx) +=
-                            transmission.value;
-
-                        // Derivatives
-                        for (int d = 0; d < num_total_derivatives; ++d) {
-                            temp_deriv(d) += transmission.deriv(d);
-                        }
+                    // Thickness has layer derivatives, x = fraction * thickness
+                    for (int d = 0; d < dual_thickness.deriv.size(); ++d) {
+                        temp_deriv(d + layer_d_start) -=
+                            factor * direct * average_secant.value *
+                            layer_fraction * dual_thickness.deriv(d);
                     }
                 }
 

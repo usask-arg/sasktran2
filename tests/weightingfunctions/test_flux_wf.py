@@ -14,6 +14,11 @@ def _raw_scenarios() -> list:
     configs[-1].num_streams = 4
     configs[-1].single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
     configs[-1].num_stokes = 1
+    configs[-1].flux_types = [
+        sk.FluxType.Upwelling,
+        sk.FluxType.Downwelling,
+        sk.FluxType.Actinic,
+    ]
 
     geometrys = []
     altitude_grid = np.arange(0, 65001, 5000.0)
@@ -61,7 +66,7 @@ def test_wf_extinction():
     D_FRACTION = 1e-4
     test_scens = _raw_scenarios()
 
-    flux_names = ["upwelling_flux", "downwelling_flux"]
+    flux_names = ["upwelling_flux", "downwelling_flux", "actinic_flux"]
 
     for scen in test_scens:
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
@@ -111,7 +116,7 @@ def test_wf_ssa():
     D_FRACTION = 1e-4
     test_scens = _raw_scenarios()
 
-    flux_names = ["upwelling_flux", "downwelling_flux"]
+    flux_names = ["upwelling_flux", "downwelling_flux", "actinic_flux"]
 
     for scen in test_scens:
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
@@ -161,7 +166,7 @@ def test_wf_legendre():
     D_L = 1e-4
     test_scens = _raw_scenarios()
 
-    flux_names = ["upwelling_flux", "downwelling_flux"]
+    flux_names = ["upwelling_flux", "downwelling_flux", "actinic_flux"]
 
     for scen in test_scens:
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
@@ -209,7 +214,7 @@ def test_wf_albedo():
     D_ALBEDO = 1e-5
     test_scens = _raw_scenarios()
 
-    flux_names = ["upwelling_flux", "downwelling_flux"]
+    flux_names = ["upwelling_flux", "downwelling_flux", "actinic_flux"]
 
     for scen in test_scens:
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
