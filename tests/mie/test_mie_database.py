@@ -266,3 +266,59 @@ def test_mie_database_against_online():
     )
 
     np.testing.assert_array_almost_equal(p_diff, 0.0, decimal=3)
+
+
+def test_mie_db_variable_refr_index():
+
+    # basic case to compare
+    refractive_index = sk.mie.refractive.H2SO4()
+    db0 = sk.database.MieDatabase(
+        sk.mie.distribution.LogNormalDistribution(),
+        refractive_index,
+        np.array([532, 1020]),
+        median_radius=np.array([100, 200]),
+        mode_width=np.array([1.5, 1.6, 1.7]),
+    )
+
+    # make refractive index change arbitrarily with one table parameter
+    def refractive_index_fn(wl, median_radius):
+        return refractive_index.refractive_index_fn(wl) * (
+            1 + (median_radius - 100.0) / 1000.0
+        )
+
+    refractive_index_variable = sk.mie.refractive.RefractiveIndex(
+        refractive_index_fn, "H2SO4_test", ["median_radius"]
+    )
+
+    db = sk.database.MieDatabase(
+        sk.mie.distribution.LogNormalDistribution(),
+        refractive_index_variable,
+        np.array([532, 1020]),
+        median_radius=np.array([100, 200]),
+        mode_width=np.array([1.5, 1.6, 1.7]),
+    )
+
+    # median_radius = 100 results should agree
+    p_diff = (
+        1e2
+        * db.load_ds().xs_total.sel(median_radius=100).values
+        / db0.load_ds().xs_total.sel(median_radius=100).values
+        - 1e2
+    )
+    np.testing.assert_array_almost_equal(p_diff, 0.0, decimal=12)
+    p_diff = (
+        1e2
+        * db.load_ds().lm_a1.sel(median_radius=100).values
+        / db0.load_ds().lm_a1.sel(median_radius=100).values
+        - 1e2
+    )
+    np.testing.assert_array_almost_equal(p_diff, 0.0, decimal=12)
+
+    # median_radius = 200 results should differ
+    p_diff = (
+        1e2
+        * db.load_ds().xs_total.sel(median_radius=200).values
+        / db0.load_ds().xs_total.sel(median_radius=200).values
+        - 1e2
+    )
+    assert np.max(np.abs(p_diff)) > 5
