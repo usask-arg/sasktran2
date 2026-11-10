@@ -28,6 +28,10 @@ Python 3.10 support for conda-forge SASKTRAN2 was dropped in 2025.01.0
 | conda-forge Py 3.12  | ✅ | ✅  | ✅  | ✅  | ✅  |
 | conda-forge Py 3.13  | ✅ | ✅  | ✅  | ✅  | ✅  |
 
+The PyPI wheels need macOS 14 or later on Intel and macOS 15 or later on Apple
+Silicon; on older versions pip tries to build from source. The conda-forge packages
+support macOS 11 and later.
+
 ## Mac OMP Errors
 If you encounter the error `OMP: Error #15: Initializing libomp.dylib, but found libomp.dylib already initialized.` it is most likely
 that you are trying to use the `sasktran2` wheel package (through `pip`) inside a conda environment.  The best solution
