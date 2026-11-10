@@ -163,6 +163,10 @@ jobs:
 
   test-pixi:
     runs-on: ${{ matrix.os }}
+    env:
+      # Databases download into the workspace, so the AER cache steps below
+      # can use workspace-relative paths and hashFiles() on every OS.
+      SASKTRAN2_DATABASE_ROOT: ${{ github.workspace }}/.sasktran2_db
 
     strategy:
       fail-fast: false
@@ -190,9 +194,30 @@ jobs:
         run: |
           pixi r build
 
+      # The AER line database is a 442 MB download from Zenodo, which often
+      # fails or stalls; keep the extracted copy in the Actions cache.
+      - name: restore the AER line database
+        id: aer-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: .sasktran2_db/aer_lines/aer_v_3.8.1
+          key: aer-lines-v3.8.1-${{ runner.os }}
+
       - name: run tests
         run: |
           pixi r test
+
+      # Save only a complete database (it is moved into place after
+      # extraction): if Zenodo was unreachable the AER tests skip, and caching
+      # an empty directory would block later saves under the same key.
+      - name: save the AER line database
+        if: >-
+          always() && steps.aer-cache.outputs.cache-hit != 'true' &&
+          hashFiles('.sasktran2_db/aer_lines/aer_v_3.8.1/RELEASE_NOTES_aer_linefile') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: .sasktran2_db/aer_lines/aer_v_3.8.1
+          key: aer-lines-v3.8.1-${{ runner.os }}
 
   build-sdist:
     runs-on: ubuntu-latest
