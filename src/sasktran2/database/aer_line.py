@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-import shlex
+import shutil
+import tarfile
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -8,6 +10,7 @@ import pandas as pd
 import xarray as xr
 
 from sasktran2.database.base import CachedDatabase
+from sasktran2.database.zenodo import download_zenodo_record
 from sasktran2.util import get_hapi
 
 
@@ -235,34 +238,22 @@ class AERLineDatabase(CachedDatabase):
         # check if the AER database is downloaded, if not download it
 
         if not version_dir.exists():
-
-            try:
-                # Zenodo_get < 2
-                from zenodo_get import zenodo_get
-
-                zenodo_get(
-                    shlex.split(
-                        f'--record {self._version_map[self._version]} -o "{dir.as_posix()}"'
-                    )
-                )
-            except ImportError as e:
-                try:
-                    # zenodo_get >= 2
-                    from zenodo_get import download
-
-                    download(
-                        self._version_map[self._version], output_dir=dir.as_posix()
-                    )
-                except ImportError:
-                    msg = "zenodo_get is required to download the AER line database"
-                    raise ImportError(msg) from e
+            # Raises ConnectionError if Zenodo cannot be reached.
+            download_zenodo_record(self._version_map[self._version], dir)
 
             file = dir.joinpath(f"aer_v_{self._version}.tar.gz")
-            # Extract the tar file
-            import tarfile
-
-            with tarfile.open(file, "r:gz") as tar:
-                tar.extractall(dir)
+            # Extract into a staging directory and move the result into place, so
+            # an interrupted extraction never leaves a partial database behind.
+            staging = Path(tempfile.mkdtemp(prefix=".aer_extract_", dir=dir))
+            try:
+                with tarfile.open(file, "r:gz") as tar:
+                    if hasattr(tarfile, "data_filter"):
+                        tar.extractall(staging, filter="data")
+                    else:
+                        tar.extractall(staging)
+                staging.joinpath(version_dir.name).rename(version_dir)
+            finally:
+                shutil.rmtree(staging, ignore_errors=True)
             # Delete the tar file
             file.unlink()
 

@@ -163,6 +163,10 @@ jobs:
 
   test-pixi:
     runs-on: ${{ matrix.os }}
+    env:
+      # Databases download into the workspace, so the AER cache steps below
+      # can use workspace-relative paths and hashFiles() on every OS.
+      SASKTRAN2_DATABASE_ROOT: ${{ github.workspace }}/.sasktran2_db
 
     strategy:
       fail-fast: false
@@ -190,9 +194,30 @@ jobs:
         run: |
           pixi r build
 
+      # The AER line database is a 442 MB download from Zenodo, which often
+      # fails or stalls; keep the extracted copy in the Actions cache.
+      - name: restore the AER line database
+        id: aer-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: .sasktran2_db/aer_lines/aer_v_3.8.1
+          key: aer-lines-v3.8.1-${{ runner.os }}
+
       - name: run tests
         run: |
           pixi r test
+
+      # Save only a complete database (it is moved into place after
+      # extraction): if Zenodo was unreachable the AER tests skip, and caching
+      # an empty directory would block later saves under the same key.
+      - name: save the AER line database
+        if: >-
+          always() && steps.aer-cache.outputs.cache-hit != 'true' &&
+          hashFiles('.sasktran2_db/aer_lines/aer_v_3.8.1/RELEASE_NOTES_aer_linefile') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: .sasktran2_db/aer_lines/aer_v_3.8.1
+          key: aer-lines-v3.8.1-${{ runner.os }}
 
   build-sdist:
     runs-on: ubuntu-latest
@@ -310,17 +335,16 @@ jobs:
         platform:
           - runner: macos-15-intel
             target: x86_64
-          - runner: macos-14
+          # macOS 14 runners are retired. Homebrew's libomp, which delocate
+          # bundles, is built for the runner's macOS, so arm64 wheels need
+          # macOS 15 or later.
+          - runner: macos-15
             target: aarch64
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: 3.x
-
-      - name: Set MACOSX_DEPLOYMENT_TARGET for macos-13
-        if: matrix.platform.runner == 'macos-13'
-        run: echo "MACOSX_DEPLOYMENT_TARGET=13.0" >> $GITHUB_ENV
 
       - name: install omp
         run: |
@@ -339,16 +363,7 @@ jobs:
           RUNNER_OS: MacOS
 
       - name: Get OpenBLAS lib dir and set env var
-        id: get-lib-dir-13
-        if: matrix.platform.runner == 'macos-13'
-        run: |
-          python -m pip install scipy_openblas64==0.3.30.0.2
-          echo "LIB_DIR=$(python -c 'import scipy_openblas64; print(scipy_openblas64.get_lib_dir())')" >> $GITHUB_ENV
-        shell: bash
-
-      - name: Get OpenBLAS lib dir and set env var
         id: get-lib-dir
-        if: matrix.platform.runner != 'macos-13'
         run: |
           python -m pip install scipy_openblas64
           echo "LIB_DIR=$(python -c 'import scipy_openblas64; print(scipy_openblas64.get_lib_dir())')" >> $GITHUB_ENV
