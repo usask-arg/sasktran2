@@ -38,9 +38,7 @@ def _fake_zenodo_get(monkeypatch, download):
 def test_download_retries_then_raises_connection_error(monkeypatch, tmp_path, error):
     calls = []
 
-    def download(
-        record_or_doi, output_dir=".", retry_attempts=0, retry_pause=0.5, timeout=15.0
-    ):
+    def download(record_or_doi, output_dir=".", retry_attempts=0, retry_pause=0.5):
         calls.append((record_or_doi, output_dir, retry_attempts, retry_pause))
         raise error
 
@@ -65,7 +63,7 @@ def test_download_passes_only_supported_options(monkeypatch, tmp_path):
 
 
 def test_missing_record_is_not_a_connection_error(monkeypatch, tmp_path):
-    def download(record_or_doi, output_dir=".", **kwargs):
+    def download(*_args, **_kwargs):
         msg = "HTTP error fetching metadata for record 0: 404 - NOT FOUND"
         raise ValueError(msg)
 
@@ -77,7 +75,7 @@ def test_missing_record_is_not_a_connection_error(monkeypatch, tmp_path):
 def _aer_database(tmp_path, monkeypatch, write_tarball):
     pytest.importorskip("hapi")
 
-    def fake_download(record_id, output_dir):
+    def fake_download(_record_id, output_dir):
         write_tarball(output_dir.joinpath("aer_v_3.8.1.tar.gz"))
 
     monkeypatch.setattr(aer_line, "download_zenodo_record", fake_download)
