@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import sasktran2 as sk
+from sasktran2.database.aer_line import AERLineDatabase
 from sasktran2.optical import AERLineAbsorber
 
 species_list = [
@@ -56,21 +57,33 @@ species_list = [
 ]
 
 
+@pytest.fixture(scope="module")
+def aer_lines():
+    """The AER line database, downloaded once for the module.
+
+    The tests skip if Zenodo cannot be reached; pytest keeps the skip for the
+    module, so an outage costs one download attempt, not one per test.
+    """
+    pytest.importorskip("zenodo_get")
+    pytest.importorskip("hapi")
+    try:
+        return AERLineDatabase().path("")
+    except ConnectionError as error:
+        pytest.skip(f"AER line database unavailable: {error}")
+
+
+@pytest.mark.usefixtures("aer_lines")
 @pytest.mark.parametrize("species", species_list)
 def test_aer_line_loading(species):
-    pytest.importorskip("zenodo_get")
-
     if species == "H2":
         pytest.skip("H2 data is misformed and not fully supported")
 
     _ = AERLineAbsorber(species)
 
 
+@pytest.mark.usefixtures("aer_lines")
 @pytest.mark.parametrize("species", species_list)
 def test_aer_line_cross_section(species):
-    pytest.importorskip("zenodo_get")
-    pytest.importorskip("hapi")
-
     if species == "O":
         pytest.skip("Atomic oxygen partition sum data missing?")
     if species == "H2":
@@ -83,10 +96,8 @@ def test_aer_line_cross_section(species):
     )
 
 
+@pytest.mark.usefixtures("aer_lines")
 def test_aer_line_in_engine():
-    pytest.importorskip("zenodo_get")
-    pytest.importorskip("hapi")
-
     config = sk.Config()
     config.multiple_scatter_source = sk.MultipleScatterSource.TwoStream
     config.num_streams = 2
