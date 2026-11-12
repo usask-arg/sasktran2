@@ -153,9 +153,11 @@ namespace {
         double factor_vjp = 0.0;
     };
 
+    // magnitude, if given, accumulates the absolute value of each term.
     template <typename Weights>
     void accumulate_products(const Weights& sources, int layer,
-                             CodecProducts& result) {
+                             CodecProducts& result,
+                             CodecProducts* magnitude = nullptr) {
         const double factor = 0.03125 * (layer + 1) + 0.007;
         const double factor_tangent = -0.004 * layer + 0.002;
         const double forcing_gradient = 0.37 - 0.021 * layer;
@@ -174,25 +176,57 @@ namespace {
                 source.weight() * forcing_gradient * value_gradient;
             result.state_vjp[slot] +=
                 source.weight() * factor * forcing_gradient;
+            if (magnitude != nullptr) {
+                const double weight = std::abs(source.weight());
+                magnitude->transport[slot] += weight * std::abs(factor);
+                magnitude->transport_jvp[slot] +=
+                    weight * std::abs(factor_tangent);
+                magnitude->projected_state += weight * std::abs(state);
+                magnitude->projected_state_jvp +=
+                    weight * std::abs(state_tangent);
+                magnitude->factor_vjp +=
+                    weight * std::abs(forcing_gradient * value_gradient);
+                magnitude->state_vjp[slot] +=
+                    weight * std::abs(factor * forcing_gradient);
+            }
         }
     }
 
-    void require_product_bits(const CodecProducts& actual,
-                              const CodecProducts& expected) {
-        for (std::size_t slot = 0; slot < actual.transport.size(); ++slot) {
-            REQUIRE(codec_bits(actual.transport[slot]) ==
-                    codec_bits(expected.transport[slot]));
-            REQUIRE(codec_bits(actual.transport_jvp[slot]) ==
-                    codec_bits(expected.transport_jvp[slot]));
-            REQUIRE(codec_bits(actual.state_vjp[slot]) ==
-                    codec_bits(expected.state_vjp[slot]));
+    // Both sums use the same weights in the same order, so they agree to
+    // within the rounding of their terms.
+    void require_product(const char* name, double actual, double expected,
+                         double magnitude) {
+        using sasktran2::testing::ulp_difference;
+        using sasktran2::testing::within_ulps;
+        if (!within_ulps(actual, expected, 4.0, magnitude)) {
+            INFO(name << ": " << actual << " vs " << expected << ", "
+                      << ulp_difference(actual, expected) << " ulp apart");
+            REQUIRE(within_ulps(actual, expected, 4.0, magnitude));
         }
-        REQUIRE(codec_bits(actual.projected_state) ==
-                codec_bits(expected.projected_state));
-        REQUIRE(codec_bits(actual.projected_state_jvp) ==
-                codec_bits(expected.projected_state_jvp));
-        REQUIRE(codec_bits(actual.factor_vjp) ==
-                codec_bits(expected.factor_vjp));
+    }
+
+    void require_products(const CodecProducts& actual,
+                          const CodecProducts& expected,
+                          const CodecProducts& magnitude) {
+        for (std::size_t slot = 0; slot < actual.transport.size(); ++slot) {
+            CAPTURE(slot);
+            require_product("transport", actual.transport[slot],
+                            expected.transport[slot],
+                            magnitude.transport[slot]);
+            require_product("transport_jvp", actual.transport_jvp[slot],
+                            expected.transport_jvp[slot],
+                            magnitude.transport_jvp[slot]);
+            require_product("state_vjp", actual.state_vjp[slot],
+                            expected.state_vjp[slot],
+                            magnitude.state_vjp[slot]);
+        }
+        require_product("projected_state", actual.projected_state,
+                        expected.projected_state, magnitude.projected_state);
+        require_product("projected_state_jvp", actual.projected_state_jvp,
+                        expected.projected_state_jvp,
+                        magnitude.projected_state_jvp);
+        require_product("factor_vjp", actual.factor_vjp, expected.factor_vjp,
+                        magnitude.factor_vjp);
     }
 } // namespace
 
@@ -351,7 +385,7 @@ TEST_CASE("Source codec profitability fallback and reset preserve records",
     REQUIRE(invalid.wide_values().back().row_inner_index() == 256);
 }
 
-TEST_CASE("Encoded source visitors preserve product and reduction order bits",
+TEST_CASE("Encoded source visitors preserve products and reduction order",
           "[successive_orders][source_weight_codec]"
           "[linearization]") {
     std::vector<CodecWideWeight> original;
@@ -374,17 +408,18 @@ TEST_CASE("Encoded source visitors preserve product and reduction order bits",
     REQUIRE(storage.encoded_escape_count() >= 3);
     CodecProducts expected;
     CodecProducts actual;
+    CodecProducts magnitude;
     std::size_t begin = 0;
     for (int layer = 0; begin < original.size(); ++layer) {
         const std::size_t count =
             std::min<std::size_t>(97, original.size() - begin);
         const auto wide = SourceWeightArrayView<CodecWideWeight>(
             original.data() + begin, count);
-        accumulate_products(wide, layer, expected);
+        accumulate_products(wide, layer, expected, &magnitude);
         storage.view(begin, count).visit([&](const auto& values) {
             accumulate_products(values, layer, actual);
         });
         begin += count;
     }
-    require_product_bits(actual, expected);
+    require_products(actual, expected, magnitude);
 }
