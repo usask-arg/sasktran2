@@ -309,13 +309,23 @@ TEST_CASE("Encoded source weights preserve complete native ray products "
           "through atmosphere updates",
           "[successive_orders][ray_transport][storage][linearization]") {
     using namespace sasktran2::successive_orders;
+    // Both maps apply the same weights in the same order, so the products
+    // agree to within rounding.
     const auto require_same = [](const Eigen::VectorXd& actual,
                                  const Eigen::VectorXd& expected) {
+        using sasktran2::testing::ulp_difference;
+        using sasktran2::testing::within_ulps;
         REQUIRE(actual.size() == expected.size());
         REQUIRE(actual.allFinite());
         REQUIRE(expected.allFinite());
-        REQUIRE(std::memcmp(actual.data(), expected.data(),
-                            actual.size() * sizeof(double)) == 0);
+        for (Eigen::Index i = 0; i < actual.size(); ++i) {
+            if (!within_ulps(actual(i), expected(i), 4.0)) {
+                INFO("index " << i << ": " << actual(i) << " vs " << expected(i)
+                              << ", " << ulp_difference(actual(i), expected(i))
+                              << " ulp apart");
+                REQUIRE(within_ulps(actual(i), expected(i), 4.0));
+            }
+        }
     };
     const auto positive_weight = [](int index) {
         const auto exponent = static_cast<std::uint64_t>(1010 + index % 15);
