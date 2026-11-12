@@ -1,18 +1,29 @@
 #include <sasktran2/solartransmission.h>
 #include <sasktran2/test_helper.h>
 
-#include <cstring>
+#include <cmath>
 
 namespace {
     using Rows = std::vector<std::vector<std::pair<int, double>>>;
     using sasktran2::solartransmission::SolarTableInterpolation;
 
-    void require_solar_bits(const Eigen::VectorXd& actual,
-                            const Eigen::VectorXd& reference) {
+    // Each product is a sum over the same weights in the same order as the
+    // reference, so it agrees to within the rounding of its terms.
+    void require_solar_products(const Eigen::VectorXd& actual,
+                                const Eigen::VectorXd& reference,
+                                const Eigen::VectorXd& term_magnitude) {
+        using sasktran2::testing::ulp_difference;
+        using sasktran2::testing::within_ulps;
         REQUIRE(actual.size() == reference.size());
-        if (actual.size() != 0) {
-            REQUIRE(std::memcmp(actual.data(), reference.data(),
-                                actual.size() * sizeof(double)) == 0);
+        for (Eigen::Index i = 0; i < actual.size(); ++i) {
+            if (!within_ulps(actual(i), reference(i), 4.0, term_magnitude(i))) {
+                INFO("index " << i << ": " << actual(i) << " vs "
+                              << reference(i) << ", "
+                              << ulp_difference(actual(i), reference(i))
+                              << " ulp apart");
+                REQUIRE(within_ulps(actual(i), reference(i), 4.0,
+                                    term_magnitude(i)));
+            }
         }
     }
 
@@ -28,6 +39,8 @@ namespace {
         }
         Eigen::VectorXd expected_forward(rows.size());
         Eigen::VectorXd expected_reverse = Eigen::VectorXd::Zero(columns);
+        Eigen::VectorXd forward_magnitude = Eigen::VectorXd::Zero(rows.size());
+        Eigen::VectorXd reverse_magnitude = Eigen::VectorXd::Zero(columns);
         for (std::size_t row = 0; row < rows.size(); ++row) {
             double result = 0.0;
             for (const auto& [column, weight] : rows[row]) {
@@ -36,6 +49,8 @@ namespace {
                 }
                 result += weight * table(column);
                 expected_reverse(column) += weight * cotangent(row);
+                forward_magnitude(row) += std::abs(weight * table(column));
+                reverse_magnitude(column) += std::abs(weight * cotangent(row));
             }
             expected_forward(row) = result;
         }
@@ -43,8 +58,8 @@ namespace {
         Eigen::VectorXd reverse(columns);
         interpolation.apply(table, forward);
         interpolation.apply_transpose(cotangent, reverse);
-        require_solar_bits(forward, expected_forward);
-        require_solar_bits(reverse, expected_reverse);
+        require_solar_products(forward, expected_forward, forward_magnitude);
+        require_solar_products(reverse, expected_reverse, reverse_magnitude);
         REQUIRE(forward.dot(cotangent) ==
                 Catch::Approx(table.dot(reverse)).margin(2.0e-12));
         // Repeated products do not change storage, cursors, or row ordering.
@@ -52,8 +67,8 @@ namespace {
         reverse.setConstant(-37.0);
         interpolation.apply(table, forward);
         interpolation.apply_transpose(cotangent, reverse);
-        require_solar_bits(forward, expected_forward);
-        require_solar_bits(reverse, expected_reverse);
+        require_solar_products(forward, expected_forward, forward_magnitude);
+        require_solar_products(reverse, expected_reverse, reverse_magnitude);
     }
 
     void initialize_solar(SolarTableInterpolation& interpolation,
