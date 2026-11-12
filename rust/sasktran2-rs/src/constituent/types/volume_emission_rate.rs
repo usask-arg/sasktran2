@@ -3,7 +3,7 @@ use crate::atmosphere::*;
 use crate::constituent::traits::*;
 use crate::interpolation::linear::linear_interpolating_matrix;
 use crate::optical::line::OpticalLine;
-use crate::optical::types::line_absorber::assign_normalized_doppler_line_shape;
+use crate::optical::types::line_absorber::{assign_normalized_doppler_line_shape, is_monotonic};
 use crate::prelude::*;
 use rebasis::basis::Delta;
 use rebasis::grid::{Grid, MappingMatrix, mapping_matrix};
@@ -70,6 +70,7 @@ impl MonochromaticVolumeEmissionRate {
         let line_center_cminv = 1.0e7 / self.wavelength_nm;
         let wavenumber_cminv = spectral_grid.central_wavenumber_cminv();
         let mut spectral_weights = Array2::zeros((temperature_k.len(), wavenumber_cminv.len()));
+        let monotonic = is_monotonic(wavenumber_cminv.as_slice().unwrap());
 
         Zip::from(spectral_weights.rows_mut())
             .and(temperature_k)
@@ -83,6 +84,7 @@ impl MonochromaticVolumeEmissionRate {
                 let mut spectrum_owned = Array1::zeros(spectrum.len());
                 assign_normalized_doppler_line_shape(
                     wavenumber_cminv.as_slice().unwrap(),
+                    monotonic,
                     line_center_cminv,
                     doppler_width_cminv,
                     1.0,

@@ -18,7 +18,7 @@ pub struct PyLineListVolumeEmissionRate {
 impl PyLineListVolumeEmissionRate {
     #[new]
     #[pyo3(
-        signature = (altitudes_m, photon_ver, wavelengths_nm, weights, out_of_bounds_mode = "zero"),
+        signature = (altitudes_m, photon_ver, wavelengths_nm, weights, out_of_bounds_mode = "zero", molecular_mass_g_per_mol = None),
     )]
     fn new<'py>(
         altitudes_m: PyReadonlyArray1<'py, f64>,
@@ -26,6 +26,7 @@ impl PyLineListVolumeEmissionRate {
         wavelengths_nm: PyReadonlyArray1<'py, f64>,
         weights: PyReadonlyArrayDyn<'py, f64>,
         out_of_bounds_mode: Option<&str>,
+        molecular_mass_g_per_mol: Option<f64>,
     ) -> PyResult<Self> {
         let weights = weights_from_py(weights, altitudes_m.len())?;
 
@@ -36,6 +37,12 @@ impl PyLineListVolumeEmissionRate {
             weights,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        if let Some(mass) = molecular_mass_g_per_mol {
+            inner = inner
+                .with_molecular_mass(mass)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        }
 
         if let Some(out_of_bounds_mode) = out_of_bounds_mode {
             inner = match out_of_bounds_mode {

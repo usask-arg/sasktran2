@@ -267,6 +267,77 @@ class NO2Vandaele(database.OpticalDatabaseGenericAbsorber):
             raise OSError(msg)
 
 
+class VUVAbsorber(database.OpticalDatabaseGenericAbsorber):
+    def __init__(self, species: str) -> None:
+        """
+        Photoabsorption of O2, N2 or atomic O in the vacuum ultraviolet, 80-130 nm.
+
+        From the Leiden photodissociation database (Heays, Bosman and van Dishoeck 2017,
+        A&A 602, A105, and the original sources it lists), temperature independent:
+
+        - ``"O2"``: 80-130.1 nm (Holland et al. 1993 below 103 nm, Ogawa and Ogawa 1975
+          above 108.7 nm), zero within 0.05 nm of Lyman-alpha (see :class:`O2LymanAlpha`).
+          Combine with :class:`O2UV` above 130 nm.
+        - ``"N2"``: 80-100 nm, averaged into 0.005 nm bins.
+        - ``"O"``: 80-91 nm, the ionisation continuum.
+
+        Built by ``tools/spectroscopy/build_vuv.py``.
+
+        Raises
+        ------
+        OSError
+            If the table cannot be found
+        """
+        files = {"O2": "o2_vuv.nc", "N2": "n2_vuv.nc", "O": "o_vuv.nc"}
+        if species not in files:
+            msg = f"No VUV cross sections for {species!r}; available: {list(files)}"
+            raise ValueError(msg)
+        path = StandardDatabase().path(f"cross_sections/vuv/{files[species]}")
+        if path.exists():
+            super().__init__(path)
+        else:
+            msg = f"Could not find the {species} VUV cross-section table at {path}"
+            raise OSError(msg)
+
+
+class O2UV(database.OpticalDatabaseGenericAbsorber):
+    def __init__(self) -> None:
+        """
+        O2 ultraviolet absorption from 130 nm to the 242.4 nm dissociation threshold, 130 K to 500 K.
+
+        - Schumann-Runge continuum below 175.44 nm: the CfA table of :class:`O2SchumannRunge`.
+        - Schumann-Runge bands, 175.44-204.08 nm: temperature-dependent cross sections at
+          0.5 cm-1 resolution from the polynomial coefficients of Minschwaner et al. (1992).
+          Resolving the bands needs a wavelength grid of about 0.002 nm; coarser grids
+          under-attenuate in the band centres.
+        - Herzberg continuum, 205-240 nm, from Yoshino et al. (1988), extended under the bands
+          to 194 nm and to zero at 242.4 nm. Pressure-induced absorption is not included.
+
+        Lyman-alpha is not included; see :class:`O2LymanAlpha`. The table is built by
+        ``tools/spectroscopy/build_o2_uv.py``.
+
+        Minschwaner, K., G. P. Anderson, L. A. Hall and K. Yoshino (1992), Polynomial
+        coefficients for calculating O2 Schumann-Runge cross sections at 0.5 cm-1 resolution,
+        J. Geophys. Res., 97(D9), 10103-10108.
+
+        Yoshino, K., et al. (1988), Improved absorption cross sections of oxygen in the
+        wavelength region 205-240 nm of the Herzberg continuum, Planet. Space Sci., 36,
+        1469-1475.
+
+        Raises
+        ------
+        OSError
+            If the cross-section table cannot be found
+        """
+        path = StandardDatabase().path("cross_sections/o2/o2_uv.nc")
+
+        if path.exists():
+            super().__init__(path)
+        else:
+            msg = f"Could not find the O2 UV cross-section table at {path}"
+            raise OSError(msg)
+
+
 class HITRANUV(database.OpticalDatabaseGenericAbsorber):
     def __init__(self, name: str, version: str = "2022") -> None:
         """

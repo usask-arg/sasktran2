@@ -58,6 +58,7 @@ SASKTRAN2 follows a layered architecture with three main language components:
 - **sasktran2-rs**: Core Rust library with atmospheric modeling utilities
 - **sasktran2-py-ext**: Python extension module providing Python bindings
 - **sasktran2-sys**: FFI bindings to C++ components
+- **sasktran2-nlte**: Self-contained excited-state (non-LTE) kinetics and emission rates. It must not depend on the other sasktran2 crates; `sasktran2-rs` re-exports it as `photchem`.
 
 ### Python Interface (`src/sasktran2/`)
 - **Engine** (`engine.py`): Main user-facing calculation interface
