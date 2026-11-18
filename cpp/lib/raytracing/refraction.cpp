@@ -56,8 +56,6 @@ namespace {
     double integrate_angle(const sasktran2::Geometry1D& geometry, double rt,
                            double nt, double r1, double r2,
                            std::vector<std::pair<int, double>>& index_weights) {
-        const double min_cell_length = 0.1;
-
         if (r2 < r1) {
             std::swap(r1, r2);
         }
@@ -67,9 +65,11 @@ namespace {
         r1 = std::max(r1, rt);
         r2 = std::max(r2, rt);
 
-        if (r2 - r1 < min_cell_length) {
-            return std::acos(std::min(1.0, rt / r2)) -
-                   std::acos(std::min(1.0, rt / r1));
+        // The quadrature is accurate for arbitrarily thin cells, including
+        // those touching the tangent point, so only zero length cells are
+        // skipped
+        if (r1 == r2) {
+            return 0.0;
         }
 
         const double x_low = sqrt(r1 - rt);
@@ -348,7 +348,6 @@ namespace sasktran2::raytracing::refraction {
     integrate_path(const sasktran2::Geometry1D& geometry, double rt, double nt,
                    double r1, double r2,
                    std::vector<std::pair<int, double>>& index_weights) {
-        const double min_cell_length = 0.1;
         const int num_integration_points = 64;
 
         // Always make sure r1 < r2
@@ -366,12 +365,10 @@ namespace sasktran2::raytracing::refraction {
         result.first = 0;
         result.second = 0;
 
-        if (std::abs(r1 - r2) < min_cell_length) {
-            result.first = straight_path(rt, r1, r2);
-            // Closed form expression for the deflection angle assuming n=nt=1
-            result.second =
-                acos(std::min(1.0, rt / r2)) - acos(std::min(1.0, rt / r1));
-
+        // The quadrature below is accurate for arbitrarily thin cells,
+        // including those touching the tangent point, so only zero length
+        // cells are skipped
+        if (r1 == r2) {
             return result;
         }
 
@@ -441,6 +438,71 @@ namespace sasktran2::raytracing::refraction {
         }
 
         return result;
+    }
+
+    double
+    deflection_angle(const sasktran2::Geometry1D& geometry,
+                     const TracedRay& ray,
+                     std::vector<std::pair<int, double>>& index_weights) {
+        if (ray.is_straight || ray.layers.empty()) {
+            return 0.0;
+        }
+
+        const double earth_radius = geometry.coordinates().earth_radius();
+        const double top_radius =
+            earth_radius +
+            geometry.altitude_grid().grid()(Eigen::placeholders::last);
+        const double nt = refractive_index_at_altitude(
+            geometry, ray.tangent_radius - earth_radius, index_weights);
+        const double impact_parameter = nt * ray.tangent_radius;
+
+        // Refractive index seen by the ray at an endpoint of radius r inside a
+        // layer extending towards toward_r. Endpoints on the top of the
+        // atmosphere connect to space, which the tracer treats as vacuum.
+        // Other endpoints are nudged into the layer so that piecewise
+        // constant profiles are evaluated on the correct side of a node.
+        auto refractive_index = [&](double r, double toward_r) {
+            if (r >= top_radius - 1e-6) {
+                return 1.0;
+            }
+            const double nudge = std::copysign(
+                std::min(1e-6, 0.5 * std::abs(toward_r - r)), toward_r - r);
+            return refractive_index_at_altitude(
+                geometry, r + nudge - earth_radius, index_weights);
+        };
+
+        // Zenith angle of the propagation direction from Bouguer's invariant
+        auto zenith = [&](double r, double toward_r, bool upward) {
+            const double nr = refractive_index(r, toward_r) * r;
+            const double sin_z = std::min(impact_parameter / nr, 1.0);
+            const double cos_z =
+                sqrt(std::max(0.0, (nr - impact_parameter) *
+                                       (nr + impact_parameter))) /
+                nr;
+            const double z = atan2(sin_z, cos_z);
+            return upward ? z : EIGEN_PI - z;
+        };
+
+        // Layers are stored from the far end of the ray towards the observer
+        const auto& start = ray.layers.back();
+        const auto& end = ray.layers.front();
+
+        const Eigen::Vector3d& p0 = start.entrance.position;
+        const Eigen::Vector3d& p1 = end.exit.position;
+        const double central_angle = atan2(p0.cross(p1).norm(), p0.dot(p1));
+
+        const bool start_upward = ray.observer_and_look.cos_viewing() > 0;
+        const bool end_upward = end.r_exit == end.r_entrance
+                                    ? !ray.ground_is_hit
+                                    : end.r_exit > end.r_entrance;
+
+        const double z_start =
+            zenith(start.r_entrance, start.r_exit, start_upward);
+        const double z_end = zenith(end.r_exit, end.r_entrance, end_upward);
+
+        // Direction angle in the plane of the ray is (central angle + zenith),
+        // which is constant along a straight line
+        return central_angle + z_end - z_start;
     }
 
 }; // namespace sasktran2::raytracing::refraction

@@ -178,6 +178,9 @@ pub struct TracedRay {
     pub ground_is_hit: bool,
     pub layers: Vec<Layer>,
     pub tangent_radius: f64,
+    /// Total refractive bending of the ray in radians, positive towards the
+    /// Earth. Zero for straight rays.
+    pub deflection_angle: f64,
     pub geometry: GeometryKind,
     pub interpolation_method: InterpolationMethod,
 }
@@ -194,6 +197,7 @@ impl TracedRay {
             ground_is_hit: false,
             layers: Vec::new(),
             tangent_radius: f64::NAN,
+            deflection_angle: 0.0,
             geometry,
             interpolation_method,
         }
@@ -210,6 +214,7 @@ impl TracedRay {
         self.ground_is_hit = false;
         self.layers.clear();
         self.tangent_radius = f64::NAN;
+        self.deflection_angle = 0.0;
         self.geometry = geometry;
         self.interpolation_method = interpolation_method;
     }

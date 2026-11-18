@@ -1679,7 +1679,7 @@ def test_refraction_tangent_altitude_limit_traces_high_los_straight():
     )
     profile = 1.0 + 2.7e-4 * np.exp(-ALTITUDES_M / 8_000.0)
 
-    def calculate(*, refraction: bool, limit_m: float) -> tuple[np.ndarray, list[dict]]:
+    def calculate(*, refraction: bool, limit_m: float) -> tuple[xr.Dataset, list[dict]]:
         config = transmission_config(refraction=refraction)
         config.los_refraction_max_tangent_altitude_m = limit_m
         atmosphere = raw_atmosphere(geometry, config, calculate_derivatives=False)
@@ -1691,17 +1691,30 @@ def test_refraction_tangent_altitude_limit_traces_high_los_straight():
             time_group_duration_s=120,
         )
         return (
-            engine.calculate_radiance(atmosphere).radiance.values,
+            engine.calculate_radiance(atmosphere),
             engine.group_diagnostics,
         )
 
-    limited, diagnostics = calculate(refraction=True, limit_m=25_000.0)
-    fully_refracted, _ = calculate(refraction=True, limit_m=np.inf)
-    straight, _ = calculate(refraction=False, limit_m=25_000.0)
+    limited_ds, diagnostics = calculate(refraction=True, limit_m=25_000.0)
+    fully_refracted_ds, _ = calculate(refraction=True, limit_m=np.inf)
+    straight_ds, _ = calculate(refraction=False, limit_m=25_000.0)
+    limited = limited_ds.radiance.values
+    fully_refracted = fully_refracted_ds.radiance.values
+    straight = straight_ds.radiance.values
 
     np.testing.assert_allclose(limited[:, 0, :], fully_refracted[:, 0, :])
     np.testing.assert_allclose(limited[:, 1, :], straight[:, 1, :])
     assert not np.array_equal(limited[:, 0, :], straight[:, 0, :])
+
+    limited_deflection = limited_ds["los_refraction_deflection_angle"].values
+    fully_refracted_deflection = fully_refracted_ds[
+        "los_refraction_deflection_angle"
+    ].values
+    assert np.all(fully_refracted_deflection > 0)
+    assert fully_refracted_deflection[0] > fully_refracted_deflection[1]
+    assert limited_deflection[0] == fully_refracted_deflection[0]
+    assert limited_deflection[1] == 0.0
+    assert "los_refraction_deflection_angle" not in straight_ds
     assert sum(item["refracted_observation_count"] for item in diagnostics) == 1
     assert all(
         item["max_refraction_tangent_altitude_m"] == 25_000.0 for item in diagnostics

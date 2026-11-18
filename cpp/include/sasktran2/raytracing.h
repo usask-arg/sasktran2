@@ -165,6 +165,12 @@ namespace sasktran2::raytracing {
                                                          the ray hits the
                                                          ground. */
 
+        double deflection_angle =
+            0.0; /**< Total refractive bending of the ray in [radians], the
+                    angle between the propagation directions at the two ends
+                    of the traced path. Positive when the ray bends towards
+                    the Earth, and zero for straight rays. */
+
         std::vector<std::pair<int, double>> interpolation_index_weights; /**<
             Workspace memory to be used by the raytracer.
          */
@@ -315,6 +321,7 @@ namespace sasktran2::raytracing {
             exit_grid_weights.clear();
             integrated_od_weights.clear();
             tangent_radius = std::numeric_limits<double>::quiet_NaN();
+            deflection_angle = 0.0;
         }
     };
 

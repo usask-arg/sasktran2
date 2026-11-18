@@ -16,6 +16,7 @@ pub mod ffi {
         ground_is_hit: bool,
         is_straight: bool,
         tangent_radius: f64,
+        deflection_angle: f64,
         num_layers: usize,
     }
 
@@ -627,6 +628,7 @@ fn summary_to_ffi(traced: &TracedRay) -> ffi::RustTraceSummary {
         ground_is_hit: traced.ground_is_hit,
         is_straight: traced.is_straight,
         tangent_radius: traced.tangent_radius,
+        deflection_angle: traced.deflection_angle,
         num_layers: traced.layers.len(),
     }
 }

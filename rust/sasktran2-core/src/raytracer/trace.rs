@@ -127,6 +127,9 @@ impl VerticalRayTracer {
                 }
                 self.build_spherical_layers_from_events(scratch, result);
                 self.finalize_spherical_layers(ray, result, refraction_profile);
+                if let Some(profile) = refraction_profile {
+                    result.deflection_angle = profile.deflection_angle(result);
+                }
             }
             GeometryKind::PlaneParallel => {
                 if !self.build_plane_parallel_events(ray, scratch, result) {

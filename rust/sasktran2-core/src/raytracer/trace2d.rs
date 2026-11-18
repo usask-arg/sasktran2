@@ -593,6 +593,7 @@ impl StructuredRayTracer2D {
             && radial_result.ground_is_hit
             && far_boundaries.contains_surface();
         result.layers.reverse();
+        result.deflection_angle = profile.deflection_angle(result);
     }
 
     fn structured_point(
@@ -1911,6 +1912,8 @@ mod tests {
         );
 
         assert_close(structured.tangent_radius, vertical.tangent_radius);
+        assert!(vertical.deflection_angle > 0.0);
+        assert_close(structured.deflection_angle, vertical.deflection_angle);
         assert_eq!(structured.ground_is_hit, vertical.ground_is_hit);
         assert_eq!(structured.layers.len(), vertical.layers.len());
         for (structured, vertical) in structured.layers.iter().zip(&vertical.layers) {

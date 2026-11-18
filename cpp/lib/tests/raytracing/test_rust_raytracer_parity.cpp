@@ -262,6 +262,11 @@ namespace {
         REQUIRE(rust_summary.is_straight == cpp_ray.is_straight);
         require_close("tangent radius", rust_summary.tangent_radius,
                       cpp_ray.tangent_radius);
+        require_angle_close("deflection angle", rust_summary.deflection_angle,
+                            cpp_ray.deflection_angle, 1e-9);
+        if (cpp_ray.is_straight) {
+            REQUIRE(cpp_ray.deflection_angle == 0.0);
+        }
         REQUIRE(rust_summary.num_layers == cpp_ray.layers.size());
         REQUIRE(rust_layers.size() == cpp_ray.layers.size());
 
@@ -323,6 +328,7 @@ namespace {
         REQUIRE(adapted_ray.is_straight == rust_summary.is_straight);
         require_close("adapter tangent radius", adapted_ray.tangent_radius,
                       rust_summary.tangent_radius);
+        REQUIRE(adapted_ray.deflection_angle == rust_summary.deflection_angle);
         REQUIRE(adapted_ray.layers.size() == rust_layers.size());
 
         std::vector<std::pair<int, double>> expected_weights;

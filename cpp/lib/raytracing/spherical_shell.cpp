@@ -78,6 +78,9 @@ namespace sasktran2::raytracing {
         // Now that we have found all the layers, we go through and add in
         // all of the necessary geometry information for each layer
         finalize_ray_geometry(result);
+
+        result.deflection_angle = refraction::deflection_angle(
+            m_geometry, result, result.interpolation_index_weights);
     }
 
     /**

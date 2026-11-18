@@ -1171,6 +1171,12 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_output_get_los_refraction_deflection_angle(
+        output: *mut OutputC,
+        angle: *mut *const f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_output_jvp_create(
         radiance: *mut f64,
         jvp: *mut f64,

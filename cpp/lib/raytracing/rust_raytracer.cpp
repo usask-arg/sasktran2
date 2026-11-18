@@ -43,6 +43,7 @@ namespace sasktran2::rust::raytracer {
             m_result.ground_is_hit = summary.ground_is_hit;
             m_result.is_straight = summary.is_straight;
             m_result.tangent_radius = summary.tangent_radius;
+            m_result.deflection_angle = summary.deflection_angle;
             m_result.layers.resize(summary.num_layers);
             m_result.reserve_grid_weights(summary.num_layers * 2 + 2);
         }
@@ -121,6 +122,7 @@ namespace sasktran2::rust::raytracer {
             m_result.ground_is_hit = summary.ground_is_hit;
             m_result.is_straight = summary.is_straight;
             m_result.tangent_radius = summary.tangent_radius;
+            m_result.deflection_angle = summary.deflection_angle;
             m_result.layers.resize(summary.num_layers);
             m_result.reserve_grid_weights(summary.num_layers * 4);
             if (m_endpoint_factors != nullptr) {
