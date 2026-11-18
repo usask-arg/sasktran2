@@ -228,6 +228,7 @@ pub struct Output {
 
     pub flux: Array3<f64>,
     los_optical_depth_override: Option<Array2<f64>>,
+    los_refraction_deflection_angle_override: Option<Array1<f64>>,
 }
 
 impl Output {
@@ -271,6 +272,7 @@ impl Output {
             d_flux_surf: HashMap::new(),
             flux,
             los_optical_depth_override: None,
+            los_refraction_deflection_angle_override: None,
         }
     }
 
@@ -414,6 +416,42 @@ impl Output {
         output.assign(&internal_view);
 
         output
+    }
+
+    pub fn set_los_refraction_deflection_angle(
+        &mut self,
+        values: Array1<f64>,
+    ) -> Result<(), String> {
+        if values.len() != self.num_los {
+            return Err(format!(
+                "LOS refraction deflection angle length {} does not match {}",
+                values.len(),
+                self.num_los
+            ));
+        }
+        self.los_refraction_deflection_angle_override = Some(values);
+        Ok(())
+    }
+
+    /// Total refractive bending of each line of sight in radians, zero for
+    /// straight rays.
+    pub fn los_refraction_deflection_angle(&self) -> Result<Array1<f64>, String> {
+        if let Some(values) = &self.los_refraction_deflection_angle_override {
+            return Ok(values.clone());
+        }
+        let mut internal: *const f64 = std::ptr::null();
+        let rc = unsafe {
+            ffi::sk_output_get_los_refraction_deflection_angle(self.output, &mut internal)
+        };
+        if rc != 0 || (internal.is_null() && self.num_los > 0) {
+            return Err("LOS refraction deflection angle is not available".to_string());
+        }
+        if self.num_los == 0 {
+            return Ok(Array1::zeros(0));
+        }
+        let internal_view = unsafe { ArrayView1::from_shape_ptr(self.num_los, internal) };
+
+        Ok(internal_view.to_owned())
     }
 }
 

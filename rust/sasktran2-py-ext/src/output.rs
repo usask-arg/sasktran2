@@ -157,4 +157,16 @@ impl PyOutput {
         let array = &this.borrow().output.los_optical_depth();
         Ok(PyArray2::from_array(this.py(), array))
     }
+
+    #[getter]
+    fn get_los_refraction_deflection_angle<'py>(
+        this: Bound<'py, Self>,
+    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let array = this
+            .borrow()
+            .output
+            .los_refraction_deflection_angle()
+            .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
+        Ok(PyArray1::from_owned_array(this.py(), array))
+    }
 }

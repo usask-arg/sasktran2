@@ -2728,6 +2728,7 @@ impl PyOrbitalPlaneEngine {
             .into_pyresult()?;
         let mut combined_los_optical_depth = include_los_optical_depth
             .then(|| Array2::zeros((master.num_wavel(), self.num_observations)));
+        let mut combined_deflection_angle = Array1::zeros(self.num_observations);
         for name in &volume_mappings {
             let size = master
                 .storage
@@ -2858,11 +2859,15 @@ impl PyOrbitalPlaneEngine {
             };
             let local_los_optical_depth =
                 include_los_optical_depth.then(|| output.los_optical_depth());
+            let local_deflection_angle = output
+                .los_refraction_deflection_angle()
+                .map_err(PyRuntimeError::new_err)?;
             for (local_los, &global_los) in group.layout.observation_indices.iter().enumerate() {
                 combined
                     .radiance
                     .slice_mut(s![.., global_los, ..])
                     .assign(&output.radiance.slice(s![.., local_los, ..]));
+                combined_deflection_angle[global_los] = local_deflection_angle[local_los];
                 if let (Some(combined_od), Some(local_od)) = (
                     combined_los_optical_depth.as_mut(),
                     local_los_optical_depth.as_ref(),
@@ -2948,6 +2953,9 @@ impl PyOrbitalPlaneEngine {
                 .set_los_optical_depth(los_optical_depth)
                 .map_err(PyRuntimeError::new_err)?;
         }
+        combined
+            .set_los_refraction_deflection_angle(combined_deflection_angle)
+            .map_err(PyRuntimeError::new_err)?;
         Py::new(py, crate::output::PyOutput { output: combined })
     }
 
@@ -2973,15 +2981,20 @@ impl PyOrbitalPlaneEngine {
             .into_pyresult()?;
         let mut combined_los_optical_depth = include_los_optical_depth
             .then(|| Array2::zeros((master.num_wavel(), self.num_observations)));
+        let mut combined_deflection_angle = Array1::zeros(self.num_observations);
         let outputs = self.calculate_group_primals(py, master, &[], &[])?;
         for (group, output) in self.groups.iter().zip(&outputs) {
             let local_los_optical_depth =
                 include_los_optical_depth.then(|| output.los_optical_depth());
+            let local_deflection_angle = output
+                .los_refraction_deflection_angle()
+                .map_err(PyRuntimeError::new_err)?;
             for (local_los, &global_los) in group.layout.observation_indices.iter().enumerate() {
                 combined
                     .radiance
                     .slice_mut(s![.., global_los, ..])
                     .assign(&output.radiance.slice(s![.., local_los, ..]));
+                combined_deflection_angle[global_los] = local_deflection_angle[local_los];
                 if let (Some(combined_od), Some(local_od)) = (
                     combined_los_optical_depth.as_mut(),
                     local_los_optical_depth.as_ref(),
@@ -2997,6 +3010,9 @@ impl PyOrbitalPlaneEngine {
                 .set_los_optical_depth(los_optical_depth)
                 .map_err(PyRuntimeError::new_err)?;
         }
+        combined
+            .set_los_refraction_deflection_angle(combined_deflection_angle)
+            .map_err(PyRuntimeError::new_err)?;
         Py::new(py, crate::output::PyOutput { output: combined })
     }
 

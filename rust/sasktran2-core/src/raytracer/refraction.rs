@@ -2,6 +2,7 @@ use std::error::Error;
 use std::fmt;
 
 use super::grid::InterpolationMethod;
+use super::layer::TracedRay;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RefractiveProfileError {
@@ -175,6 +176,66 @@ impl RefractiveProfile {
         log_n.exp()
     }
 
+    /// Total refractive bending of a ray traced through this profile, in
+    /// radians: the angle between the propagation directions at the observer
+    /// end and the far end of the traced path, positive towards the Earth.
+    ///
+    /// Zenith angles at both ends follow from Bouguer's invariant
+    /// `n r sin(z) = n_t r_t`, so the result is consistent with the traced
+    /// geometry. Layers are ordered from the far end towards the observer.
+    pub fn deflection_angle(&self, traced: &TracedRay) -> f64 {
+        let (Some(end), Some(start)) = (traced.layers.first(), traced.layers.last()) else {
+            return 0.0;
+        };
+
+        let top_altitude = self.altitudes[self.altitudes.len() - 1];
+        let impact_parameter =
+            self.refractive_index_at_radius(traced.tangent_radius) * traced.tangent_radius;
+
+        // Refractive index seen by the ray at an endpoint inside a layer that
+        // extends towards `toward`. Endpoints on the top of the atmosphere
+        // connect to space, which the tracer treats as vacuum. Other endpoints
+        // are nudged into the layer so that piecewise constant profiles are
+        // evaluated on the correct side of a node.
+        let refractive_index = |altitude: f64, toward: f64| {
+            if altitude >= top_altitude - 1e-6 {
+                return 1.0;
+            }
+            let nudge = (1e-6_f64)
+                .min(0.5 * (toward - altitude).abs())
+                .copysign(toward - altitude);
+            self.refractive_index_at_altitude(altitude + nudge)
+        };
+
+        // Zenith angle of the propagation direction from Bouguer's invariant
+        let zenith = |altitude: f64, toward: f64, upward: bool| {
+            let nr = refractive_index(altitude, toward) * (self.earth_radius + altitude);
+            let sin_z = (impact_parameter / nr).min(1.0);
+            let cos_z = ((nr - impact_parameter) * (nr + impact_parameter))
+                .max(0.0)
+                .sqrt()
+                / nr;
+            let z = sin_z.atan2(cos_z);
+            if upward { z } else { std::f64::consts::PI - z }
+        };
+
+        let p0 = start.entrance.position;
+        let p1 = end.exit.position;
+        let central_angle = p0.cross(p1).norm().atan2(p0.dot(p1));
+
+        let start_upward = traced.observer.cos_zenith_at_origin() > 0.0;
+        let end_upward = if end.exit.altitude == end.entrance.altitude {
+            !traced.ground_is_hit
+        } else {
+            end.exit.altitude > end.entrance.altitude
+        };
+
+        // The in-plane direction angle (central angle + zenith angle) is
+        // constant along a straight line, so its change is the bending.
+        central_angle + zenith(end.exit.altitude, end.entrance.altitude, end_upward)
+            - zenith(start.entrance.altitude, start.exit.altitude, start_upward)
+    }
+
     pub fn tangent_radius(&self, straight_line_tangent_radius: f64) -> f64 {
         const MAX_ITERATIONS: usize = 500;
         const TOLERANCE: f64 = 1e-6;
@@ -312,8 +373,6 @@ pub fn integrate_path(
     mut r1: f64,
     mut r2: f64,
 ) -> PathIntegral {
-    const MIN_CELL_LENGTH: f64 = 0.1;
-
     if r2 < r1 {
         std::mem::swap(&mut r1, &mut r2);
     }
@@ -324,11 +383,12 @@ pub fn integrate_path(
     r1 = r1.max(tangent_radius);
     r2 = r2.max(tangent_radius);
 
-    if (r1 - r2).abs() < MIN_CELL_LENGTH {
+    // The quadrature below is accurate for arbitrarily thin cells, including
+    // those touching the tangent point, so only zero length cells are skipped.
+    if r1 == r2 {
         return PathIntegral {
-            path_length: straight_path(tangent_radius, r1, r2),
-            deflection_angle: (tangent_radius / r2).min(1.0).acos()
-                - (tangent_radius / r1).min(1.0).acos(),
+            path_length: 0.0,
+            deflection_angle: 0.0,
         };
     }
 

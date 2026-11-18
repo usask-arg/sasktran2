@@ -838,4 +838,15 @@ class Engine:
                 dims=["wavelength", "los"],
             )
 
+        if self._config.los_refraction:
+            out_ds["los_refraction_deflection_angle"] = xr.DataArray(
+                output.los_refraction_deflection_angle,
+                dims=["los"],
+                attrs={
+                    "units": "rad",
+                    "description": "Total refractive bending of the line of "
+                    "sight, positive towards the Earth",
+                },
+            )
+
         return out_ds, radiance_derivative_specs

@@ -5,6 +5,7 @@
 #include <sasktran2/math/scattering.h>
 
 #include <sasktran2/geometry.h>
+#include <sasktran2/raytracing.h>
 #include <sasktran2/viewinggeometry.h>
 
 namespace sasktran2::raytracing::refraction {
@@ -184,4 +185,21 @@ namespace sasktran2::raytracing::refraction {
     double refracted_visibility_limit(
         const sasktran2::Geometry1D& geometry, double radius_m,
         std::vector<std::pair<int, double>>& index_weights);
+
+    /**
+     * Calculates the total refractive bending of a traced ray, i.e. the angle
+     * between the propagation directions at the observer end and the far end
+     * of the traced path.  Zenith angles at both ends follow from Bouguer's
+     * invariant n r sin(z) = n_t r_t, so the result is consistent with the
+     * geometry the ray tracer actually produced.
+     *
+     * @param geometry The geometry the ray was traced in
+     * @param ray A fully traced ray
+     * @param index_weights Workspace memory
+     * @return double Bending angle in [radians], positive when the ray bends
+     * towards the Earth, 0 for straight or empty rays
+     */
+    double deflection_angle(const sasktran2::Geometry1D& geometry,
+                            const TracedRay& ray,
+                            std::vector<std::pair<int, double>>& index_weights);
 } // namespace sasktran2::raytracing::refraction
