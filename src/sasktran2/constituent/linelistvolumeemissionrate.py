@@ -17,12 +17,13 @@ class LineListVolumeEmissionRate(Constituent):
         photon_ver: np.ndarray,
         wavelengths_nm: np.ndarray,
         weights: np.ndarray,
+        molecular_mass_g_per_mol: float | None = None,
     ):
         """
         A spectrally resolved line-list volume emission rate.
 
         Lines are Doppler broadened using the atmosphere temperature on the model altitude grid.
-        The current implementation assumes O2 molecular mass, matching the A-band use case.
+        The Doppler width uses ``molecular_mass_g_per_mol`` (O2 by default).
 
         Parameters
         ----------
@@ -33,13 +34,17 @@ class LineListVolumeEmissionRate(Constituent):
         wavelengths_nm : np.ndarray
             Emission line wavelengths in [nm].
         weights : np.ndarray
-            Relative line weights. Values are normalized internally.
+            Relative line weights, ``(line,)`` or ``(altitude, line)``. Values are
+            normalized internally.
+        molecular_mass_g_per_mol : float, optional
+            Emitter molar mass for Doppler broadening; O2 (31.9988) by default.
         """
         self._ver = PyLineListVolumeEmissionRate(
             np.atleast_1d(altitudes_m).astype(np.float64),
             np.atleast_1d(photon_ver).astype(np.float64),
             np.atleast_1d(wavelengths_nm).astype(np.float64),
             np.atleast_1d(weights).astype(np.float64),
+            molecular_mass_g_per_mol=molecular_mass_g_per_mol,
         )
 
     def add_to_atmosphere(self, atmo: sk.Atmosphere):
