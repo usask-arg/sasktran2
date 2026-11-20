@@ -580,7 +580,9 @@ int sk_engine_calculate_radiance_block_thread(Engine* engine, OutputC* output,
             return 0;
         }
         return -2;
-    } catch (const std::exception&) {
+    } catch (const std::exception& error) {
+        spdlog::error("Error calculating radiance wavelength block: {}",
+                      error.what());
         return -3;
     }
 }
