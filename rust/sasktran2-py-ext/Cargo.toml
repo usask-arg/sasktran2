@@ -1,6 +1,6 @@
 [package]
 name = "core_rust"
-version = "2026.10.1"
+version = "2026.11.0"
 edition = "2024"
 
 [lib]
